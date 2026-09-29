@@ -16,6 +16,14 @@ used over 250% CPU (about 3 of 8 cores) at some launch; the record still lists a
 app, its services and the guard don't count as other work: a no-snapshot replay loads the
 machine on its own.
 
+Other work is sampled every ~2 s during each launch, starting once the recorder is ready (the
+first ~1 s of a launch is covered by the sample taken just before it). The record's
+`externalCpuDuringRun` and the busy check use the busiest sample of each launch (with its top
+three programs, named without arguments). That covers the untimed `prep` launch and the long `warm`
+launch too, and one sample above the limit makes the whole record INCONCLUSIVE. The app also writes
+`replay_first_event`, `replay_done` and `publish_done` marks (harness only); each sample records
+them as `*_ms` after the select.
+
 The run quits Useful Bot, launches the candidate (`macos/dist`) about 20 times in the
 background, and reopens the installed app at the end. Keep the screen unlocked. It never
 takes the pointer or focus.

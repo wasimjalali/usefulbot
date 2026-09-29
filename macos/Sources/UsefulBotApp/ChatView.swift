@@ -785,6 +785,8 @@ struct ChatView: View {
                     let deadline = Date().addingTimeInterval(Self.landingCap)
                     var steady = 0
                     var lastHeight: CGFloat = -1
+                    var lastDistance: CGFloat = -1
+                    var nudged = false
                     while steady < 3, Date() < deadline {
                         try? await Task.sleep(nanoseconds: 50_000_000)
                         guard !Task.isCancelled else { return }
@@ -810,9 +812,29 @@ struct ChatView: View {
                                 steady += 1
                             } else {
                                 steady = 0
-                                scrollToBottom(proxy)
+                                // On a replayed long chat the scroll to the
+                                // bottom marker sometimes moves nothing, check
+                                // after check, and the chat landed by the cap
+                                // thousands of points up its history. A scroll
+                                // to the newest block does move it, and the
+                                // marker is reached from there. While it stays
+                                // stuck, checks alternate between the nudge and
+                                // the marker scroll until it moves or the cap
+                                // ends the landing.
+                                if abs(height - lastHeight) <= 0.5,
+                                   abs(scrollProbe.distance - lastDistance) <= 0.5, !nudged,
+                                   let last = model.transcriptWindow.blocks.last?.id {
+                                    nudged = true
+                                    var transaction = Transaction()
+                                    transaction.disablesAnimations = true
+                                    withTransaction(transaction) { proxy.scrollTo(last, anchor: .bottom) }
+                                } else {
+                                    nudged = false
+                                    scrollToBottom(proxy)
+                                }
                             }
                             lastHeight = height
+                            lastDistance = scrollProbe.distance
                         } else {
                             steady += 1
                             scrollToBottom(proxy)

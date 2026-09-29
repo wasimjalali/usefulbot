@@ -1,0 +1,78 @@
+diff --git a/macos/Sources/UsefulBotApp/AppModel.swift b/macos/Sources/UsefulBotApp/AppModel.swift
+index 7c525a5..cae7e7e 100644
+--- a/macos/Sources/UsefulBotApp/AppModel.swift
++++ b/macos/Sources/UsefulBotApp/AppModel.swift
+@@ -2354,9 +2354,10 @@ final class AppModel: ObservableObject {
+     }
+ 
+     private func republishWindow() {
++        let held = selectedBotId.flatMap { windowStarts[$0] }
+         let window = TranscriptBlocks.window(
+             transcriptBlocks,
+-            startId: selectedBotId.flatMap { windowStarts[$0] },
++            startId: held ?? (slimFirstPaint ? firstPaintStep : nil),
+             minimum: slimFirstPaint ? Self.firstPaintBlocks : TranscriptBlocks.windowMinimum,
+             historyBudget: slimFirstPaint ? Self.firstPaintHistory : TranscriptBlocks.historyCharacterBudget
+         )
+@@ -2382,9 +2383,39 @@ final class AppModel: ObservableObject {
+     func finishFirstPaint(for botId: String? = nil) {
+         guard slimFirstPaint, botId == nil || botId == selectedBotId else { return }
+         slimFirstPaint = false
++        firstPaintStep = nil
+         republishWindow()
+     }
+ 
++    /// The first block of a slim window on its way to the full one.
++    private var firstPaintStep: String?
++    /// Bumped by every run and every thread reset, so a run left over from an
++    /// earlier visit stops instead of stepping this one's window.
++    private var firstPaintRun = 0
++
++    /// `finishFirstPaint` one message a frame. In one pass the rest of the
++    /// window was two long markdown answers with tables, laid out in a single
++    /// transaction: a freeze of about 900 ms just after Perf Long Replies
++    /// showed. Only while that chat is still the open one.
++    func finishFirstPaintGradually(for botId: String) async {
++        firstPaintRun += 1
++        let run = firstPaintRun
++        while slimFirstPaint, run == firstPaintRun, botId == selectedBotId {
++            let full = TranscriptBlocks.window(
++                transcriptBlocks,
++                startId: windowStarts[botId]
++            )
++            var start = min(transcriptWindow.hidden, transcriptBlocks.count)
++            guard start > full.hidden else { break }
++            repeat { start -= 1 } while start > full.hidden && !transcriptBlocks[start].isMessage
++            firstPaintStep = transcriptBlocks[start].id
++            republishWindow()
++            try? await Task.sleep(nanoseconds: 16_000_000)
++        }
++        guard run == firstPaintRun else { return }
++        finishFirstPaint(for: botId)
++    }
++
+     private func publishTranscript(force: Bool = false) {
+         let now = Date()
+         let since = now.timeIntervalSince(lastTranscriptPublish)
+@@ -3873,6 +3904,8 @@ final class AppModel: ObservableObject {
+         resumePoint = nil
+         sendTickAtOpen = sendTick
+         slimFirstPaint = false
++        firstPaintStep = nil
++        firstPaintRun += 1
+         // A snapshot of the old thread still owed would be taken of the next.
+         snapshotTimer?.cancel()
+         snapshotTimer = nil
+diff --git a/macos/Sources/UsefulBotApp/ChatView.swift b/macos/Sources/UsefulBotApp/ChatView.swift
+index d409b8e..28a2389 100644
+--- a/macos/Sources/UsefulBotApp/ChatView.swift
++++ b/macos/Sources/UsefulBotApp/ChatView.swift
+@@ -530,7 +530,7 @@ struct ChatView: View {
+         // frames must not leave the window slim for the rest of the visit.
+         Task { @MainActor [model] in
+             try? await Task.sleep(nanoseconds: 34_000_000)
+-            model.finishFirstPaint(for: botId)
++            await model.finishFirstPaintGradually(for: botId)
+         }
+     }
+ 

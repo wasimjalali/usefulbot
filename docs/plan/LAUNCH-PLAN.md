@@ -172,19 +172,12 @@ The bots are the brand. Make them feel cute and premium.
     v1.0.0 snapshot; GitHub detects the license as AGPL-3.0.
   - The #144 lows are fixed. v1.0.0 is built locally (`macos/dist/release`), with nothing
     uploaded.
-  - Waiting on the owner:
-    - The go to publish.
-    - Deleting the stray private repo `useful-bot-source-delete-me`.
-    - Restoring `devin-dist-prompt.md` (macOS blocks agents from reading the Trash).
-    - Installing Xcode (the Dock icon).
+  - The owner gave the go to publish v1.0.0 on 2026-09-29, after the PR 6 perf check. The stray
+    repo is deleted. Still open: installing Xcode (the Dock icon).
 
-- **Before starting:** put `devin-dist-prompt.md` back from
-  `~/.Trash/useful-bot-root-cleanup-2026-09-28/` into `docs/plan/`.
-
-- **Clean-Mac check:** install and update E2E on a clean Mac, from `devin-dist-prompt.md` (the
-  Devin macOS VM). PR 1's root cleanup moved that untracked prompt to
-  `~/.Trash/useful-bot-root-cleanup-2026-09-28/devin-dist-prompt.md`. Put it back as
-  `docs/plan/devin-dist-prompt.md` and commit it before this PR starts.
+- **Clean-Mac check: dropped (owner's call, 2026-09-29).** The Devin macOS VM run and its
+  `devin-dist-prompt.md` are no longer part of launch; the prompt was lost from the Trash. Checks
+  run on this Mac instead.
 - **PR #144 lows:** fix every open low listed in its description.
 - **Release repo:** create the public repo `wasimjalali/useful-bot-releases` and publish v1.0.0
   (`npm run release:mac`), only on Wasim's go. Then remove `data-release="soon"` from
@@ -216,6 +209,12 @@ The bots are the brand. Make them feel cute and premium.
 - **After a breach:** fix it, or raise the budget in `perf/budgets.json` in a reviewed edit that
   says why.
 - **Done when:** both runs pass and their records are committed. Then launch.
+- **Done 2026-09-29 (PR #162), run on this Mac:** markdown tables moved from `Grid` to a cached
+  `TableLayout` (the long-replies chat opens in about 500 ms instead of 1,311). A no-snapshot landing
+  that could stick is fixed, and the harness now samples CPU during each launch. Only `main` was
+  checked, since no other branch was open. The clean PASS was at 19:36. The final run at 20:04 had no
+  breaches but was INCONCLUSIVE from a 2-second macOS burst, and the owner accepted it. Details:
+  `evals/results/2026-09-29-prelaunch-perf-fixes.md`.
 
 ## Order
 

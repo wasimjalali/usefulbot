@@ -1076,11 +1076,10 @@ struct SettingsPopUpLabel: View {
     }
 }
 
-/// Links that only exist once the public releases repo does. Until then the
-/// rows that need them stay hidden.
+/// Links into the public releases repo, github.com/wasimjalali/useful-bot-releases.
 enum ReleaseLinks {
-    /// Flip when github.com/wasimjalali/useful-bot-releases is public.
-    static let releasesRepoLive = false
+    /// On since v1.0.0 (2026-09-29). The rows that need the repo hide when it's false.
+    static let releasesRepoLive = true
     static let contactAddress = "hello@usefulbuild.com"
     static let contactMail = URL(string: "mailto:hello@usefulbuild.com")!
 

@@ -41,7 +41,12 @@ cleanup, and it runs on schedule. Try it first with Test run. Web search is buil
 | Leaves your Mac | What you ask goes to the model provider you connect, and to the apps a bot uses for you |
 | Tracking | None. No analytics, no crash reports, no ads |
 
-The download goes live on [bot.usefulbuild.com](https://bot.usefulbuild.com) with the first release.
+**[Download for Mac](https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.zip)**, or
+install from Terminal:
+
+```sh
+curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/install.sh | sh
+```
 
 # Development
 

@@ -164,8 +164,8 @@ struct ChatMarkdownView: View, Equatable {
 
 /// A pipe table as a real grid.
 ///
-/// `Grid` keeps the columns aligned across rows without measuring anything by
-/// hand. The table takes the width the transcript column offers and no more:
+/// `TableLayout` keeps the columns aligned across rows. The table takes the
+/// width the transcript column offers and no more:
 /// columns size to their content while there is room, and once there is not,
 /// cells wrap and the rows grow taller. Nothing is pinned to its content width,
 /// because a table that insists on it turns a long cell into a sideways scroll
@@ -177,21 +177,22 @@ struct MarkdownTableView: View {
     let inline: (String) -> AttributedString
 
     var body: some View {
-        Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
-            GridRow {
-                ForEach(Array(table.headers.enumerated()), id: \.offset) { index, cell in
-                    cellView(cell, column: index, header: true)
-                }
+        // Row by row, every row as wide as the header (the parser pads and
+        // trims them).
+        TableLayout(columns: table.headers.count) {
+            ForEach(Array(table.headers.enumerated()), id: \.offset) { index, cell in
+                cellView(cell, column: index, header: true)
             }
             // Body rows carry no fill. The header band is what separates the
             // titles from the data; striping the rest only adds noise to a
             // grid whose rules already say where each row ends.
             ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
-                Divider().gridCellUnsizedAxes(.horizontal)
-                GridRow {
-                    ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
-                        cellView(cell, column: index, header: false)
-                    }
+                ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
+                    cellView(cell, column: index, header: false)
+                        // The rule above each body row, drawn by its cells:
+                        // every cell spans its column and the row's height,
+                        // so the pieces meet in one line.
+                        .overlay(alignment: .top) { Divider() }
                 }
             }
         }
@@ -213,18 +214,14 @@ struct MarkdownTableView: View {
             .font(header ? Theme.font(DesignTokens.FontSize.chatBody, .semibold) : nil)
             .multilineTextAlignment(textAlignment(alignment))
             // Wraps rather than truncating or forcing the column wider. No
-            // width cap: the Grid shares out what the column has, and a cell
-            // that cannot fit its line takes another one.
+            // width cap: the layout shares out what the column has, and a
+            // cell that cannot fit its line takes another one.
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: frameAlignment(alignment))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            // Only the header stretches, and only because its band has to be
-            // even when one title wraps and the others do not. Body cells are
-            // left to their natural height: making every cell greedy left the
-            // grid reporting less height than it drew, and the next row in the
-            // transcript was laid out over the bottom of the table.
-            .modifier(FillRowHeight(active: header))
+            // The layout hands every cell its column's width and its row's
+            // height, so the header band is even when one title wraps.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment(alignment).topAligned)
             .background(header ? Theme.C.sunken : Color.clear)
     }
 
@@ -245,18 +242,111 @@ struct MarkdownTableView: View {
     }
 }
 
-/// Stretch to the row's height, or leave the view alone. Applying
-/// `maxHeight: .infinity` to every cell makes the whole grid greedy; this
-/// keeps it to the cells that actually need an even band.
-private struct FillRowHeight: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        if active {
-            content.frame(maxHeight: .infinity)
-        } else {
-            content
+private extension Alignment {
+    /// The same horizontal alignment, at the top of the row.
+    var topAligned: Alignment {
+        switch horizontal {
+        case .center: return .top
+        case .trailing: return .topTrailing
+        default: return .topLeading
         }
+    }
+}
+
+/// The table's cells in rows of `columns`, each column as wide as its widest
+/// line while the table fits, and wrapped to a fair share once it does not.
+///
+/// It replaced a `Grid`, which sized every cell by probing it at several
+/// widths on every layout pass, over and over inside the bubble's own probes.
+/// On the long markdown chat (Perf Long Replies) that was about a second of
+/// layout per chat open and again once the rest of the window mounted
+/// (evals/results/2026-09-29-prelaunch-perf-fixes.md). Here each cell is
+/// measured once for its line width and once per column width, and the
+/// result is kept for the width it was asked at.
+struct TableLayout: Layout {
+    let columns: Int
+
+    struct Cache {
+        /// Each column's widest single line, cells' padding included.
+        var ideal: [CGFloat]
+        var byWidth: [CGFloat: (widths: [CGFloat], heights: [CGFloat])] = [:]
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        var ideal = Array(repeating: CGFloat(0), count: columns)
+        for (index, cell) in subviews.enumerated() where columns > 0 {
+            let column = index % columns
+            ideal[column] = max(ideal[column], ceil(cell.sizeThatFits(.unspecified).width))
+        }
+        return Cache(ideal: ideal)
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = makeCache(subviews: subviews)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        let (widths, heights) = measure(proposal.width, subviews: subviews, cache: &cache)
+        return CGSize(width: widths.reduce(0, +), height: heights.reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let (widths, heights) = measure(bounds.width, subviews: subviews, cache: &cache)
+        var y = bounds.minY
+        for row in heights.indices {
+            var x = bounds.minX
+            for column in widths.indices {
+                let index = row * columns + column
+                guard index < subviews.count else { return }
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(width: widths[column], height: heights[row])
+                )
+                x += widths[column]
+            }
+            y += heights[row]
+        }
+    }
+
+    /// Column widths for `available`, then each row's height at them.
+    private func measure(
+        _ available: CGFloat?,
+        subviews: Subviews,
+        cache: inout Cache
+    ) -> (widths: [CGFloat], heights: [CGFloat]) {
+        guard columns > 0 else { return ([], []) }
+        let natural = cache.ideal.reduce(0, +)
+        let width = (available.map { $0.isFinite ? $0 : natural } ?? natural).rounded(.down)
+        // Every offer at or above the natural width lays out the same, so they share one entry.
+        let key = min(width, natural)
+        if let known = cache.byWidth[key] { return known }
+        var widths = cache.ideal
+        if natural > width {
+            // Columns under an even share keep their line; the others split
+            // what is left evenly, until no more fit under the share.
+            var open = Set(widths.indices)
+            var remaining = width
+            while !open.isEmpty {
+                let share = remaining / CGFloat(open.count)
+                let fitting = open.filter { cache.ideal[$0] <= share }
+                if fitting.isEmpty {
+                    for column in open { widths[column] = max(0, share.rounded(.down)) }
+                    break
+                }
+                for column in fitting {
+                    remaining -= cache.ideal[column]
+                    open.remove(column)
+                }
+            }
+        }
+        let rows = (subviews.count + columns - 1) / columns
+        var heights = Array(repeating: CGFloat(0), count: rows)
+        for (index, cell) in subviews.enumerated() {
+            let size = cell.sizeThatFits(ProposedViewSize(width: widths[index % columns], height: nil))
+            heights[index / columns] = max(heights[index / columns], ceil(size.height))
+        }
+        cache.byWidth[key] = (widths, heights)
+        return (widths, heights)
     }
 }
 

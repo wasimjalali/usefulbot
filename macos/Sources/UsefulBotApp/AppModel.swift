@@ -1025,8 +1025,13 @@ final class AppModel: ObservableObject {
                     backgroundWorking = false
                     swapped = true
                 }
+                var sawFirstReplayEvent = false
                 for try await event in client.stream(sessionId: sessionId, markHistory: true, historyMarker: marker) {
                     guard generation == loadGeneration else { return }
+                    if !sawFirstReplayEvent {
+                        sawFirstReplayEvent = true
+                        PerfHarness.shared?.mark("replay_first_event", ["bot": bot.id, "baselineRows": baseline])
+                    }
                     historyRemaining = event.historyRemaining
                     // A send started while this replay was running. It owns the
                     // projection from that moment, and the row it painted must
@@ -1095,6 +1100,7 @@ final class AppModel: ObservableObject {
                     }
                 }
                 if marker != nil { historyRemaining = 0 }
+                PerfHarness.shared?.mark("replay_done", ["bot": bot.id])
                 if !swapped, sendTasks[bot.id] == nil {
                     // The session holds fewer messages than the rows on screen
                     // (it was cleared or replaced elsewhere). The replay is
@@ -1124,6 +1130,7 @@ final class AppModel: ObservableObject {
             loadSucceeded = true
             completedLoad = generation
             publishTranscript(force: true)
+            PerfHarness.shared?.mark("publish_done", ["bot": bot.id])
             if sendTasks[bot.id] != nil {
                 pending = true
             } else {

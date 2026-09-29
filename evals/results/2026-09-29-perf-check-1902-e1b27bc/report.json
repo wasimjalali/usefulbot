@@ -1,0 +1,990 @@
+{
+  "breaches": [
+    "cold_no_snapshot_replies: visual_ms median 13049.7 > 6680.0",
+    "cold_no_snapshot_replies: visual_ms worst 13049.7 > 10020.0",
+    "cold_no_snapshot_replies: app_ms median 12860.4 > 6140.0",
+    "cold_no_snapshot_replies: app_ms worst 12860.4 > 9210.0",
+    "cold_no_snapshot_replies: landing ended by cap"
+  ],
+  "command": "check --quick",
+  "facts": {
+    "app": "/Users/wasimjalali/Desktop/useful-bot/macos/dist/Useful Bot.app",
+    "appSha256": "d65020a2108842620cbe41bb91ae61ba669df2203c2ebcbb17b7bf325cca792e",
+    "appSourcesMatch": true,
+    "busy": [],
+    "externalCpu": 15,
+    "externalCpuDuringRun": [
+      [
+        "prep",
+        239,
+        [
+          "37% siriknowledged",
+          "30% WindowServer",
+          "26% syspolicyd"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-1",
+        160,
+        [
+          "36% WindowServer",
+          "20% coreaudiod",
+          "16% tccd"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-1",
+        145,
+        [
+          "30% WindowServer",
+          "18% tccd",
+          "17% coreaudiod"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-2",
+        117,
+        [
+          "28% WindowServer",
+          "16% tccd"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-2",
+        147,
+        [
+          "32% WindowServer",
+          "19% coreaudiod",
+          "19% tccd"
+        ]
+      ],
+      [
+        "cold-cold_no_snapshot_tools-1",
+        120,
+        [
+          "44% WindowServer",
+          "36% ControlCenter",
+          "10% cmux"
+        ]
+      ],
+      [
+        "cold-cold_no_snapshot_replies-1",
+        152,
+        [
+          "32% WindowServer",
+          "20% coreaudiod",
+          "17% tccd"
+        ]
+      ],
+      [
+        "warm",
+        114,
+        [
+          "32% WindowServer",
+          "31% ControlCenter",
+          "15% python"
+        ]
+      ],
+      [
+        "end",
+        139,
+        [
+          "43% WindowServer",
+          "38% ControlCenter",
+          "11% cmux"
+        ]
+      ]
+    ],
+    "gitDirty": true,
+    "gitSha": "e1b27bc0417276bb9098375cc76acd703aec5f66",
+    "loadAverage": "{ 2.90 2.72 2.56 }",
+    "lowPowerMode": false,
+    "macOS": "26.6.2",
+    "machine": "Apple M1",
+    "memoryFree": "50%",
+    "power": "AC",
+    "screenLocked": false,
+    "thermal": "Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded",
+    "webMode": "production"
+  },
+  "failures": [],
+  "kind": "check",
+  "samples": [
+    {
+      "app_ms": 832.577291,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "cold_launch",
+      "events": 65,
+      "first_change_ms": 451.544416,
+      "last_change_t": 120203694227583,
+      "launch": "cold-cold_first_open_tools-1",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 730.038583,
+      "reason": "settled",
+      "rows": 6,
+      "source": "disk_snapshot",
+      "stall_ms": 1.310666,
+      "t0": 120202843476625,
+      "visual_ms": 850.750958
+    },
+    {
+      "app_ms": 301.173791,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "cold_first_open_tools",
+      "events": 3445,
+      "first_change_ms": 214.725958,
+      "last_change_t": 120206548007458,
+      "launch": "cold-cold_first_open_tools-1",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 247.313708,
+      "reason": "settled",
+      "rows": 35,
+      "source": "disk_snapshot",
+      "stall_ms": 145.368625,
+      "t0": 120206211196875,
+      "visual_ms": 336.810583
+    },
+    {
+      "app_ms": 869.591166,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "cold_launch",
+      "events": 65,
+      "first_change_ms": 506.867166,
+      "last_change_t": 120215926180291,
+      "launch": "cold-cold_first_open_replies-1",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 755.996583,
+      "reason": "settled",
+      "rows": 6,
+      "source": "disk_snapshot",
+      "stall_ms": 1.273917,
+      "t0": 120215038635500,
+      "visual_ms": 887.544791
+    },
+    {
+      "app_ms": 336.32425,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "cold_first_open_replies",
+      "events": 14407,
+      "first_change_ms": 249.956417,
+      "last_change_t": 120218866348833,
+      "launch": "cold-cold_first_open_replies-1",
+      "prewarmOverlap": true,
+      "problems": [],
+      "publish_done_ms": 285.048292,
+      "reason": "settled",
+      "rows": 26,
+      "source": "disk_snapshot",
+      "stall_ms": 186.286458,
+      "t0": 120218475206708,
+      "visual_ms": 391.142125
+    },
+    {
+      "app_ms": 843.196375,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "cold_launch",
+      "events": 65,
+      "first_change_ms": 450.693166,
+      "last_change_t": 120228445318958,
+      "launch": "cold-cold_first_open_tools-2",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 723.557458,
+      "reason": "settled",
+      "rows": 6,
+      "source": "disk_snapshot",
+      "stall_ms": 1.280666,
+      "t0": 120227577649500,
+      "visual_ms": 867.669458
+    },
+    {
+      "app_ms": 281.109625,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "cold_first_open_tools",
+      "events": 3445,
+      "first_change_ms": 208.908917,
+      "last_change_t": 120231279227208,
+      "launch": "cold-cold_first_open_tools-2",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 229.637292,
+      "reason": "settled",
+      "rows": 35,
+      "source": "disk_snapshot",
+      "stall_ms": 139.300167,
+      "t0": 120230966907958,
+      "visual_ms": 312.31925
+    },
+    {
+      "app_ms": 840.515917,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "cold_launch",
+      "events": 65,
+      "first_change_ms": 454.001125,
+      "last_change_t": 120240613626708,
+      "launch": "cold-cold_first_open_replies-2",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 722.245083,
+      "reason": "settled",
+      "rows": 6,
+      "source": "disk_snapshot",
+      "stall_ms": 1.332083,
+      "t0": 120239742789458,
+      "visual_ms": 870.83725
+    },
+    {
+      "app_ms": 347.809833,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "cold_first_open_replies",
+      "events": 14407,
+      "first_change_ms": 249.448,
+      "last_change_t": 120243521040083,
+      "launch": "cold-cold_first_open_replies-2",
+      "prewarmOverlap": true,
+      "problems": [],
+      "publish_done_ms": 296.231583,
+      "reason": "settled",
+      "rows": 26,
+      "source": "disk_snapshot",
+      "stall_ms": 196.014,
+      "t0": 120243122497708,
+      "visual_ms": 398.542375
+    },
+    {
+      "app_ms": 1531.470083,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "cold_no_snapshot_tools",
+      "events": 3445,
+      "first_change_ms": 130.311125,
+      "last_change_t": 120257362390041,
+      "launch": "cold-cold_no_snapshot_tools-1",
+      "prewarmOverlap": true,
+      "problems": [],
+      "publish_done_ms": 1360.108625,
+      "reason": "settled",
+      "replay_done_ms": 1359.778041,
+      "replay_first_event_ms": 163.923791,
+      "rows": 35,
+      "source": "none",
+      "stall_ms": 66.08075,
+      "t0": 120255658378875,
+      "visual_ms": 1704.011166
+    },
+    {
+      "app_ms": 12860.425209,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "cold_no_snapshot_replies",
+      "events": 14407,
+      "first_change_ms": 95.221167,
+      "last_change_t": 120282226918958,
+      "launch": "cold-cold_no_snapshot_replies-1",
+      "prewarmOverlap": true,
+      "problems": [],
+      "publish_done_ms": 3704.368459,
+      "reason": "cap",
+      "replay_done_ms": 3704.045292,
+      "replay_first_event_ms": 165.650084,
+      "rows": 26,
+      "source": "none",
+      "stall_ms": 4.957084,
+      "t0": 120269177229541,
+      "visual_ms": 13049.689417
+    },
+    {
+      "app_ms": 187.174959,
+      "blocks": 7,
+      "bot": "Perf Short B",
+      "case": "warm_switch_short",
+      "events": 75,
+      "first_change_ms": 95.767792,
+      "last_change_t": 120310726266291,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 108.849584,
+      "reason": "settled",
+      "rows": 6,
+      "source": "stash_snapshot",
+      "stall_ms": 1.303334,
+      "t0": 120310510031041,
+      "visual_ms": 216.23525
+    },
+    {
+      "app_ms": 187.801125,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "warm_switch_short",
+      "events": 65,
+      "first_change_ms": 118.554833,
+      "last_change_t": 120313525597416,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 110.754625,
+      "reason": "settled",
+      "rows": 6,
+      "source": "stash_snapshot",
+      "stall_ms": 1.259834,
+      "t0": 120313305008583,
+      "visual_ms": 220.588833
+    },
+    {
+      "app_ms": 212.427083,
+      "blocks": 7,
+      "bot": "Perf Short B",
+      "case": "warm_switch_short",
+      "events": 75,
+      "first_change_ms": 125.98975,
+      "last_change_t": 120316276991500,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 131.668333,
+      "reason": "settled",
+      "rows": 6,
+      "source": "stash_snapshot",
+      "stall_ms": 1.273708,
+      "t0": 120316031305125,
+      "visual_ms": 245.686375
+    },
+    {
+      "app_ms": 216.329958,
+      "blocks": 7,
+      "bot": "Perf Short A",
+      "case": "warm_switch_short",
+      "events": 65,
+      "first_change_ms": 129.97475,
+      "last_change_t": 120319077145458,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 138.551042,
+      "reason": "settled",
+      "rows": 6,
+      "source": "stash_snapshot",
+      "stall_ms": 1.337208,
+      "t0": 120318826549208,
+      "visual_ms": 250.59625
+    },
+    {
+      "app_ms": 275.682875,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 216.259083,
+      "last_change_t": 120321976219708,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 225.442542,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 145.772958,
+      "t0": 120321675189708,
+      "visual_ms": 301.03
+    },
+    {
+      "app_ms": 341.457583,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 251.037542,
+      "last_change_t": 120328102702708,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 290.287667,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 184.2055,
+      "t0": 120327705696833,
+      "visual_ms": 397.005875
+    },
+    {
+      "app_ms": 233.981459,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 177.910584,
+      "last_change_t": 120334008169875,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 184.449542,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 138.863958,
+      "t0": 120333749497541,
+      "visual_ms": 258.672334
+    },
+    {
+      "app_ms": 335.066083,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 257.288625,
+      "last_change_t": 120339900994708,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 283.428583,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 149.303042,
+      "t0": 120339518003125,
+      "visual_ms": 382.991583
+    },
+    {
+      "app_ms": 267.207917,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 201.747,
+      "last_change_t": 120345675096750,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 216.897083,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 141.65725,
+      "t0": 120345388547458,
+      "visual_ms": 286.549292
+    },
+    {
+      "app_ms": 337.541167,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 245.011834,
+      "last_change_t": 120351702064791,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 285.787834,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 191.449167,
+      "t0": 120351310717166,
+      "visual_ms": 391.347625
+    },
+    {
+      "app_ms": 293.68675,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 205.137333,
+      "last_change_t": 120357691772958,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 241.924417,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 140.581792,
+      "t0": 120357368801333,
+      "visual_ms": 322.971625
+    },
+    {
+      "app_ms": 339.255708,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 245.672958,
+      "last_change_t": 120363584623208,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 287.665167,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 187.6615,
+      "t0": 120363192488708,
+      "visual_ms": 392.1345
+    },
+    {
+      "app_ms": 270.30225,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 214.435583,
+      "last_change_t": 120369509929750,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 220.094458,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 136.756875,
+      "t0": 120369211825250,
+      "visual_ms": 298.1045
+    },
+    {
+      "app_ms": 341.329,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 266.291708,
+      "last_change_t": 120375398523208,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 289.26125,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 150.649333,
+      "t0": 120375010945000,
+      "visual_ms": 387.578208
+    },
+    {
+      "app_ms": 269.559291,
+      "blocks": 36,
+      "bot": "Perf Long Tools",
+      "case": "warm_return_tools",
+      "events": 3445,
+      "first_change_ms": 196.242916,
+      "last_change_t": 120381392327791,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 216.907416,
+      "reason": "settled",
+      "rows": 35,
+      "source": "stash_snapshot",
+      "stall_ms": 138.13375,
+      "t0": 120381092132750,
+      "visual_ms": 300.195041
+    },
+    {
+      "app_ms": 346.618125,
+      "blocks": 27,
+      "bot": "Perf Long Replies",
+      "case": "warm_return_replies",
+      "events": 14407,
+      "first_change_ms": 254.216334,
+      "last_change_t": 120387300392375,
+      "launch": "warm",
+      "prewarmOverlap": false,
+      "problems": [],
+      "publish_done_ms": 295.384667,
+      "reason": "settled",
+      "rows": 26,
+      "source": "stash_snapshot",
+      "stall_ms": 190.520333,
+      "t0": 120386902228666,
+      "visual_ms": 398.163709
+    }
+  ],
+  "seconds": 230,
+  "sheets": {
+    "cold_first_open_replies": {
+      "file": "sheet-cold_first_open_replies.jpg",
+      "frameOffsetsMs": [
+        99,
+        134,
+        152,
+        249,
+        267,
+        285,
+        399,
+        435
+      ],
+      "launch": "cold-cold_first_open_replies-2"
+    },
+    "cold_first_open_tools": {
+      "file": "sheet-cold_first_open_tools.jpg",
+      "frameOffsetsMs": [
+        180,
+        215,
+        232,
+        250,
+        337
+      ],
+      "launch": "cold-cold_first_open_tools-1"
+    },
+    "cold_launch": {
+      "file": "sheet-cold_launch.jpg",
+      "frameOffsetsMs": [
+        507,
+        523,
+        539,
+        556,
+        574,
+        590,
+        607,
+        625,
+        642,
+        659,
+        676,
+        693,
+        711,
+        731,
+        747,
+        764,
+        781,
+        798,
+        815,
+        831,
+        848,
+        865,
+        888,
+        921
+      ],
+      "launch": "cold-cold_first_open_replies-1"
+    },
+    "cold_no_snapshot_replies": {
+      "file": "sheet-cold_no_snapshot_replies.jpg",
+      "frameOffsetsMs": [
+        -4,
+        578,
+        1098,
+        1617,
+        2135,
+        2650,
+        3781,
+        4300,
+        4818,
+        5320,
+        5838,
+        6359,
+        6884,
+        7389,
+        7907,
+        8431,
+        8945,
+        9449,
+        9966,
+        10487,
+        11005,
+        11507,
+        12025,
+        13084
+      ],
+      "launch": "cold-cold_no_snapshot_replies-1"
+    },
+    "cold_no_snapshot_tools": {
+      "file": "sheet-cold_no_snapshot_tools.jpg",
+      "frameOffsetsMs": [
+        -50,
+        130,
+        199,
+        267,
+        320,
+        372,
+        441,
+        493,
+        561,
+        613,
+        666,
+        736,
+        788,
+        841,
+        909,
+        961,
+        1033,
+        1084,
+        1387,
+        1458,
+        1510,
+        1560,
+        1632,
+        1737
+      ],
+      "launch": "cold-cold_no_snapshot_tools-1"
+    },
+    "warm_return_replies": {
+      "file": "sheet-warm_return_replies.jpg",
+      "frameOffsetsMs": [
+        104,
+        254,
+        271,
+        289,
+        398
+      ],
+      "launch": "warm"
+    },
+    "warm_return_tools": {
+      "file": "sheet-warm_return_tools.jpg",
+      "frameOffsetsMs": [
+        205,
+        222,
+        238,
+        255,
+        274,
+        323
+      ],
+      "launch": "warm"
+    },
+    "warm_switch_short": {
+      "file": "sheet-warm_switch_short.jpg",
+      "frameOffsetsMs": [
+        130,
+        147,
+        164,
+        251
+      ],
+      "launch": "warm"
+    }
+  },
+  "stamp": "2026-09-29-190232",
+  "summary": {
+    "cold_first_open_replies": {
+      "app_ms": {
+        "best": 336.3,
+        "median": 342.1,
+        "n": 2,
+        "worst": 347.8
+      },
+      "n": 2,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "disk_snapshot"
+      ],
+      "stall_ms": {
+        "best": 186.3,
+        "median": 191.2,
+        "n": 2,
+        "worst": 196.0
+      },
+      "visual_ms": {
+        "best": 391.1,
+        "median": 394.8,
+        "n": 2,
+        "worst": 398.5
+      }
+    },
+    "cold_first_open_tools": {
+      "app_ms": {
+        "best": 281.1,
+        "median": 291.1,
+        "n": 2,
+        "worst": 301.2
+      },
+      "n": 2,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "disk_snapshot"
+      ],
+      "stall_ms": {
+        "best": 139.3,
+        "median": 142.3,
+        "n": 2,
+        "worst": 145.4
+      },
+      "visual_ms": {
+        "best": 312.3,
+        "median": 324.6,
+        "n": 2,
+        "worst": 336.8
+      }
+    },
+    "cold_launch": {
+      "app_ms": {
+        "best": 832.6,
+        "median": 841.9,
+        "n": 4,
+        "worst": 869.6
+      },
+      "n": 4,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "disk_snapshot"
+      ],
+      "stall_ms": {
+        "best": 1.3,
+        "median": 1.3,
+        "n": 4,
+        "worst": 1.3
+      },
+      "visual_ms": {
+        "best": 850.8,
+        "median": 869.3,
+        "n": 4,
+        "worst": 887.5
+      }
+    },
+    "cold_no_snapshot_replies": {
+      "app_ms": {
+        "best": 12860.4,
+        "median": 12860.4,
+        "n": 1,
+        "worst": 12860.4
+      },
+      "n": 1,
+      "problems": [],
+      "reasons": [
+        "cap"
+      ],
+      "sources": [
+        "none"
+      ],
+      "stall_ms": {
+        "best": 5.0,
+        "median": 5.0,
+        "n": 1,
+        "worst": 5.0
+      },
+      "visual_ms": {
+        "best": 13049.7,
+        "median": 13049.7,
+        "n": 1,
+        "worst": 13049.7
+      }
+    },
+    "cold_no_snapshot_tools": {
+      "app_ms": {
+        "best": 1531.5,
+        "median": 1531.5,
+        "n": 1,
+        "worst": 1531.5
+      },
+      "n": 1,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "none"
+      ],
+      "stall_ms": {
+        "best": 66.1,
+        "median": 66.1,
+        "n": 1,
+        "worst": 66.1
+      },
+      "visual_ms": {
+        "best": 1704.0,
+        "median": 1704.0,
+        "n": 1,
+        "worst": 1704.0
+      }
+    },
+    "warm_return_replies": {
+      "app_ms": {
+        "best": 335.1,
+        "median": 340.3,
+        "n": 6,
+        "worst": 346.6
+      },
+      "n": 6,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "stash_snapshot"
+      ],
+      "stall_ms": {
+        "best": 149.3,
+        "median": 185.9,
+        "n": 6,
+        "worst": 191.4
+      },
+      "visual_ms": {
+        "best": 383.0,
+        "median": 391.7,
+        "n": 6,
+        "worst": 398.2
+      }
+    },
+    "warm_return_tools": {
+      "app_ms": {
+        "best": 234.0,
+        "median": 269.9,
+        "n": 6,
+        "worst": 293.7
+      },
+      "n": 6,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "stash_snapshot"
+      ],
+      "stall_ms": {
+        "best": 136.8,
+        "median": 139.7,
+        "n": 6,
+        "worst": 145.8
+      },
+      "visual_ms": {
+        "best": 258.7,
+        "median": 299.1,
+        "n": 6,
+        "worst": 323.0
+      }
+    },
+    "warm_switch_short": {
+      "app_ms": {
+        "best": 187.2,
+        "median": 200.1,
+        "n": 4,
+        "worst": 216.3
+      },
+      "n": 4,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "sources": [
+        "stash_snapshot"
+      ],
+      "stall_ms": {
+        "best": 1.3,
+        "median": 1.3,
+        "n": 4,
+        "worst": 1.3
+      },
+      "visual_ms": {
+        "best": 216.2,
+        "median": 233.1,
+        "n": 4,
+        "worst": 250.6
+      }
+    }
+  }
+}
