@@ -1,7 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { BODY_LIMIT_BYTES, COMPLETION_BODY_LIMIT_BYTES, MAX_ACTIVE_IMAGE, MAX_ACTIVE_SEARCH, MAX_MESSAGE_COUNT, MAX_TOOL_SCHEMAS, MAX_TOOL_SCHEMA_BYTES, POLICY_NODE_MAJOR, ROUTER_HOST, ROUTER_PORT } from "../../shared/policy.ts";
 import { IMAGE_DATA_URL, MAX_IMAGE_DATA_URL_CHARS, MAX_IMAGE_PARTS } from "../../shared/attachments.ts";
@@ -923,19 +921,6 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
   return server;
 }
 
-// Compared as real paths: import.meta.url percent-encodes a space, so a
-// release installed under "Application Support" never matched a plain
-// `file://` + argv[1] and the router exited without starting.
-function isEntryPoint(): boolean {
-  if (!process.argv[1]) return false;
-  try {
-    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
-  } catch {
-    // A main path that doesn't exist (a runner's virtual entry) is not this file.
-    return false;
-  }
-}
-
-if (isEntryPoint()) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   startRouter();
 }

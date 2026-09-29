@@ -124,6 +124,9 @@ execFileSync("sh", [path.join(ROOT, "macos/build-app.sh")], {
   },
 });
 
+// Run the staged runtime the app will ship before anything is signed or zipped.
+execFileSync(process.execPath, [path.join(ROOT, "scripts/smoke-runtime.mjs"), path.join(ROOT, "macos/.build/runtime-stage")], { stdio: "inherit" });
+
 const APP = path.join(ROOT, "macos/dist/Useful Bot.app");
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 // The code directory hash, which names exactly one build of the app.

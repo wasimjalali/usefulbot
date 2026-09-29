@@ -294,7 +294,7 @@ the screen sides and bottom, `Radius.xl` on all four corners, grabber, title row
 
 | State | Treatment |
 |-------|-----------|
-| Empty | Mockup "New chat": avatar 64 pt and "What can I do for you?" centered, then the permission-aware copy from `ChatView.emptyCopy` verbatim, 15 pt `inkMuted`, centered, max 448 pt. Group chats use the group copy. The onboarding card on a fresh bot sits under it. |
+| Empty | Mockup "New chat": avatar 64 pt and "What can I do for you?" centered, then four everyday prompt tiles (`StarterPrompt.everyday`, 2 by 2, a tap fills the composer and sends nothing; macOS replaced the permission-aware copy with them on 2026-09-29). Group chats use the group copy. The onboarding card on a fresh bot sits under it. |
 | Loading | Header first, then bubble-shaped skeletons (two left, one right) at real bubble sizes, transcript streams in as it arrives. Never hide the transcript while loading. |
 | Error (turn) | Mockup "Failed turn": a status card in `dangerSoft` with a 40% `danger` edge, title "The model didn't answer", the provider's reason in `inkMuted`, secondary "Retry" (posts a fresh session, as the Mac). |
 | Error (stream) | "Session ended" or "Interrupted" line in `inkMuted` under the last turn, with "Resume". |
@@ -737,7 +737,7 @@ column, so every row below is now resolved on the boards.
 | R15 | Settings structure | "Settings": Account, Appearance (with Language, Time zone), Bots, "This Mac" with Version | 9.4: General, Appearance, Providers, Connectors, Usage, Devices, About | Spec | Groups renamed and reordered per 1.11; "This Mac" becomes Devices; Version moves to About. |
 | R16 | Provider detail | "Providers": list only, a "Reviewer" task model removed earlier | 9.4, 10: provider detail push per mode | Spec | Detail screen specified in 1.12. |
 | R17 | Search | "Search": inline page, bot results only; empty copy "No matching bots." | 9.1, 10: sheet; scope includes labels, descriptions, sections, recent conversation titles; grouped by bot | Spec | Behavior and copy ("No matching chats or bots."). Field-on-top layout kept. |
-| R18 | Empty chat copy | "New chat": title only | 9.2: permission-aware empty copy verbatim | Spec | Add the `emptyCopy` paragraph under the title, centered. Centered layout kept (owner request). |
+| R18 | Empty chat copy | "New chat": title only | 9.2: everyday prompt tiles (was the permission-aware copy until 2026-09-29) | Spec | Add the `StarterPrompt.everyday` tiles under the title, centered. Centered layout kept (owner request). |
 | R19 | Model chip placement | Inside the composer, right of "+", left of Send | 9.2: pickers as iOS menus or sheets (placement unstated) | Mockup | Owner-approved layout. |
 | R20 | Sheet shape | Floating sheets, all corners rounded (owner request) | A.5: sheet detents per content | Both | Floating shape from the mockup, detents from the spec. |
 | R21 | Signed-out and credential-invalid | No mockups | 10 screen 18, 4.8 | Spec | Defined in 1.18 and 1.1; boards "Signed out" and "Pair again" added. |

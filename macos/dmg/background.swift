@@ -1,8 +1,8 @@
 // Draws the DMG window's background: the Useful canvas, a quiet arrow from
-// the app to Applications and one line of instruction. scripts/release-mac.mjs
-// runs it at 1x and 2x (dmgbuild combines background.png and background@2x.png
-// into one HiDPI image), so the picture always matches the layout in
-// macos/dmg/settings.py.
+// the app to Applications, one line of instruction and the Open Anyway step.
+// scripts/release-mac.mjs runs it at 1x and 2x (dmgbuild combines
+// background.png and background@2x.png into one HiDPI image), so the picture
+// always matches the layout in macos/dmg/settings.py.
 //
 //   swift macos/dmg/background.swift <out.png> <scale> <Inter-SemiBold.ttf>
 import CoreGraphics
@@ -93,6 +93,30 @@ context.scaleBy(x: 1, y: -1)
 context.textPosition = .zero
 CTLineDraw(line, context)
 context.restoreGState()
+
+// The next step, two muted lines under the first. Kept inside the 400 points
+// of window content.
+// Regular weight so they read as secondary. Only Inter SemiBold ships in the
+// repo, so these use the system UI font (always present on a Mac).
+let noteFont = CTFontCreateUIFontForLanguage(.system, 12, nil)!
+let noteLines = [
+    (text: "Then, if macOS blocks it:", baseline: CGFloat(358)),
+    (text: "System Settings \u{203A} Privacy & Security \u{203A} Open Anyway", baseline: CGFloat(376)),
+]
+for note in noteLines {
+    let attributed = NSAttributedString(string: note.text, attributes: [
+        NSAttributedString.Key(kCTFontAttributeName as String): noteFont,
+        NSAttributedString.Key(kCTForegroundColorAttributeName as String): rgb(0x707070),
+    ])
+    let noteLine = CTLineCreateWithAttributedString(attributed)
+    let noteBounds = CTLineGetBoundsWithOptions(noteLine, .useOpticalBounds)
+    context.saveGState()
+    context.translateBy(x: (width - noteBounds.width) / 2 - noteBounds.minX, y: note.baseline)
+    context.scaleBy(x: 1, y: -1)
+    context.textPosition = .zero
+    CTLineDraw(noteLine, context)
+    context.restoreGState()
+}
 
 guard let image = context.makeImage(),
       let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: args[1]) as CFURL, UTType.png.identifier as CFString, 1, nil)

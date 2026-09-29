@@ -54,6 +54,17 @@ outlive the app, so after an update they would otherwise keep serving from repla
 `app/.eve/`, which a copy never touches. Everything else stays in `~/.useful-bot` as before. Nothing
 leaves the Mac.
 
+With no `~/.useful-bot/config.json` but Useful Bot items still in the Keychain (the data folder was
+deleted, the app kept), plain setup exits 3 and the app reruns it with `--rebuild-orphaned`, which
+replaces every credential and refuses if a config exists; the app then restarts its services so none
+keeps the old tokens.
+
+`npm run release:mac` runs `scripts/smoke-runtime.mjs` on the staged runtime right after the build and
+before signing. It copies the stage under a temp folder named `Application Support/app` (a path with a
+space), seeds a config with the staged `setup-local.mjs` against a file-backed Keychain stub, starts the
+staged router with the staged Node and fails the release unless `/health/live` answers within 15 s.
+Eve and the web service are not covered: their ports are fixed and they read the real Keychain.
+
 A dev build (`npm run build:app`) has no runtime and no feed: it runs the checkout and never updates
 itself. A stored `repoPath` default also keeps a release on that checkout.
 

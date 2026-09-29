@@ -78,7 +78,7 @@ export PATH=/usr/local/bin:$PATH
 
 That writes Keychain items and `~/.useful-bot/config.json` digests. Reveal the device token in Keychain Access (`com.usefulbot.device.desktop`). Install the OpenCode Go key as `com.usefulbot.opencode-go` yourself. This repo never prints those values.
 
-An install from before a credential existed (the reviewer token, `com.usefulbot.router.reviewer`, was added on 2026-09-15) picks it up with `setup-local.mjs --add-missing`, which mints only what is absent and keeps every other token. `--rotate` replaces all of them. Restart the services afterwards: the router reads the credential table at boot.
+An install from before a credential existed (the reviewer token, `com.usefulbot.router.reviewer`, was added on 2026-09-15) picks it up with `setup-local.mjs --add-missing`, which mints only what is absent and keeps every other token. `--rotate` replaces all of them. `--rebuild-orphaned` is the release app's own recovery: with no config but Keychain items left by an earlier install, it rebuilds them all, and it refuses if a config exists. Restart the services afterwards: the router reads the credential table at boot.
 
 ```sh
 export PATH=/usr/local/bin:$PATH

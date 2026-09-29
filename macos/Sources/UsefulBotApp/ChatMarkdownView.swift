@@ -142,7 +142,9 @@ struct ChatMarkdownView: View, Equatable {
                 var run = AttributedString(span.text)
                 if Self.linkTarget(span.href) != nil {
                     run.link = Self.linkTarget(span.href)
-                    run.foregroundColor = Theme.C.ink
+                    // Blue, so a link reads as one at a glance: selectable
+                    // text keeps the I-beam over it, so the pointer can't say so.
+                    run.foregroundColor = Theme.C.link
                     run.underlineStyle = .single
                 }
                 attributed.append(run)

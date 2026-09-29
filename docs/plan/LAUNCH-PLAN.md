@@ -176,6 +176,10 @@ The bots are the brand. Make them feel cute and premium.
   - The owner gave the go to publish v1.0.0 on 2026-09-29, after the PR 6 perf check. The stray
     repo is deleted. Still open: installing Xcode (the Dock icon).
 
+- **Install flow (owner's call, 2026-09-29, after the clean-install test):** until the app is
+  notarized, the one-line Terminal command is the primary install on the site (no Open Anyway
+  step) and "Download for Mac" (the DMG) is the secondary button. The DMG window names the Open
+  Anyway step under the drag arrow.
 - **Clean-Mac check: dropped (owner's call, 2026-09-29).** The Devin macOS VM run and its
   `devin-dist-prompt.md` are no longer part of launch; the prompt was lost from the Trash. Checks
   run on this Mac instead.

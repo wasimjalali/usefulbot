@@ -58,6 +58,9 @@ if [ -n "${UB_FEED_URL:-}" ]; then
   /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $UB_FEED_URL" "$APP/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $UB_ED_PUBLIC_KEY" "$APP/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :SUEnableAutomaticChecks bool true" "$APP/Contents/Info.plist"
+  # Every 6 hours rather than Sparkle's daily default, so the account menu's
+  # Update now shows up the same day a release lands.
+  /usr/libexec/PlistBuddy -c "Add :SUScheduledCheckInterval integer 21600" "$APP/Contents/Info.plist"
 fi
 # Where Settings > Feedback posts (services/feedback). Every build carries it;
 # UB_FEEDBACK_URL points a build at another Worker.

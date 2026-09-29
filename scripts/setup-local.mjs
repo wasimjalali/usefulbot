@@ -94,6 +94,11 @@ const rotate = process.argv.includes("--rotate");
 // how an install from before the reviewer credential picks it up without a
 // full --rotate, which would also invalidate the device and desktop tokens.
 const addMissing = process.argv.includes("--add-missing");
+// Rebuilds every credential like --rotate, but only when there is no config:
+// the Keychain items an earlier install left behind (its data folder deleted,
+// the app kept) are used by nothing, so replacing them breaks nothing. With a
+// config present it refuses, so the app can never rotate a working install.
+const rebuildOrphaned = process.argv.includes("--rebuild-orphaned");
 const pairPhone = process.argv.includes("--pair-phone");
 const revokePhone = process.argv.includes("--revoke-phone");
 const rotatePhone = process.argv.includes("--rotate-phone");
@@ -111,11 +116,11 @@ const fail = (payload) => {
 };
 
 const phoneOps = [pairPhone, revokePhone, rotatePhone, printOnly].filter(Boolean).length;
-if (rotate && addMissing) {
-  fail({ error: "conflicting_flags", flags: ["--rotate", "--add-missing"], exit: 2 });
+if ([rotate, addMissing, rebuildOrphaned].filter(Boolean).length > 1) {
+  fail({ error: "conflicting_flags", flags: ["--rotate", "--add-missing", "--rebuild-orphaned"], exit: 2 });
 }
-if (phoneOps > 0 && (rotate || addMissing)) {
-  fail({ error: "conflicting_flags", flags: ["--rotate/--add-missing", "--pair-phone/--revoke-phone/--rotate-phone/--print-pairing"], exit: 2 });
+if (phoneOps > 0 && (rotate || addMissing || rebuildOrphaned)) {
+  fail({ error: "conflicting_flags", flags: ["--rotate/--add-missing/--rebuild-orphaned", "--pair-phone/--revoke-phone/--rotate-phone/--print-pairing"], exit: 2 });
 }
 if (phoneOps > 1) {
   fail({ error: "conflicting_flags", flags: ["--pair-phone", "--revoke-phone", "--rotate-phone", "--print-pairing"], exit: 2 });
@@ -127,13 +132,21 @@ if (hostOverride && !pairPhone && !printOnly && !rotatePhone) {
   fail({ error: "conflicting_flags", hint: "--host belongs to the pairing payloads", exit: 2 });
 }
 
+if (rebuildOrphaned && existsSync(configPath)) {
+  fail({ error: "config_exists", config: configPath, hint: "use --add-missing, or --rotate to replace every credential" });
+}
+
 const existingItems = KEYCHAIN_ITEMS.filter(hasKeychain);
-if (!rotate && !addMissing && phoneOps === 0 && (existsSync(configPath) || existingItems.length > 0)) {
+if (!rotate && !addMissing && !rebuildOrphaned && phoneOps === 0 && (existsSync(configPath) || existingItems.length > 0)) {
+  const hasConfig = existsSync(configPath);
   fail({
     error: "already_configured",
-    config: existsSync(configPath) ? configPath : null,
+    config: hasConfig ? configPath : null,
     keychainItems: existingItems,
     hint: "rerun with --add-missing to mint only what is absent, or --rotate to replace every credential",
+    // Exit 3 is the orphaned case (Keychain items, no config), the one the
+    // app answers with --rebuild-orphaned; exit 1 means a config is there.
+    exit: hasConfig ? 1 : 3,
   });
 }
 
@@ -384,7 +397,7 @@ async function main() {
       ...config.credentials.filter((row) => !(row && row.revokedAt === null && replaced.has(row.id))),
       ...minted.filter((entry) => entry.row).map((entry) => entry.row),
     ];
-  } else if (rotate) {
+  } else if (rotate || rebuildOrphaned) {
     const previous = existsSync(configPath) ? readExistingConfig() : null;
     const phoneActive = previous?.credentials?.some?.(
       (row) => isPhoneRow(row) && row.revokedAt === null
@@ -425,6 +438,12 @@ async function main() {
   writeFileSync(tmpConfigPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmpConfigPath, 0o600);
 
+  // Checked again before any Keychain write, so a config written meanwhile
+  // (a setup run from a terminal) is never left pointing at replaced keys.
+  if (rebuildOrphaned && existsSync(configPath)) {
+    try { unlinkSync(tmpConfigPath); } catch { /* ignore */ }
+    fail({ error: "config_exists", config: configPath, hint: "a config appeared during the rebuild; rerun with --add-missing" });
+  }
   try {
     for (const entry of minted) {
       putKeychain(entry.keychain, entry.token);
@@ -479,6 +498,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     rotated: rotate,
+    rebuilt: rebuildOrphaned || undefined,
     added: addMissing ? minted.map((entry) => entry.keychain) : undefined,
     backup,
     config: configPath,

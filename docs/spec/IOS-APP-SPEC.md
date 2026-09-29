@@ -772,7 +772,7 @@ Legend: **P** parity, **R** reduced (stated), **+** iOS addition (not parity), *
 | Approval cards | P with provenance (+): bot avatar and name, working directory, the full preview scrollable (no six-line cap on the phone), expiry countdown (five minutes per SPEC.md). Approve = class A bound to the displayed `{id, actionSha256}`. States: pending, approving, approved, denied, expired, "resolved on your Mac" (404 on decide), "changed" (hash mismatch: re-presented, never sent). |
 | Owner questions, proposal cards | P (proposal confirm class A; owner-question answer class B when the bot is `full_access`) |
 | Onboarding card on fresh bot | P |
-| Empty states with permission-aware copy | P (reuse `emptyCopy` strings verbatim; "on this Mac" wording retained, it is still true) |
+| Empty states with everyday prompt tiles | P (reuse `StarterPrompt.everyday`; macOS dropped the permission-aware `emptyCopy` on 2026-09-29) |
 
 ### 9.3 Details/settings panes
 
@@ -876,7 +876,7 @@ unambiguous (destructive actions stay behind confirm). No custom gesture inventi
 
 | State | Requirement |
 |-------|-------------|
-| Empty | Permission-aware empty copy ported verbatim; Bots list empty state = "Create your first bot" (macOS copy). |
+| Empty | Everyday prompt tiles ported from macOS (`StarterPrompt.everyday`); Bots list empty state = "Create your first bot" (macOS copy). |
 | Loading | Skeleton rows matching bubble geometry (not spinners); header loads first, transcript streams in. |
 | Error | Inline, muted, retry where sensible; error copy from the shared error taxonomy plus §8.4 codes. |
 | Pressed | Pressed opacity/highlight per tokens; no hover on iOS. |

@@ -6,7 +6,7 @@ import SwiftUI
 /// (scripts/release-mac.mjs writes it); a dev build from `build:app` has none,
 /// so it never offers to replace itself with a published release.
 @MainActor
-final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
+final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = AppUpdater()
 
     /// What Settings > About says about updates.
@@ -36,7 +36,7 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
         super.init()
         let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? ""
         guard !feed.isEmpty else { return }
-        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil)
+        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
         self.controller = controller
         let updater = controller.updater
         updater.publisher(for: \.canCheckForUpdates)
@@ -49,6 +49,45 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
             .receive(on: DispatchQueue.main)
             .assign(to: &$allowsAutomaticUpdates)
         lastChecked = updater.lastUpdateCheckDate
+        // An update found in an earlier session stays offered after a
+        // relaunch, until it is installed, skipped or gone from the feed.
+        // No extra feed check here: one would push Sparkle's own scheduled
+        // check (and so automatic downloads) back on every launch.
+        if let found = UserDefaults.standard.dictionary(forKey: Self.foundKey),
+           let version = found["version"] as? String,
+           let build = found["build"] as? String,
+           Self.isNewer(build) {
+            status = .available(version)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.foundKey)
+        }
+    }
+
+    private static let foundKey = "ub.update.found"
+
+    /// Sparkle's build numbers are the commit count, so newer is larger.
+    private nonisolated static func isNewer(_ build: String) -> Bool {
+        guard let found = Int(build), let current = Int(Self.build) else { return false }
+        return found > current
+    }
+
+    private func forgetFound() {
+        UserDefaults.standard.removeObject(forKey: Self.foundKey)
+    }
+
+    /// The version waiting to be installed, found or already downloaded.
+    var pendingVersion: String? {
+        switch status {
+        case .available(let version), .ready(let version): return version
+        default: return nil
+        }
+    }
+
+    /// The menu's Update now: installs a downloaded update, or opens
+    /// Sparkle's window for one it has only found.
+    func updateNow() {
+        guard canCheckForUpdates else { return }
+        if isReady { installUpdate() } else { checkForUpdates() }
     }
 
     /// False in a dev build, which has no feed.
@@ -63,7 +102,10 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     func checkForUpdates() {
         guard let controller else { return }
-        if !isReady { status = .checking }
+        // While Sparkle is busy or already showing an update, this only
+        // brings its window forward and no new cycle reports back, so the
+        // status stays what it is rather than sticking at checking.
+        if !isReady, pendingVersion == nil, !controller.updater.sessionInProgress { status = .checking }
         controller.checkForUpdates(nil)
     }
 
@@ -83,7 +125,9 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     nonisolated func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
+        let build = item.versionString
         Task { @MainActor in
+            UserDefaults.standard.set(["version": version, "build": build], forKey: Self.foundKey)
             if case .ready = self.status { return }
             self.status = .available(version)
         }
@@ -91,7 +135,29 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
 
     nonisolated func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
         Task { @MainActor in
+            self.forgetFound()
             if !self.isReady { self.status = .upToDate }
+        }
+    }
+
+    // MARK: - SPUStandardUserDriverDelegate
+
+    /// Gentle reminders: a scheduled check that finds an update while the
+    /// owner is working lights the menu's Update now instead of opening
+    /// Sparkle's window, which would otherwise return every 6 hours after a
+    /// Remind Me Later. Right after launch Sparkle still shows it.
+    nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        immediateFocus
+    }
+
+    /// Skip This Version ends the offer; Remind Me Later keeps it.
+    nonisolated func updater(_ updater: SPUUpdater, userDidMake choice: SPUUserUpdateChoice, forUpdate updateItem: SUAppcastItem, state: SPUUserUpdateState) {
+        guard choice == .skip else { return }
+        Task { @MainActor in
+            self.forgetFound()
+            self.status = .idle
         }
     }
 
