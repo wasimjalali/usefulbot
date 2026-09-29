@@ -1,0 +1,433 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-12T20:56:42.228Z",
+  "nodeVersion": "24.11.1",
+  "eveBind": {
+    "host": "127.0.0.1",
+    "port": 4327
+  },
+  "stateDir": ".eve/ (permitted S2 fallback; gitignored, mode to be set 0700 in service config)",
+  "traces": "child env EVE_TRACES=off",
+  "records": [
+    {
+      "case": "health-anonymous",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 200,
+        "headers": {
+          "connection": "keep-alive",
+          "content-type": "application/json",
+          "date": "Sat, 12 Sep 2026 20:56:39 GMT",
+          "keep-alive": "timeout=5",
+          "transfer-encoding": "chunked"
+        },
+        "body": {
+          "ok": true,
+          "status": "ready",
+          "workflowId": "workflow//eve//workflowEntry"
+        },
+        "text": "{\"ok\":true,\"status\":\"ready\",\"workflowId\":\"workflow//eve//workflowEntry\"}"
+      }
+    },
+    {
+      "case": "info-anonymous-denied",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 401,
+        "body": {
+          "code": "unauthorized",
+          "error": "Authorization is required for this route.",
+          "ok": false
+        }
+      }
+    },
+    {
+      "case": "session-anonymous-denied",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 401,
+        "body": {
+          "code": "unauthorized",
+          "error": "Authorization is required for this route.",
+          "ok": false
+        }
+      }
+    },
+    {
+      "case": "authenticated-create",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 202,
+        "body": {
+          "ok": true,
+          "sessionId": "wrun_01M2BPGWWBW39TWYSCCXSZSGRW",
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "case": "ownership-other-principal",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 403,
+        "body": {
+          "code": "forbidden",
+          "error": "session_ownership",
+          "ok": false
+        },
+        "text": "{\"code\":\"forbidden\",\"error\":\"session_ownership\",\"ok\":false}"
+      }
+    },
+    {
+      "case": "tool-result",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 200,
+        "sawPlant": true,
+        "sawTool": true,
+        "eventCount": 8,
+        "sample": [
+          {
+            "data": {
+              "runtime": {
+                "agentId": "useful-bot",
+                "agentName": "useful-bot",
+                "eveVersion": "0.54.3"
+              },
+              "trace": {
+                "decision": {
+                  "action": "record",
+                  "recordInputs": true,
+                  "recordOutputs": true
+                },
+                "spanId": "9a2d7e5843cdf0a0",
+                "traceFlags": 1,
+                "traceId": "df5e98c5b6e0197696532f27a0e4fba5"
+              }
+            },
+            "type": "session.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.237Z",
+              "id": "evt_01M2BPGX1DSDP8JXXTA5C4E873",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          },
+          {
+            "data": {
+              "sequence": 0,
+              "turnId": "turn_0",
+              "trace": {
+                "decision": {
+                  "action": "record",
+                  "recordInputs": true,
+                  "recordOutputs": true
+                },
+                "spanId": "9a2d7e5843cdf0a0",
+                "traceFlags": 1,
+                "traceId": "df5e98c5b6e0197696532f27a0e4fba5"
+              }
+            },
+            "type": "turn.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.238Z",
+              "id": "evt_01M2BPGX1EVBZ07G3CK5JWCA09",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          },
+          {
+            "data": {
+              "message": "Call plant_read and report the token.",
+              "parts": [
+                {
+                  "text": "Call plant_read and report the token.",
+                  "type": "text"
+                }
+              ],
+              "sequence": 0,
+              "turnId": "turn_0"
+            },
+            "type": "message.received",
+            "meta": {
+              "at": "2026-09-12T20:56:40.238Z",
+              "id": "evt_01M2BPGX1EVBZ07G3CK5JWCA0A",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          },
+          {
+            "data": {
+              "modelId": "s2-fixture/s2-fixture",
+              "sequence": 0,
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "step.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.239Z",
+              "id": "evt_01M2BPGX1FDYY50B5RSBP2CT8W",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          },
+          {
+            "data": {
+              "callId": "call_plant",
+              "inputTextDelta": "{}",
+              "sequence": 0,
+              "stepIndex": 0,
+              "toolName": "plant_read",
+              "turnId": "turn_0"
+            },
+            "type": "action.input.appended",
+            "meta": {
+              "at": "2026-09-12T20:56:40.257Z",
+              "id": "evt_01M2BPGX213NW6CQPVWHSE2X0Z",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          },
+          {
+            "data": {
+              "actions": [
+                {
+                  "callId": "call_plant",
+                  "input": {},
+                  "kind": "tool-call",
+                  "toolName": "plant_read"
+                }
+              ],
+              "sequence": 0,
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "actions.requested",
+            "meta": {
+              "at": "2026-09-12T20:56:40.258Z",
+              "id": "evt_01M2BPGX223CRS18PNPKM4TRAS",
+              "deliveryIds": [
+                "fea18f76-f3d0-432c-8521-7e9865097b4e"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case": "cancel",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "cancelStatus": 202,
+        "cancelBody": {
+          "ok": true,
+          "sessionId": "wrun_01M2BPGX2SV817AKSCTC3R878X",
+          "status": "accepted"
+        },
+        "eventCount": 8,
+        "sample": [
+          {
+            "data": {
+              "runtime": {
+                "agentId": "useful-bot",
+                "agentName": "useful-bot",
+                "eveVersion": "0.54.3"
+              },
+              "trace": {
+                "decision": {
+                  "action": "record",
+                  "recordInputs": true,
+                  "recordOutputs": true
+                },
+                "spanId": "4b75597f61c69cc3",
+                "traceFlags": 1,
+                "traceId": "cd31df23e8715f144bc894c442696fc6"
+              }
+            },
+            "type": "session.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.398Z",
+              "id": "evt_01M2BPGX6EMVF2GX8Z4VZFFPYM",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "sequence": 0,
+              "turnId": "turn_0",
+              "trace": {
+                "decision": {
+                  "action": "record",
+                  "recordInputs": true,
+                  "recordOutputs": true
+                },
+                "spanId": "4b75597f61c69cc3",
+                "traceFlags": 1,
+                "traceId": "cd31df23e8715f144bc894c442696fc6"
+              }
+            },
+            "type": "turn.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.398Z",
+              "id": "evt_01M2BPGX6EMVF2GX8Z4VZFFPYN",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "message": "Call plant_read then wait.",
+              "parts": [
+                {
+                  "text": "Call plant_read then wait.",
+                  "type": "text"
+                }
+              ],
+              "sequence": 0,
+              "turnId": "turn_0"
+            },
+            "type": "message.received",
+            "meta": {
+              "at": "2026-09-12T20:56:40.398Z",
+              "id": "evt_01M2BPGX6EMVF2GX8Z4VZFFPYP",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "modelId": "s2-fixture/s2-fixture",
+              "sequence": 0,
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "step.started",
+            "meta": {
+              "at": "2026-09-12T20:56:40.399Z",
+              "id": "evt_01M2BPGX6FCVCYNZKQY0D8X879",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "callId": "call_plant",
+              "inputTextDelta": "{}",
+              "sequence": 0,
+              "stepIndex": 0,
+              "toolName": "plant_read",
+              "turnId": "turn_0"
+            },
+            "type": "action.input.appended",
+            "meta": {
+              "at": "2026-09-12T20:56:40.408Z",
+              "id": "evt_01M2BPGX6RC8GJ7WGHVT9A4A4N",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "actions": [
+                {
+                  "callId": "call_plant",
+                  "input": {},
+                  "kind": "tool-call",
+                  "toolName": "plant_read"
+                }
+              ],
+              "sequence": 0,
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "actions.requested",
+            "meta": {
+              "at": "2026-09-12T20:56:40.409Z",
+              "id": "evt_01M2BPGX6SC4W18S9KPKQ2AATN",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "result": {
+                "callId": "call_plant",
+                "kind": "tool-result",
+                "output": {
+                  "token": "S2-TOOL-PLANT-001",
+                  "executions": 2
+                },
+                "toolName": "plant_read"
+              },
+              "sequence": 0,
+              "status": "completed",
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "action.result",
+            "meta": {
+              "at": "2026-09-12T20:56:40.410Z",
+              "id": "evt_01M2BPGX6TM96QRQ0X5FV33EG8",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          },
+          {
+            "data": {
+              "finishReason": "tool-calls",
+              "sequence": 0,
+              "stepIndex": 0,
+              "turnId": "turn_0"
+            },
+            "type": "step.completed",
+            "meta": {
+              "at": "2026-09-12T20:56:40.410Z",
+              "id": "evt_01M2BPGX6TM96QRQ0X5FV33EG9",
+              "deliveryIds": [
+                "1abe1809-3936-4150-af1d-400b359d1c33"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "case": "reconnect-no-resubmit",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "status": 200,
+        "eventCount": 7,
+        "resubmitted": false
+      }
+    },
+    {
+      "case": "secret-not-in-logs",
+      "status": "PASS",
+      "note": "",
+      "evidence": {
+        "leakedSecret": false
+      }
+    }
+  ]
+}

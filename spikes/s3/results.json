@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-12T20:56:42.414Z",
+  "nodeVersion": "24.11.1",
+  "records": [
+    {
+      "case": "backend-selection",
+      "status": "PASS",
+      "note": "neither microsandbox nor docker is installed; just-bash is explicit non-VM and every bash/write_file call requires approval",
+      "evidence": {
+        "backend": "just-bash",
+        "isolation": "non-vm",
+        "approvalRequired": true,
+        "evidenceId": "s3-non-vm-default",
+        "reason": "neither microsandbox nor docker is installed; just-bash is explicit non-VM and every bash/write_file call requires approval",
+        "binaries": {
+          "docker": false,
+          "microsandbox": false
+        }
+      }
+    },
+    {
+      "case": "approval-enforcement",
+      "status": "PASS",
+      "note": "deny, expiry, modified hash, replay and restart cases",
+      "evidence": {
+        "code": 0,
+        "stdout": "✔ deny never executes (1.089959ms)\n✔ expired pending never executes (0.210792ms)\n✔ modified arguments are a hash mismatch (0.14275ms)\n✔ approved action runs once and replay is rejected (0.125791ms)\n✔ restart invalidates unused approvals (0.13275ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 77.013708\n",
+        "stderr": ""
+      }
+    },
+    {
+      "case": "no-vm-claimed",
+      "status": "PASS",
+      "note": "in-memory just-bash is not a VM",
+      "evidence": {
+        "isolation": "non-vm",
+        "backend": "just-bash"
+      }
+    }
+  ]
+}

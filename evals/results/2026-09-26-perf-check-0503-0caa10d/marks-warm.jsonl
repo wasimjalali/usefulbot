@@ -1,0 +1,15 @@
+{"ev":"app_init","pid":36048,"run":"warm-f0eff8fe","t":795568589285791}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"initial_selection","run":"warm-f0eff8fe","t":795569307810708}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"ready","modelId":"","modelLabel":"","run":"warm-f0eff8fe","t":795569772436875}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"warm-f0eff8fe","source":"disk_snapshot","t":795570078262166}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"step","index":0,"label":"warmup","name":"Perf Long Tools","run":"warm-f0eff8fe","t":795570104825958}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"select_start","run":"warm-f0eff8fe","t":795570104972458}
+{"blocks":36,"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"landed","events":3445,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":35,"run":"warm-f0eff8fe","source":"disk_snapshot","t":795570674705166}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":795570078262166,"run":"warm-f0eff8fe","stallMaxMs":431.02495800000003,"t":795572036861291}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"responsive","landedAt":795570674705166,"run":"warm-f0eff8fe","stallMaxMs":355.27787499999999,"t":795572120731958}
+{"bot":"2731d3ee-7c6e-42b7-aa54-b97d49e84cb0","ev":"step","index":2,"label":"warmup","name":"Perf Long Replies","run":"warm-f0eff8fe","t":795572279728291}
+{"bot":"2731d3ee-7c6e-42b7-aa54-b97d49e84cb0","ev":"select_start","run":"warm-f0eff8fe","t":795572428804500}
+{"ev":"prewarm_start","run":"warm-f0eff8fe","t":795573066894583}
+{"ev":"prewarm_end","run":"warm-f0eff8fe","t":795573136424166}
+{"ev":"abort","run":"warm-f0eff8fe","t":795604421434833,"why":"step 2: Perf Long Replies never landed"}
+{"blocks":27,"bot":"2731d3ee-7c6e-42b7-aa54-b97d49e84cb0","ev":"landed","events":14407,"fromCache":false,"fromSnapshot":false,"reason":"settled","rows":26,"run":"warm-f0eff8fe","source":"none","t":795604522593250}

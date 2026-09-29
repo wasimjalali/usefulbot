@@ -1,0 +1,22 @@
+{
+  "note": "The dev path (§7.3): phone credential signs in over loopback when phoneEnabled.",
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/session",
+    "headers": {
+      "origin": "http://127.0.0.1:4399",
+      "authorization": "Bearer contract-fixture-phone-token-32bytes"
+    }
+  },
+  "response": {
+    "status": 200,
+    "setCookie": true,
+    "json": {
+      "ok": true,
+      "profile": "phone",
+      "expiresAt": 1790028655362,
+      "csrfToken": "<csrfToken>",
+      "credentialExpiresAt": "2026-10-21T10:10:37.912Z"
+    }
+  }
+}

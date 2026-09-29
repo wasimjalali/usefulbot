@@ -1,0 +1,19 @@
+{
+  "note": "Tailnet class never auto-sessions: a Bearer token must POST first.",
+  "request": {
+    "method": "GET",
+    "path": "/api/auth/session",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false
+    }
+  }
+}

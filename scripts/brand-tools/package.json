@@ -1,0 +1,11 @@
+{
+  "name": "useful-bot-brand-tools",
+  "version": "1.0.0",
+  "private": true,
+  "engines": { "node": ">=24.11.1 <25" },
+  "devDependencies": {
+    "opentype.js": "2.0.0",
+    "sharp": "0.35.4",
+    "svgo": "4.1.0"
+  }
+}

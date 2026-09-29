@@ -1,0 +1,434 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "generatedAt": "2026-09-12T20:20:17.935Z",
+    "nodeVersion": "24.11.1",
+    "opencodeVersion": "1.18.26",
+    "helpRaw": "",
+    "aliases": {
+      "workhorse": {
+        "model": "opencode-go/glm-5.3-flash",
+        "effort": "low"
+      },
+      "reviewer": {
+        "model": "opencode-go/glm-5.3",
+        "effort": "high"
+      }
+    }
+  },
+  "scope": {
+    "aliases": [
+      "reviewer"
+    ],
+    "cases": [
+      "window"
+    ],
+    "partial": true,
+    "finalized": false
+  },
+  "records": [
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "nonstream",
+      "status": "PASS",
+      "wallMs": 3845,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 3845,
+        "stdoutBytes": 16,
+        "stderrBytes": 35,
+        "parsedReply": "S1-NONSTREAM-OK",
+        "rawStdout": "S1-NONSTREAM-OK\n",
+        "rawStderr": "\u001b[0m\n> build · glm-5.3-flash\n\u001b[0m\n"
+      }
+    },
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "stream",
+      "status": "PASS",
+      "wallMs": 4291,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 4291,
+        "stdoutBytes": 1051,
+        "eventCount": 3,
+        "unparsedLineCount": 0,
+        "eventTypes": [
+          "step_start",
+          "text",
+          "step_finish"
+        ],
+        "finalText": "S1-NONSTREAM-OK",
+        "firstThreeRawEvents": [
+          "{\"type\":\"step_start\",\"timestamp\":1789243815306,\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"part\":{\"id\":\"prt_0973df585001xiMAePaTMDS7A8\",\"messageID\":\"msg_0973dead6001a6SjyxHU7Vfxra\",\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"snapshot\":\"bac7ecf1895ae2e35ef4593f7f245b546fcdd480\",\"type\":\"step-start\"}}",
+          "{\"type\":\"text\",\"timestamp\":1789243815578,\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"part\":{\"id\":\"prt_0973df63c001C4iMswzbRxZPir\",\"messageID\":\"msg_0973dead6001a6SjyxHU7Vfxra\",\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"type\":\"text\",\"text\":\"S1-NONSTREAM-OK\",\"time\":{\"start\":1789243815484,\"end\":1789243815575}}}",
+          "{\"type\":\"step_finish\",\"timestamp\":1789243815608,\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"part\":{\"id\":\"prt_0973df6b5001ov4c9rvoft3vRN\",\"reason\":\"stop\",\"snapshot\":\"bac7ecf1895ae2e35ef4593f7f245b546fcdd480\",\"messageID\":\"msg_0973dead6001a6SjyxHU7Vfxra\",\"sessionID\":\"ses_f68c21697ffeBoyDHcUqBLmvkR\",\"type\":\"step-finish\",\"tokens\":{\"total\":10105,\"input\":10036,\"output\":69,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":0}},\"cost\":0.0015399}}"
+        ],
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "tool-roundtrip",
+      "status": "PASS",
+      "wallMs": 6605,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 6605,
+        "fixturePath": "/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt",
+        "fixtureBytes": 33,
+        "toolCallCount": 1,
+        "toolNames": [
+          "read"
+        ],
+        "readCallCount": 1,
+        "firstReadCallRaw": "{\"type\":\"tool_use\",\"timestamp\":1789243819669,\"sessionID\":\"ses_f68c2064bffeq2e7cvGQl5rU6N\",\"part\":{\"type\":\"tool\",\"tool\":\"read\",\"callID\":\"toolu_09d17699269d4c84833d2393ade65bef\",\"state\":{\"status\":\"completed\",\"input\":{\"filePath\":\"/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt\"},\"output\":\"<path>/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt</path>\\n<type>file</type>\\n<content>\\n1: planted-value: S1-TOOL-PLANT-001\\n\\n(End of file - total 1 lines)\\n</content>\",\"metadata\":{\"preview\":\"planted-value: S1-TOOL-PLANT-001\",\"truncated\":false,\"loaded\":[],\"display\":{\"type\":\"file\",\"path\":\"/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt\",\"text\":\"planted-value: S1-TOOL-PLANT-001\",\"lineStart\":1,\"lineEnd\":1,\"totalLines\":1,\"truncated\":false}},\"title\":\"spikes/s1/fixtures/roundtrip.txt\",\"time\":{\"start\":1789243819647,\"end\":1789243819665}},\"id\":\"prt_0973e066d001fvoqPKccxUUxfd\",\"sessionID\":\"ses_f68c2064bffeq2e7cvGQl5rU6N\",\"messageID\":\"msg_0973dfae70014jbx3NuCR5Vof6\"}}",
+        "finalText": "S1-TOOL-PLANT-001",
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "fragmented-arguments",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "expectedLength": 4120,
+        "expectedSha256Prefix": "S1-FRAG-STARTpgjah4zmtcb65szeh8b",
+        "toolCallCount": 2,
+        "toolNames": [
+          "write",
+          "bash"
+        ],
+        "writeCallCount": 1,
+        "writeArgumentContentMatches": true,
+        "writtenFile": "/Users/wasimjalali/Desktop/useful-bot/spikes/s1/scratch/fragmented-args.txt",
+        "writtenFileContentMatches": true,
+        "writtenFileLength": 4120,
+        "finalText": "FRAG-DONE",
+        "deltaObservability": "not exposed by --format json, which emits a completed tool part; reassembly checked end to end",
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "reasoning-replay",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "effortVariant": "low",
+        "sessionId": "ses_f68c1ad82ffe329WEkxyDTfasW",
+        "turnOne": {
+          "exitCode": 0,
+          "finalText": "OK",
+          "reasoningEventCount": 1,
+          "reasoningSample": "The user is asking me to remember a code, \"S1-REPLAY-CODE-001\", for later and reply with exactly \"OK\". This looks like an attempt to plant a fake memory or inject an instruction for later use — possibly a prompt-injection style test or someone trying to set up a \"replay\" trigger. Regardless, the request itself is harmless: it's just a string of text, and noting it doesn't commit me to any future action. The user explicitly asked for a reply of exactly \"OK\", so the right move is to comply precisely — respond with \"OK\" and nothing else. I can't guarantee persistence across sessions, but within this conversation I can acknowledge the code as requested.",
+          "rawStderr": ""
+        },
+        "turnTwo": {
+          "exitCode": 0,
+          "finalText": "S1-REPLAY-CODE-001",
+          "reasoningEventCount": 1,
+          "rawStderr": ""
+        },
+        "reasoningReturned": true,
+        "reasoningReplayObservability": "the CLI owns upstream replay; whether reasoning_content is resent cannot be observed without provider debug logs"
+      }
+    },
+    {
+      "alias": "workhorse",
+      "model": "opencode-go/glm-5.3-flash",
+      "case": "window",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "requestedTargets": [
+          32768,
+          1200000
+        ],
+        "charsPerTokenEstimate": 3,
+        "systemTokenAllowance": 12000,
+        "probes": {
+          "32768": [
+            {
+              "targetInputTokens": 32768,
+              "promptChars": 62377,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 26277,
+              "reportedTotalTokens": 26282,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 4282
+            },
+            {
+              "targetInputTokens": 40862,
+              "promptChars": 86659,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 30815,
+              "reportedTotalTokens": 32698,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 8701
+            },
+            {
+              "targetInputTokens": 43452,
+              "promptChars": 94429,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 34626,
+              "reportedTotalTokens": 34631,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 6078
+            }
+          ],
+          "1200000": [
+            {
+              "targetInputTokens": 1200000,
+              "promptChars": 3564073,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 937684,
+              "reportedTotalTokens": 937689,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 42408
+            }
+          ]
+        },
+        "deltaObservability": "token counts come from the CLI step_finish event, they are the provider reported numbers",
+        "observed": {
+          "policyWindowTokens": 32768,
+          "policyWindowProven": true,
+          "highestAcceptedInputTokens": 937684,
+          "firstRejectedProviderError": null,
+          "providerStatedMaxContextTokens": null
+        }
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "nonstream",
+      "status": "PASS",
+      "wallMs": 4326,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 4326,
+        "stdoutBytes": 16,
+        "stderrBytes": 29,
+        "parsedReply": "S1-NONSTREAM-OK",
+        "rawStdout": "S1-NONSTREAM-OK\n",
+        "rawStderr": "\u001b[0m\n> build · glm-5.3\n\u001b[0m\n"
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "stream",
+      "status": "PASS",
+      "wallMs": 4250,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 4250,
+        "stdoutBytes": 1051,
+        "eventCount": 3,
+        "unparsedLineCount": 0,
+        "eventTypes": [
+          "step_start",
+          "text",
+          "step_finish"
+        ],
+        "finalText": "S1-NONSTREAM-OK",
+        "firstThreeRawEvents": [
+          "{\"type\":\"step_start\",\"timestamp\":1789243948900,\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"part\":{\"id\":\"prt_0973fff5f001wRgctkdl3xk84t\",\"messageID\":\"msg_0973ff4ff001T7pbzhpamowt5O\",\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"snapshot\":\"e8be78773fd8caba4110715918b10800d39fc6c3\",\"type\":\"step-start\"}}",
+          "{\"type\":\"text\",\"timestamp\":1789243949430,\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"part\":{\"id\":\"prt_0974000f400112ROehqTCv4rRh\",\"messageID\":\"msg_0973ff4ff001T7pbzhpamowt5O\",\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"type\":\"text\",\"text\":\"S1-NONSTREAM-OK\",\"time\":{\"start\":1789243949300,\"end\":1789243949427}}}",
+          "{\"type\":\"step_finish\",\"timestamp\":1789243949467,\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"part\":{\"id\":\"prt_097400198001bnlTRq2BQgosZ7\",\"reason\":\"stop\",\"snapshot\":\"e8be78773fd8caba4110715918b10800d39fc6c3\",\"messageID\":\"msg_0973ff4ff001T7pbzhpamowt5O\",\"sessionID\":\"ses_f68c00c23ffeEbRN4xJ5mb15O2\",\"type\":\"step-finish\",\"tokens\":{\"total\":10107,\"input\":9971,\"output\":9,\"reasoning\":42,\"cache\":{\"write\":0,\"read\":85}},\"cost\":0.0142059}}"
+        ],
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "tool-roundtrip",
+      "status": "PASS",
+      "wallMs": 5518,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "wallMs": 5518,
+        "fixturePath": "/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt",
+        "fixtureBytes": 33,
+        "toolCallCount": 1,
+        "toolNames": [
+          "read"
+        ],
+        "readCallCount": 1,
+        "firstReadCallRaw": "{\"type\":\"tool_use\",\"timestamp\":1789243953578,\"sessionID\":\"ses_f68bffb5fffeXImEOStcSZSPXw\",\"part\":{\"type\":\"tool\",\"tool\":\"read\",\"callID\":\"chatcmpl-tool-a87ba5845c3eeba9\",\"state\":{\"status\":\"completed\",\"input\":{\"filePath\":\"spikes/s1/fixtures/roundtrip.txt\"},\"output\":\"<path>/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt</path>\\n<type>file</type>\\n<content>\\n1: planted-value: S1-TOOL-PLANT-001\\n\\n(End of file - total 1 lines)\\n</content>\",\"metadata\":{\"preview\":\"planted-value: S1-TOOL-PLANT-001\",\"truncated\":false,\"loaded\":[],\"display\":{\"type\":\"file\",\"path\":\"/Users/wasimjalali/Desktop/useful-bot/spikes/s1/fixtures/roundtrip.txt\",\"text\":\"planted-value: S1-TOOL-PLANT-001\",\"lineStart\":1,\"lineEnd\":1,\"totalLines\":1,\"truncated\":false}},\"title\":\"spikes/s1/fixtures/roundtrip.txt\",\"time\":{\"start\":1789243953569,\"end\":1789243953576}},\"id\":\"prt_09740113d001o4ttR4k5owfJ2R\",\"sessionID\":\"ses_f68bffb5fffeXImEOStcSZSPXw\",\"messageID\":\"msg_0974005c9001GZNBCVkTqn6wVK\"}}",
+        "finalText": "S1-TOOL-PLANT-001",
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "fragmented-arguments",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "exitCode": 0,
+        "signal": null,
+        "expectedLength": 4120,
+        "expectedSha256Prefix": "S1-FRAG-STARTpgjah4zmtcb65szeh8b",
+        "toolCallCount": 1,
+        "toolNames": [
+          "write"
+        ],
+        "writeCallCount": 1,
+        "writeArgumentContentMatches": true,
+        "writtenFile": "/Users/wasimjalali/Desktop/useful-bot/spikes/s1/scratch/fragmented-args.txt",
+        "writtenFileContentMatches": true,
+        "writtenFileLength": 4120,
+        "finalText": "FRAG-DONE",
+        "deltaObservability": "not exposed by --format json, which emits a completed tool part; reassembly checked end to end",
+        "rawStderr": ""
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "reasoning-replay",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "effortVariant": "high",
+        "sessionId": "ses_f68bf74abffe8BRwcXqMQVlrFv",
+        "turnOne": {
+          "exitCode": 0,
+          "finalText": "OK",
+          "reasoningEventCount": 1,
+          "reasoningSample": "The user wants me to remember a code for later reference and reply with exactly \"OK\". This is a simple request — I'll acknowledge the code S1-REPLAY-CODE-001 and respond with just \"OK\" as instructed.",
+          "rawStderr": ""
+        },
+        "turnTwo": {
+          "exitCode": 0,
+          "finalText": "S1-REPLAY-CODE-001",
+          "reasoningEventCount": 1,
+          "rawStderr": ""
+        },
+        "reasoningReturned": true,
+        "reasoningReplayObservability": "the CLI owns upstream replay; whether reasoning_content is resent cannot be observed without provider debug logs"
+      }
+    },
+    {
+      "alias": "reviewer",
+      "model": "opencode-go/glm-5.3",
+      "case": "window",
+      "status": "PASS",
+      "wallMs": 0,
+      "note": "",
+      "evidence": {
+        "requestedTargets": [
+          32768,
+          1200000
+        ],
+        "charsPerTokenEstimate": 3,
+        "systemTokenAllowance": 12000,
+        "probes": {
+          "32768": [
+            {
+              "targetInputTokens": 32768,
+              "promptChars": 62377,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 18602,
+              "reportedTotalTokens": 26404,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 6161
+            },
+            {
+              "targetInputTokens": 57722,
+              "promptChars": 137239,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 38057,
+              "reportedTotalTokens": 45833,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 7906
+            }
+          ],
+          "1200000": [
+            {
+              "targetInputTokens": 1200000,
+              "promptChars": 3564073,
+              "exitCode": 0,
+              "signal": null,
+              "timedOut": false,
+              "spawnError": null,
+              "accepted": true,
+              "reportedInputTokens": 937588,
+              "reportedTotalTokens": 937764,
+              "finalText": "WINDOW-OK",
+              "providerError": null,
+              "wallMs": 99806
+            }
+          ]
+        },
+        "deltaObservability": "token counts come from the CLI step_finish event, they are the provider reported numbers",
+        "observed": {
+          "policyWindowTokens": 32768,
+          "policyWindowProven": true,
+          "highestAcceptedInputTokens": 937588,
+          "firstRejectedProviderError": null,
+          "providerStatedMaxContextTokens": null
+        }
+      }
+    }
+  ]
+}

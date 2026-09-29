@@ -1,0 +1,21 @@
+{
+  "note": "Use-side over tailnet while disabled: the gate answers 401 credential_invalid — the phone lands on its §4.8 terminal, not runtimeDown.",
+  "request": {
+    "method": "GET",
+    "path": "/api/status",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "cookie": "<sessionCookie>"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "credential_invalid"
+    }
+  }
+}

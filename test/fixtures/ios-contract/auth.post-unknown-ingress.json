@@ -1,0 +1,21 @@
+{
+  "note": "Real proxy material that is not the enrolled tailnet → unknown → 403.",
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/session",
+    "headers": {
+      "x-forwarded-for": "203.0.113.5",
+      "x-forwarded-proto": "https",
+      "tailscale-user-login": "someone-else@tailnet.example",
+      "authorization": "Bearer contract-fixture-phone-token-32bytes"
+    }
+  },
+  "response": {
+    "status": 403,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "ingress"
+    }
+  }
+}
