@@ -168,8 +168,8 @@ The bots are the brand. Make them feel cute and premium.
     license. Outside contributions come under the agreement in `CONTRIBUTING.md`.
   - Source: it goes public as snapshots in `wasimjalali/usefulbot` (renamed from useful-bot-source on the owner's call)
     (`scripts/publish-source.mjs`, `docs/distribution.md`), because this repo's history holds the
-    owner's personal Gmail and real-chat screenshots. That repo exists, private, with a clean first
-    commit. Flip it public after this PR merges.
+    owner's personal Gmail and real-chat screenshots. It went public on 2026-09-29 with the
+    v1.0.0 snapshot; GitHub detects the license as AGPL-3.0.
   - The #144 lows are fixed. v1.0.0 is built locally (`macos/dist/release`), with nothing
     uploaded.
   - Waiting on the owner:
@@ -201,8 +201,8 @@ The bots are the brand. Make them feel cute and premium.
 - **Wasim's own switch:** Wasim moves to the installed release as a clean first-time user. Back up
   `~/.useful-bot` and the repo `.eve` first.
 - **Source (was "Open source", superseded 2026-09-29):** the source is public as snapshots in
-  `wasimjalali/usefulbot` under the AGPL-3.0. **Hard gate:** flip that repo public
-  and run `scripts/publish-source.mjs` before the release ships, or the bots send people to a 404.
+  `wasimjalali/usefulbot` under the AGPL-3.0. **Done 2026-09-29:** the repo is public
+  with the v1.0.0 snapshot. Run `scripts/publish-source.mjs` again for each release.
   The landing chat shot's "Useful Bot is also open source." is accurate again under the AGPL.
 - **Done when:** a fresh Mac installs from the landing page, runs first run end to end, and takes
   an update.

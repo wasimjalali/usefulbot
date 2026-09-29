@@ -1,6 +1,52 @@
 # Useful Bot
 
-Local-first personal agent on [eve](https://github.com/vercel/eve) 0.54.3. Private repository. Not a Hermes replacement until the seven-day trial in the spec passes.
+A team of AI bots that lives on your Mac.
+
+Give each bot one job: writing, research, your inbox or your files. They run on the model you already
+pay for, work in the apps you connect and ask before they touch anything you haven't allowed.
+
+**[bot.usefulbuild.com](https://bot.usefulbuild.com)** · Open source under the [AGPL-3.0](LICENSE)
+
+![The Generalist bot explains what it can do, that it can set up other bots, where your data goes and that you can use any model.](site/public/shots/chat.png)
+
+## What you get
+
+**One bot for every job.** Make a bot for each part of your work and group them the way your week
+runs. Each keeps its own chat, instructions and memory, and can hand work to another.
+
+![The new chat picker: New Bot, Create group chat and a list of bots with their jobs.](site/public/shots/bots.png)
+
+**Bring the model you already pay for.** Sign in with ChatGPT or GitHub Copilot, add a coding plan or
+an API key, or point it at a model running on your own Mac. Pick the model per chat.
+
+![Model settings with connected providers.](site/public/shots/models.png)
+
+**Your apps, on your terms.** Connect Gmail, Calendar, Drive and hundreds more. Read only, Auto or
+Full access decides what a bot may do on its own. In Auto, anything else waits for your yes.
+
+![Connectors, with apps a bot can use.](site/public/shots/connectors.png)
+
+**Work that runs while you're busy.** Give a bot a routine, like a morning brief or a weekly
+cleanup, and it runs on schedule. Try it first with Test run. Web search is built in.
+
+![A routine called Downloads triage: its schedule, instructions and Test run button.](site/public/shots/routines.png)
+
+## Before you install
+
+| | |
+|---|---|
+| Works on | macOS 14 or later, Apple silicon |
+| Models | ChatGPT, GitHub Copilot, Claude, Gemini, OpenRouter and more, or a local model |
+| Stays on your Mac | Your chats, bots, memory and the files they make |
+| Leaves your Mac | What you ask goes to the model provider you connect, and to the apps a bot uses for you |
+| Tracking | None. No analytics, no crash reports, no ads |
+
+The download goes live on [bot.usefulbuild.com](https://bot.usefulbuild.com) with the first release.
+
+# Development
+
+Everything below is for working on Useful Bot itself. It runs on [eve](https://github.com/vercel/eve)
+0.54.3.
 
 ## Runtime
 
