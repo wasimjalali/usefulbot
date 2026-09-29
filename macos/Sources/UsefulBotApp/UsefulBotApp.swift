@@ -6,6 +6,7 @@ import UsefulBotCore
 struct UsefulBotDesktopApp: App {
     @StateObject private var model = AppModel()
     @StateObject private var updater = AppUpdater.shared
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // The Dock icon, set before the first window rather than when it
@@ -39,5 +40,14 @@ struct UsefulBotDesktopApp: App {
                 .keyboardShortcut("r", modifiers: .command)
             }
         }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Before the first window, so the services never start from a copy that
+    /// is about to move (MoveToApplications).
+    @MainActor
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        MoveToApplications.offerIfNeeded()
     }
 }

@@ -144,7 +144,8 @@ The bots are the brand. Make them feel cute and premium.
 - **Page:**
   - A beautiful landing page for Useful Bot on the new subdomain `bot.usefulbuild.com`.
   - Its primary button is the macOS download:
-    `https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.zip`.
+    `https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg`
+    (the zip until the DMG landed, 2026-09-29).
   - It also shows the one-line installer.
   - It uses real screenshots of the polished app, so it comes after PRs 2 and 3.
 - **Privacy:** reuse the existing usefulbuild.com privacy page if it covers this product. If not,
@@ -180,10 +181,10 @@ The bots are the brand. Make them feel cute and premium.
   run on this Mac instead.
 - **PR #144 lows:** fix every open low listed in its description.
 - **Release repo:** create the public repo `wasimjalali/useful-bot-releases` and publish v1.0.0
-  (`npm run release:mac`), only on Wasim's go. Then remove `data-release="soon"` from
-  `site/public/index.html`, put the JSON-LD `downloadUrl` back (the same zip URL as the CTA) and redeploy the site, and turn on
-  `ReleaseLinks.releasesRepoLive`
-  (What's new, Report a bug on GitHub).
+  (`npm run release:mac`), only on Wasim's go. Done: `data-release="soon"` is gone from
+  `site/public/index.html`, the JSON-LD `downloadUrl` is back and `ReleaseLinks.releasesRepoLive` is
+  on (What's new, Report a bug on GitHub). Since 2026-09-29 the CTA and `downloadUrl` point at the
+  DMG, so the site is redeployed only after a release that carries `Useful-Bot-macOS.dmg`.
 - **Live checks left from #145:**
   - "Install update" on a real update.
   - Back during the device-code fetch.
