@@ -61,7 +61,8 @@ img { max-width: 100%; }
 [data-release="soon"] .when-live { display: none !important; }
 html:not([data-release="soon"]) .when-soon { display: none !important; }
 .btn-light:hover { background: #fff; box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.8); }
-.btn-light:focus-visible, .link-light:focus-visible, .cmd button:focus-visible { outline-color: var(--night-ink); }
+.btn-light:focus-visible, .link-light:focus-visible { outline-color: var(--night-ink); }
+.cmd button:focus-visible { outline-color: var(--ink); outline-offset: 2px; }
 .link-light {
   display: inline-flex; min-height: 44px; align-items: center; gap: 8px;
   color: var(--night-ink); font-size: 15.5px; font-weight: 500; text-decoration: none;
@@ -115,13 +116,25 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
 .has-js [data-hero][data-visible="true"] .stage[data-rise] { transform: none; transition-duration: 700ms, 1000ms; }
 
 /* The one-line installer. */
-.cmd { display: flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 22px; padding: 6px 6px 6px 16px; border: 1px solid var(--night-line); border-radius: 12px; background: var(--night-raise); }
-.cmd code { flex: 1; min-width: 0; overflow-x: auto; color: var(--night-ink); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; white-space: nowrap; scrollbar-width: none; }
+.cmd { display: flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 22px; padding: 6px 6px 6px 16px; border: 1px solid var(--surface); border-radius: 12px; background: var(--surface); }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; color: var(--ink); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; white-space: nowrap; scrollbar-width: none; }
 .cmd code::-webkit-scrollbar { display: none; }
-.cmd code span { color: var(--night-muted); user-select: none; }
-.cmd button { flex: none; min-width: 72px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--night-ink); background: #262626; font: 500 13px var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
-.cmd button:hover { background: #303030; }
+.cmd code span { color: var(--ink-muted); user-select: none; }
+.cmd code::selection { background: var(--ink); color: var(--surface); }
+.cmd button { flex: none; min-width: 72px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--surface); background: var(--ink); font: 500 13px var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
+.cmd button:hover { background: #333333; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html:not([data-release="soon"]) .hero-row > div { display: flex; flex-direction: column; }
+html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-top: 18px; }
+.cmd-head { margin: 22px 0 0; color: var(--night-ink); font-size: 15px; font-weight: 500; }
+.cmd-head + .cmd { margin-top: 10px; }
+.cta-layout > div { min-width: 0; }
+.cta-install { margin-top: 28px; }
+.cta .cta-install .cmd-note { margin-top: 10px; font-size: 13px; }
+.cta-install .cmd-head { margin-top: 0; }
+.btn-ghost { align-self: flex-start; margin-top: 16px; color: var(--night-ink); background: transparent; border-color: #3a3a3a; }
+.btn-ghost:hover { background: rgb(255 255 255 / 0.06); border-color: #5a5a5a; box-shadow: none; }
+.btn-ghost:focus-visible { outline-color: var(--night-ink); }
 .cmd-note { margin: 10px 0 0; color: #8a8a8a; font-size: 13px; line-height: 1.5; }
 
 /* Chapters */
@@ -249,7 +262,7 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
           <a href="#facts">The facts</a>
           <a href="/privacy/">Privacy</a>
         </nav>
-        <a class="btn btn-compact when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg"><span class="wide-label">Download for Mac</span><span class="compact-label">Download</span></a>
+        <a class="btn btn-compact when-live" href="#install">Install</a>
         <span class="btn btn-compact btn-soon when-soon">Coming soon</span>
       </div>
     </header>
@@ -265,21 +278,18 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
               <div>
                 <div class="actions">
                   <span class="btn btn-light btn-soon when-soon">Coming soon</span>
-                  <a class="btn btn-light when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg">
-                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
-                    Download for Mac
-                  </a>
                   <a class="link-light" href="#how">See how it works <span aria-hidden="true">&darr;</span></a>
                 </div>
                 <p class="cmd-note when-soon">The first release is on its way. The download goes up here the day it's out.</p>
-                <div class="when-live">
+                <div class="when-live" id="install">
+                <p class="cmd-head">Install in one line</p>
                 <div class="cmd">
                   <code id="install-cmd"><span>$ </span>curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/install.sh | sh</code>
                   <button type="button" data-copy="install-cmd" aria-label="Copy the install command">Copy</button>
                 </div>
-                <p class="cmd-note">Or paste this in Terminal. macOS 14+ · Apple silicon · Updates arrive in the app</p>
-                <p class="cmd-note">The app isn't notarized yet. After a download, allow it once in System Settings, Privacy &amp; Security. The Terminal line skips that step.</p>
-                <p class="visually-hidden" role="status" id="copy-status"></p>
+                <p class="cmd-note">Paste it in Terminal. macOS 14+ · Apple silicon · Updates arrive in the app</p>
+                <a class="btn btn-ghost" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg">Download for Mac</a>
+                <p class="cmd-note">The DMG needs a one-time OK in System Settings &rsaquo; Privacy &amp; Security &rsaquo; Open Anyway.</p>
                 </div>
               </div>
             </div>
@@ -358,6 +368,7 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
         </div>
       </section>
     </main>
+    <p class="visually-hidden" role="status" id="copy-status"></p>
 
     <div class="dark">
       <section class="cta" id="download">
@@ -366,10 +377,18 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
           <div class="cta-layout">
             <h2>Put a team of bots on your Mac.</h2>
             <div>
-              <p class="when-live">Download the app, connect a model and make your first bot. It takes a couple of minutes.</p>
+              <p class="when-live">Install the app, connect a model and make your first bot. It takes a couple of minutes.</p>
               <p class="when-soon">The first release is on its way. Come back here for the download.</p>
+              <div class="when-live cta-install">
+                <p class="cmd-head">Install in one line</p>
+                <div class="cmd">
+                  <code id="install-cmd-2"><span>$ </span>curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/install.sh | sh</code>
+                  <button type="button" data-copy="install-cmd-2" aria-label="Copy the install command">Copy</button>
+                </div>
+                <a class="btn btn-ghost" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg">Download for Mac</a>
+                <p class="cmd-note">The DMG needs a one-time OK in System Settings &rsaquo; Privacy &amp; Security &rsaquo; Open Anyway.</p>
+              </div>
               <div class="cta-row">
-                <a class="btn btn-light when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg">Download for Mac</a>
                 <span class="btn btn-light btn-soon when-soon">Coming soon</span>
                 <a class="quiet" href="https://cal.com/usefulbuild/free-audit">Want bots like this for your team? Book a free audit</a>
               </div>

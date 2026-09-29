@@ -145,7 +145,9 @@ async function childEnv() {
 
 function run(args, env) {
   const child = spawn(NODE, args, { cwd: ROOT, env, stdio: "inherit" });
+  let stopping = false;
   const stop = () => {
+    stopping = true;
     child.kill("SIGTERM");
     setTimeout(() => {
       if (child.exitCode === null) child.kill("SIGKILL");
@@ -153,7 +155,16 @@ function run(args, env) {
   };
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
-  child.on("exit", (code) => process.exit(code ?? 1));
+  child.on("exit", (code) => {
+    // A long-running service that ends on its own is a failure even with
+    // status 0: a no-op entry point once looked like a clean exit here, and
+    // the supervisor restarted it every 15 s without a word.
+    if (code === 0 && !stopping) {
+      process.stderr.write(`${JSON.stringify({ error: "service_exited_unexpectedly", mode, args: args.at(-1) })}\n`);
+      process.exit(1);
+    }
+    process.exit(code ?? 1);
+  });
 }
 
 async function waitReady(url, timeoutMs) {

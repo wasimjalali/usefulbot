@@ -26,7 +26,62 @@ public enum RuntimeInstall {
 
     public struct Failure: Error, CustomStringConvertible {
         public let description: String
+        /// The tool's exit status; nil when it never exited on its own (a
+        /// timeout) or no tool ran (the install lock).
+        public let status: Int32?
+        /// Everything the tool wrote to stderr, untruncated.
+        public let output: String
+
+        public init(description: String, status: Int32? = nil, output: String = "") {
+            self.description = description
+            self.status = status
+            self.output = output
+        }
     }
+
+    /// First-time setup (`setup-local.mjs`) failed, so the app cannot run.
+    /// `message` is what the owner sees; `detail` is the raw failure for Console.
+    public struct SetupFailure: Error, CustomStringConvertible {
+        /// The `error` field of the JSON setup-local wrote, when there was one.
+        public let code: String?
+        public let detail: String
+        public var description: String { detail }
+
+        public init(code: String?, detail: String) {
+            self.code = code
+            self.detail = detail
+        }
+
+        init(_ error: Error) {
+            let failure = error as? Failure
+            self.init(code: failure.flatMap { RuntimeInstall.setupErrorCode($0.output) }, detail: String(describing: error))
+        }
+
+        public var message: String {
+            switch code {
+            case "keychain_write_failed":
+                return "Useful Bot couldn't save its keys in your Keychain. Unlock the Keychain and try again."
+            default:
+                return "Useful Bot couldn't set up its local services. Details are in Console."
+            }
+        }
+    }
+
+    /// The `error` field of the last JSON object line setup-local wrote to
+    /// stderr (it writes one line per failure; Node warnings may come first).
+    public static func setupErrorCode(_ output: String) -> String? {
+        for line in output.split(whereSeparator: \.isNewline).reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("{"), let data = trimmed.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            return object["error"] as? String
+        }
+        return nil
+    }
+
+    /// setup-local's exit status for Keychain items with no config: the
+    /// orphaned case, answered with `--rebuild-orphaned`.
+    static let orphanedExitStatus: Int32 = 3
 
     /// True when the payload in `root` is not the one this app carries: after
     /// an update, or on the first launch. The caller stops the services still
@@ -70,9 +125,15 @@ public enum RuntimeInstall {
     /// already there, then mints any missing or expired local credentials.
     /// Blocking; call it off the main thread, holding `lock`, with the old
     /// services stopped when `needsCopy` said so.
-    public static func prepare(bundled: URL, root: URL = installRoot, holding lock: InstallLock) throws {
+    ///
+    /// Returns true when it replaced credentials that services may still be
+    /// holding (the orphaned-Keychain rebuild): the caller stops them before
+    /// starting, since each reads its tokens once at boot. A setup failure on
+    /// a Mac with no config throws `SetupFailure`.
+    @discardableResult
+    public static func prepare(bundled: URL, root: URL = installRoot, holding lock: InstallLock) throws -> Bool {
         // The lock is held only while it is alive; keep it so to the end.
-        try withExtendedLifetime(lock) {
+        try withExtendedLifetime(lock) { () throws -> Bool in
             let fm = FileManager.default
             let wanted = try String(contentsOf: bundled.appendingPathComponent(stampName), encoding: .utf8)
             let stamp = root.appendingPathComponent(stampName)
@@ -98,15 +159,34 @@ public enum RuntimeInstall {
             // app cannot run without it. A refresh that fails leaves working
             // credentials in place, so it is logged, not fatal.
             let configured = fm.fileExists(atPath: fm.homeDirectoryForCurrentUser.appendingPathComponent(".useful-bot/config.json").path)
-            do {
-                try run(root.appendingPathComponent("bin/node").path,
-                        [root.appendingPathComponent("scripts/setup-local.mjs").path] + (configured ? ["--add-missing"] : []),
-                        cwd: root, timeout: 60)
-            } catch {
-                guard configured else { throw error }
-                NSLog("Useful Bot: credential refresh failed, keeping the current ones: %@", String(describing: error))
+            let node = root.appendingPathComponent("bin/node").path
+            let setup = root.appendingPathComponent("scripts/setup-local.mjs").path
+            if configured {
+                do {
+                    try run(node, [setup, "--add-missing"], cwd: root, timeout: 60)
+                } catch {
+                    NSLog("Useful Bot: credential refresh failed, keeping the current ones: %@", String(describing: error))
+                }
+                return false
             }
-
+            do {
+                try run(node, [setup], cwd: root, timeout: 60)
+                return false
+            } catch let failure as Failure where failure.status == orphanedExitStatus {
+                // No config, but Keychain items from an earlier install are
+                // still here (the data folder was deleted, the app kept). With
+                // no config nothing uses them, so they are replaced; setup
+                // itself refuses if a config appeared meanwhile.
+                NSLog("Useful Bot: rebuilding local credentials left by an earlier install. A dev stack that points UB_ROUTER_CONFIG elsewhere must run setup-local.mjs again.")
+            } catch {
+                throw SetupFailure(error)
+            }
+            do {
+                try run(node, [setup, "--rebuild-orphaned"], cwd: root, timeout: 60)
+            } catch {
+                throw SetupFailure(error)
+            }
+            return true
         }
     }
 
@@ -135,7 +215,8 @@ public enum RuntimeInstall {
         reader.sync {}
         guard process.terminationStatus == 0 else {
             let detail = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw Failure(description: "\((tool as NSString).lastPathComponent) exited \(process.terminationStatus): \(detail.suffix(400))")
+            throw Failure(description: "\((tool as NSString).lastPathComponent) exited \(process.terminationStatus): \(detail.suffix(400))",
+                          status: process.terminationReason == .exit ? process.terminationStatus : nil, output: detail)
         }
     }
 }

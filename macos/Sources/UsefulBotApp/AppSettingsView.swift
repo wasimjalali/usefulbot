@@ -679,10 +679,11 @@ struct AppSettingsView: View {
                                 .foregroundStyle(Theme.C.ink)
                                 .lineLimit(2)
                             Spacer(minLength: 0)
-                            if case .ready = updater.status {
-                                // Opens Sparkle's Install and Relaunch alert.
-                                NativeButton("Install update", kind: .primary, small: true,
-                                             enabled: updater.canCheckForUpdates) { updater.installUpdate() }
+                            if updater.pendingVersion != nil {
+                                // Same as the account menu: installs a downloaded
+                                // update, or opens Sparkle's window for a found one.
+                                NativeButton("Update now", kind: .primary, small: true,
+                                             enabled: updater.canCheckForUpdates) { updater.updateNow() }
                                     .accessibilityIdentifier("about-install-update")
                             } else {
                                 NativeButton("Check now", kind: .secondary, small: true,

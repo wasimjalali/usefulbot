@@ -45,6 +45,9 @@ enum Theme {
         static let accentStrong = adaptive(L.accentStrong, D.accentStrong)
         static let accentSoft = adaptive(L.accentSoft, D.accentSoft)
         static let accentInk = adaptive(L.accentInk, D.accentInk)
+        /// Links and the update pill: the system link blue, the one splash of
+        /// color in a monochrome palette, so it reads as clickable.
+        static let link = Color(nsColor: .linkColor)
         static let border = adaptive(L.border, D.border)
         static let borderStrong = adaptive(L.borderStrong, D.borderStrong)
         static let scrollKnob = adaptive(L.scrollKnob, D.scrollKnob)

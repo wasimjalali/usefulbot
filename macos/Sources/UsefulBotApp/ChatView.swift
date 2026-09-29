@@ -1041,34 +1041,42 @@ struct ChatView: View {
                 .font(.system(size: DesignTokens.FontSize.emptyTitle, weight: .semibold))
                 .tracking(DesignTokens.Tracking.tight * DesignTokens.FontSize.emptyTitle)
                 .foregroundStyle(Theme.C.ink)
-            Text(emptyCopy(bot))
-                .font(.system(size: DesignTokens.FontSize.emptyBody))
-                .lineSpacing(6)
-                .foregroundStyle(Theme.C.inkMuted)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 448)
+            if bot.isGroup {
+                Text(groupCopy(bot))
+                    .font(.system(size: DesignTokens.FontSize.emptyBody))
+                    .lineSpacing(6)
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 448)
+            } else {
+                everydayPrompts
+                    .padding(.top, 20)
+            }
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func emptyCopy(_ bot: ShellBot) -> String {
-        if bot.isGroup {
-            let names = members(bot).map(\.name)
-            return "Group chat with \(names.isEmpty ? "no members yet" : names.joined(separator: ", ")). Untargeted messages go to the orchestrator; @name directs one bot."
+    /// Four everyday things to start from. A tap fills the composer and sends
+    /// nothing; like the first chat's starters, the tiles step back while the
+    /// composer holds text.
+    private var everydayPrompts: some View {
+        let typing = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(StarterPrompt.everyday) { prompt in
+                StarterPromptButton(text: prompt.label) { model.fillDraft(prompt.prompt) }
+            }
         }
-        // The posture is the owner's own choice, so the flat promise this used
-        // to make was not true in every one of them.
-        if bot.isReadOnly {
-            return "Runs on this Mac and only reads. It changes nothing."
-        }
-        if bot.isFullAccess {
-            return "Runs on this Mac with full access. It only asks before wiping a folder or a disk."
-        }
-        if bot.workspace == nil {
-            return "Runs on this Mac. It asks before it changes your files, runs a command that changes something or writes to your apps."
-        }
-        return "Works in the attached folder. It asks before it deletes anything or writes to your apps."
+        .frame(maxWidth: 560)
+        .opacity(typing ? 0 : 1)
+        .allowsHitTesting(!typing)
+        .accessibilityHidden(typing)
+        .animation(Theme.ease(0.2), value: typing)
+    }
+
+    private func groupCopy(_ bot: ShellBot) -> String {
+        let names = members(bot).map(\.name)
+        return "Group chat with \(names.isEmpty ? "no members yet" : names.joined(separator: ", ")). Untargeted messages go to the orchestrator; @name directs one bot."
     }
 
     // MARK: - Composer column
@@ -2287,6 +2295,27 @@ struct StarterPrompt: Identifiable {
         StarterPrompt(
             label: "Create a copywriter bot for my brand",
             prompt: "Create a copywriter bot for my brand. Ask me a few questions about my brand and voice first, then set it up."
+        ),
+    ]
+
+    /// Any empty chat's tiles: two bots worth making, the first step to
+    /// connecting apps and a routine, so the owner sees what's possible.
+    static let everyday = [
+        StarterPrompt(
+            label: "Create an inbox assistant",
+            prompt: "Create a bot that goes through my email every morning, sums up what needs me and shows me draft replies here to review. Ask me what to watch for first."
+        ),
+        StarterPrompt(
+            label: "Create a writer for my social posts",
+            prompt: "Create a bot that writes my social media posts in my voice. Ask me about my audience, my topics and a few posts I like first, then set it up."
+        ),
+        StarterPrompt(
+            label: "How do I connect my apps?",
+            prompt: "How do I connect my apps, like Gmail, Calendar and Drive, so you can work in them?"
+        ),
+        StarterPrompt(
+            label: "Get a morning news brief every day",
+            prompt: "Every day at 8:00, post a short news brief here with sources on topics I pick. Ask me the topics first, then set it up as a routine."
         ),
     ]
 }
