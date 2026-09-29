@@ -1,0 +1,60 @@
+I'll start by reading the saved diff, then the files it touches.Now I'll read the files themselves, starting with the new router module.The new module is clear. Now the shared helper.Now the router wiring in index.ts.Let me check `send` and `outHeaders` — the non-streamed path mutates `json` after parse, so a forwarded `content-length` would corrupt the response.`outHeaders` only carries custom `x-useful-*` headers, no forwarded content-length. Now the OpenCode wiring.Now the Swift side.Transcript merge looks consistent — `defer` still places failure rows for skipped messages. Now the web side.I've read the diff and all the specified file ranges. Here is the review.
+
+## Findings
+
+```json
+[
+  {
+    "finding": "In 'start' mode, leading whitespace accumulates into state.held with no bound and is re-concatenated per chunk (state.held + rest). An upstream that emits a long whitespace run before its first character does quadratic string work, and on flush emits it all as one synthetic SSE chunk that can exceed the 256 KiB event bound the spec mandates ('Bound each event to 256 KiB ... never accumulate the whole stream'). Pathological trigger, real spec tension.",
+    "severity": "low",
+    "file": "router/src/inline-think.ts",
+    "line": 70
+  },
+  {
+    "finding": "rewrapThinkHistory only rewraps item.reasoning_content. addReasoning appends split thinking to whichever field the upstream already used, so a model whose chunks carry 'reasoning' (not 'reasoning_content') ends up with 'reasoning' in the stored history, and the rewrap silently skips it: the learned model's prior thinking never reaches it. Coverage gap in the feature, not corruption.",
+    "severity": "low",
+    "file": "router/src/inline-think.ts",
+    "line": 272
+  },
+  {
+    "finding": "rewrapThinkHistory interpolates reasoning verbatim: a reasoning string containing '</think>' breaks out of the reconstructed block and its tail lands in content where the upstream will parse it as answer text. All model-originated text, so no trust boundary is crossed, but the round-trip is not faithful.",
+    "severity": "low",
+    "file": "router/src/inline-think.ts",
+    "line": 277
+  },
+  {
+    "finding": "Swift withoutLeadingThink trims with isWhitespace/isNewline; the TS port uses trimStart(), which also strips U+FEFF (ZWNBSP). A stored reply opening with a ZWNBSP before the tag hides it on web but shows it on macOS. Divergence between the paired helpers; negligible practical impact.",
+    "severity": "low",
+    "file": "macos/Sources/UsefulBotCore/EveStream.swift",
+    "line": 612
+  }
+]
+```
+
+## DISMISSED
+
+- **`settled()` fast path skipping a late-appearing choice's own think block**: documented in the doc comment and covered by the pinned `n=1` assumption (verified). A second choice arriving after settle passes through byte-for-byte, which is the intended behavior.
+- **`gap` mode `trimStart()` dropping the answer's first-line indentation** (e.g. `</think>\n\n  indented`): intended per the "dropping the blank lines" comment; cosmetic.
+- **`content: ""` emitted on chunks whose text was fully held or absorbed into reasoning**: valid chunk schema; the AI SDK tolerates empty-string deltas.
+- **`flushThinkStream` when `stream.template` is null**: held state can only exist after a parseable chunk with `choices` arrived, and that parse sets the template, so the null-guard never loses real held text.
+- **Double flush**: `[DONE]` inside `splitThinkBlock` flushes inline; the end-of-stream `flushThinkStream` then finds every state `"text"` and returns null. Safe.
+- **`finish_reason` on a delta-less or non-record-delta chunk**: `flush` runs, `target = {}` becomes `choice.delta`, producing `{"index":N,"delta":{"reasoning_content":...},"finish_reason":...}` — valid schema.
+- **SSE framing of the flushed chunk**: `${held}\n\n${line}` inside the block plus the outer `\n\n` yields `data: {synthetic}\n\ndata: [DONE]\n\n` — two well-formed events, and `JSON.stringify` escapes newlines so held text cannot inject extra `data:` lines.
+- **Non-streamed mutation vs. `content-length`**: `outHeaders` carries only `x-useful-*` headers (index.ts:632-636) and `send()` serializes the mutated JSON fresh — no stale length forwarded.
+- **`rewrapThinkHistory` on non-string content**: assistant array content is rejected by `validateMessages` (verified); `content: null` with tool_calls becomes `"<think>…</think>"`, which is the shape MiniMax asks for and is asserted by the test.
+- **`rewrapThinkHistory` dropping `reasoning_content` when content already opens with a think block**: the documented de-dup ("keeps it and drops the duplicate"); the alternative merge would double-report thinking.
+- **Learned-key alignment**: `upstream.providerId`/`upstream.model` (index.ts) vs `resolved.providerId`/`resolved.model` (opencode.ts) — verified to line up.
+- **`noteInlineThink` race**: single-threaded; two concurrent streams can double-log `inline_think_learned`, harmless.
+- **A model that stops writing inline think stays flagged**: it keeps receiving thinking as `<think>` in content, which is exactly the shape MiniMax documents; no corruption.
+- **Mislearning**: a model whose answer legitimately opens with literal `<think>…</think>` gets flagged, but rewrap only acts on messages that carry `reasoning_content`, so a non-thinking model's history is untouched.
+- **`durableIds` skip before `consume` in Transcript.merge leaking a count**: pre-existing ordering, identical before this diff; the new `shown.isEmpty` branch increments the same counter the append path does, keeping both sides consistent — a leaked count can only ever suppress a message with identical raw text, which would have been suppressed by the same rule anyway.
+- **Failure marks under thinking-only rows**: the `defer` in the live loop runs on `continue`, so the mark is still placed; proven by `aFailureUnderAThinkingOnlyReplyStillShows`.
+- **`stripThreadPrefix` before `withoutLeadingThink`** in the durable pass: correct order — a stored prefix would otherwise hide the tag.
+- **Held-text release paths**: finish reason (in-chunk flush), `[DONE]` (in-block flush before the line), end-of-stream (`flushThinkStream`), and `inside`-mode hold-back bounded to `close.length - 1` with the longest-suffix loop correct on the off-by-one.
+- **Usage accounting**: `usageFromSseBlock` is recorded on the raw upstream `part` before the transform; the envelope destructuring strips `usage` from the template, so the synthetic chunk can't double-count.
+- **Ordering with `settleStreamBlock`**: the think split runs on its output, so synthesized finish lines are parsed and release held text correctly.
+- **Malformed chunks** (unparseable JSON, non-record choices, non-string `content`, multi-`data:` blocks): all pass through unchanged; `JSON.parse` is guarded, and multi-line `data:` events degrade to per-line passthrough without corruption.
+- **Swift/TS helper semantics otherwise**: same tag order (`<think>` can't prefix-match `<thinking>` since `i`≠`>`), same close-search offset (body after open tag), same unclosed→`""` and partial-tag→`""` rules.
+- **Web vs macOS pairing**: web counts raw `event.text`/`message.text` before `flatMap` strips display text — equivalent to the macOS count-on-raw approach; `order` gaps after dropping rows are cosmetic.
+- **`splitThinkCompletion` on error/status payloads**: error bodies lack `choices`, so nothing mutates and nothing is learned.
+- **Mode monotonicity**: `start`/`inside`/`gap`/`text` only move forward, the `while (rest)` loop always shrinks or empties `rest` — no infinite loop or revisit.

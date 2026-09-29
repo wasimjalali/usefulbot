@@ -1,0 +1,20 @@
+{
+  "note": "No session at all.",
+  "request": {
+    "method": "GET",
+    "path": "/api/status",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "unauthorized"
+    }
+  }
+}

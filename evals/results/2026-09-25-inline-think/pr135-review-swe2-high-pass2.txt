@@ -1,0 +1,32 @@
+I'll review the diff first, then the scanner and router code in order.Now the scanner file.Now the router file.I need to see the rest of the router file to check where flush is called at [DONE]/stream end.I need the top of the router file for ChoiceState and MAX_HELD_START.The scanner and router are traced. Now let me check for other callers of the changed signatures that might have been missed.All callers use the new signature. Now let me check the test harness `relay` to understand what `done`/`flush`/`finish` exercise.Let me check where `flushThinkStream` is called in the router — specifically whether stream end without [DONE] flushes.Let me see the router's stream-end handling in index.ts.I've now traced the full state machine: `scanThink`'s hold/lastPassed bookkeeping, the cap path, `feed`/`flush` in the router, and both flush call sites (`[DONE]` inline in `splitThinkBlock`, and end-of-stream in `index.ts` line 764). The rescan invariant holds: `hold` always returns the earliest undecidable close with its pre-decrement depth, so a rescan of `state.held` replays the whole-scan suffix exactly, and `lastPassed` at flush produces the same split as `splitLeadingThink` on the complete text. Passed closes require `depth > 1`, so depth never goes below 1, and `passQuoted` only suppresses hold-setting without changing control flow, so the cap rescan can't introduce a `closed` result or move `safe` backward (no duplication).
+
+One real gap found, plus the verification of the areas I was asked about.
+
+```json
+[
+  {
+    "finding": "MAX_HELD_QUOTED does not actually bound held text when a close's tail stays all-whitespace. At shared/inline-think.ts:53 the whitespace-tail hold (`if (!tail.trim()) return held(i, depth)`) runs before and independently of `passQuoted`, so when `text.length - scan.safe` exceeds the cap and the router rescans with `passQuoted: true` (router/src/inline-think.ts:94-99), the rescan returns the same `safe` and `state.held` keeps growing. A `<think>x <think>y</think>` followed by a pure-whitespace run streamed past 16KB holds and rescans the whole buffer per piece (O(held) per feed). Pathological and bounded by the upstream response length in practice, but the cap's contract doesn't hold for this case.",
+    "severity": "low",
+    "file": "shared/inline-think.ts",
+    "line": 53
+  }
+]
+```
+
+DISMISSED:
+
+- **hold bookkeeping / rescan double-counting**: `hold = { safe: i, depth }` is recorded pre-decrement at the first passed close, and `held()` returns it for every later undecidable point. `state.held` therefore always starts at the earliest ambiguous close and `state.depth` is the depth at that point, so a rescan re-evaluates that close identically and counts each open/close once. Verified by tracing `<think>what <think> does</think>\nThe <think> tag opens a block.` char-by-char through `feed` and `flush` against `splitLeadingThink` — identical output.
+- **`lastPassed` set in stream mode**: line 58 assigns it unconditionally, but it's only read at line 74 under `ended === "done"`. Dead store in stream mode, harmless.
+- **cap rescan can't regress**: `passQuoted` only gates `hold`-setting at line 54; it changes no branch taken. Scan1 and scan2 take identical paths, so the rescan never returns `closed` when the first didn't and never returns a smaller `safe` — `text.slice(0, scan.safe)` can't re-emit already-emitted reasoning, and `state.held`/`state.depth` stay a consistent cut.
+- **answer swallowed past the cap**: once `passQuoted` lets go, post-close text is emitted as reasoning permanently, diverging from the whole-text `lastPassed` split. Deliberate per the doc comment ("let it go as thinking"); streamed reasoning can't be un-emitted, and reasoning is the safe direction (no thinking leaks into the visible answer).
+- **done vs cut selection**: `finish === "length" ? "cut" : "done"` in `flush` (line 135) and the same check in `splitThinkCompletion` (line 264). Non-standard reasons like `max_tokens` fall to "done", which releases rather than swallows — the better default and consistent with the whole-text path.
+- **flush without a finish reason**: `flushThinkStream` calls `flush(state)` with no finish → "done", releasing held text at `[DONE]` (line 196) and at stream end (index.ts:764). After a finish-reason flush, `state.mode` is "text" so a second flush returns empty and `!held.content && !held.reasoning` skips it — no double-emit.
+- **whitespace-only tail after a close in stream vs done**: stream holds it (it could still become `\n\n`), done closes it. Resolved identically at flush; for `…</think>   ` both give `answer: ""`.
+- **blank-line definition is strict** (`\n\n`, `\r\n\r\n` only; `\n \n` or `\r\n\n` don't count): in done mode `lastPassed` still ends the block at the last close, so the answer isn't swallowed — streamed and whole-text agree, and the stricter rule correctly keeps genuinely paired quotes inside thinking (e.g. `</think>\n \nmiddle</think>`).
+- **depth can't go negative**: the decrement is only reached when `depth > 1` (the `depth <= 1` check returns first), and opens only increment, so persisted `state.depth` is always ≥1.
+- **text loss/duplication on close**: `scan.end` is the close-tag start and `scan.after` its end; `end`/`after` differ only by the tag itself, which is dropped by design. Reasoning takes `slice(0, end)`, content takes `slice(after)` — no overlap, no gap.
+- **`held` closure**: `hold ?? { safe, depth: count }` is evaluated at call time; a ws-tail close after `hold` is set correctly returns the earlier `hold` position rather than its own, keeping the earliest undecidable point.
+- **`settled()` fast path**: skips parsing only once every choice is "text", and still parses blocks containing `[DONE]` so the flush runs. A brand-new choice index appearing after all others settle would bypass parsing, but that's pre-existing behavior unchanged by this commit.
+- **flush on "gap"/"text" modes**: `state.held` is always `""` in those modes (cleared when leaving "inside"), so flush returns empty — nothing silently dropped.
+- **`splitLeadingThink` on stored/live partial text**: `withoutLeadingThink` uses "done" on possibly-incomplete text, so `lastPassed` can surface a mid-stream tail as the answer — consistent with the previous whole-message semantics, and an improvement, not a regression.
+- **Swift port parity** (adjacent but outside my area): `lastPassed = after` per passed close and the `allSatisfy(whitespace)` trailing check mirror the TS "done" path, including `\r\n\r\n`.

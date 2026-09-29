@@ -1,0 +1,16 @@
+{"ev":"app_init","pid":15859,"run":"cold-cold_no_snapshot_replies-2-881024a8","t":3247169029208}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"initial_selection","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3247535885416}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"ready","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3247716108541}
+{"blocks":7,"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"landed","events":61,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_replies-2-881024a8","source":"disk_snapshot","t":3247834379625}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"responsive","landedAt":3247834379625,"run":"cold-cold_no_snapshot_replies-2-881024a8","stallMaxMs":11.487709000000001,"t":3248964068625}
+{"bot":"1c4b490f-a608-4285-984c-c026cc98000b","ev":"step","index":1,"label":"cold_no_snapshot_replies","name":"Perf Long Replies","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3250533432166}
+{"bot":"1c4b490f-a608-4285-984c-c026cc98000b","ev":"select_start","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3250533575333}
+{"ev":"prewarm_start","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3250826872458}
+{"ev":"prewarm_end","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3250828795000}
+{"blocks":27,"bot":"1c4b490f-a608-4285-984c-c026cc98000b","ev":"landed","events":24379,"fromCache":false,"fromSnapshot":false,"reason":"cap","rows":26,"run":"cold-cold_no_snapshot_replies-2-881024a8","source":"none","t":3264009593125}
+{"bot":"1c4b490f-a608-4285-984c-c026cc98000b","ev":"responsive","landedAt":3264009593125,"run":"cold-cold_no_snapshot_replies-2-881024a8","stallMaxMs":9.8538329999999998,"t":3265592948083}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3267168265375}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"select_start","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3267168431500}
+{"blocks":7,"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"landed","events":61,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_replies-2-881024a8","source":"stash_snapshot","t":3268628411625}
+{"bot":"df3e5127-6b27-4e47-9133-9774a233a713","ev":"responsive","landedAt":3268628411625,"run":"cold-cold_no_snapshot_replies-2-881024a8","stallMaxMs":9.5324170000000006,"t":3269781465750}
+{"ev":"quit","run":"cold-cold_no_snapshot_replies-2-881024a8","t":3272892167916}

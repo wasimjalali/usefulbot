@@ -1,0 +1,788 @@
+import type { EffortId } from "./models.ts";
+
+export type AuthMode = "oauth" | "plan" | "api" | "local";
+export type Protocol = "openai-chat" | "openai-responses" | "anthropic-messages";
+export type KeyHeader = "bearer" | "x-api-key" | "api-key";
+
+export interface OAuthDeviceConfig {
+  kind: "device-code";
+  clientId: string;
+  deviceUrl: string;
+  tokenUrl: string;
+  scopes: string;
+  /** github-copilot: the OAuth token is exchanged for a short-lived Copilot token before use. */
+  exchangeUrl?: string;
+  /** openai: POST here to poll for the authorization code. */
+  pollUrl?: string;
+  /** openai: page the user opens to approve the code. */
+  verificationUrl?: string;
+  /** openai: redirect_uri sent with the code exchange. */
+  redirectUri?: string;
+  /** Extra headers the vendor requires on every inference call (Copilot editor headers, ChatGPT account id is added by the adapter). */
+  headers?: Record<string, string>;
+}
+
+export interface ProviderMode {
+  mode: AuthMode;
+  /** Name shown in the Connect list for this (provider, mode) pair, e.g. "ChatGPT" for openai/oauth, "OpenAI" for openai/api. */
+  label: string;
+  /** Subtitle shown on a connected row: "Subscription" (oauth and plan), "API", "Local". */
+  kindLabel: "Subscription" | "API" | "Local";
+  baseUrl: string;
+  protocol: Protocol;
+  keyHeader: KeyHeader;
+  /** GET {baseUrl}/models works with this credential. */
+  listsModels: boolean;
+  /** Query string the /models call needs. The ChatGPT Codex list requires client_version. */
+  modelsQuery?: Record<string, string>;
+  keyUrl: string | null;
+  hint: string;
+  /** Extra text fields the connect sheet must collect (Cloudflare account id, custom base URL). */
+  fields?: Array<{ id: string; label: string; placeholder: string; secret?: boolean }>;
+  oauth?: OAuthDeviceConfig;
+  /** Default model per alias when nothing is selected yet. */
+  defaults: { workhorse: string; reviewer: string };
+  /**
+   * POST {baseUrl}/images/generations works with this credential, OpenAI
+   * shaped, and these are the model ids it takes. The vendor /models list
+   * does not name them, so the image picker reads this static list.
+   * `path` overrides the endpoint (OpenRouter serves POST /images), and
+   * `listPath` is the vendor's own list of the models that endpoint serves,
+   * fetched next to /models (OpenRouter's /models hides image-only models).
+   */
+  images?: { models: string[]; path?: string; listPath?: string };
+  /** models.dev provider key used for context window / modality facts (shared/live-models.ts). null when models.dev has no entry. */
+  modelsDevId: string | null;
+  /** Extra static headers on inference calls (OpenRouter attribution, Copilot editor headers). */
+  headers?: Record<string, string>;
+  /** opencode-go only: send x-opencode-session. */
+  opencodeSession?: boolean;
+}
+
+export interface ProviderDef {
+  id: string;
+  /** Vendor name for grouping: "OpenAI". */
+  name: string;
+  /** SVG mark slug: brand/providers/<icon>.svg. Missing file falls back to the monogram. */
+  icon: string;
+  /** Monogram for the icon until real marks ship: 1 or 2 characters. */
+  monogram: string;
+  modes: ProviderMode[];
+  /** How this vendor takes reasoning effort on the wire. `levels` are this app's EffortId values the vendor accepts; the adapter maps the rest to the nearest lower level. */
+  reasoning: { param: "reasoning_effort" | "reasoning.effort" | "thinking" | "none"; levels: EffortId[] };
+}
+
+const MODES: AuthMode[] = ["oauth", "plan", "api", "local"];
+
+export const PROVIDER_CATALOG: ProviderDef[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    icon: "openai",
+    monogram: "O",
+    modes: [
+      {
+        mode: "oauth",
+        label: "ChatGPT",
+        kindLabel: "Subscription",
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        protocol: "openai-responses",
+        keyHeader: "bearer",
+        listsModels: true,
+        // The Codex /models list is filtered by client_version: each model
+        // carries a minimal_client_version and anything newer than the version
+        // sent is left out. A pinned real CLI version goes stale with every
+        // release (0.99.0 returned only GPT-5.5), so send one above any
+        // shipped CLI and let the account decide what it sees.
+        modelsQuery: { client_version: "99.0.0" },
+        keyUrl: null,
+        hint: "ChatGPT Plus or Pro through Codex sign in.",
+        // Codex device flow per github.com/openai/codex
+        // codex-rs/login/src/device_code_auth.rs and exchange_code_for_tokens
+        // in server.rs. Start POST {issuer}/api/accounts/deviceauth/usercode
+        // with {client_id}. Poll POST {issuer}/api/accounts/deviceauth/token
+        // with {device_auth_id, user_code}: 403 or 404 means pending, other
+        // non-2xx means error, 2xx returns {authorization_code,
+        // code_challenge, code_verifier}. Then exchange at
+        // POST {issuer}/oauth/token as a form with grant_type
+        // authorization_code plus code, redirect_uri
+        // {issuer}/deviceauth/callback, client_id and code_verifier. Verify
+        // at {issuer}/codex/device. The id token carries the ChatGPT
+        // account id claim
+        // https://api.openai.com/auth.chatgpt_account_id, sent back as the
+        // ChatGPT-Account-Id header on inference calls.
+        oauth: {
+          kind: "device-code",
+          clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
+          deviceUrl: "https://auth.openai.com/api/accounts/deviceauth/usercode",
+          tokenUrl: "https://auth.openai.com/oauth/token",
+          pollUrl: "https://auth.openai.com/api/accounts/deviceauth/token",
+          verificationUrl: "https://auth.openai.com/codex/device",
+          redirectUri: "https://auth.openai.com/deviceauth/callback",
+          scopes: "openid profile email offline_access api.connectors.read api.connectors.invoke",
+        },
+        // Checked against the live Codex /models list on 2026-09-19 (GPT-5.6
+        // Sol, Terra and Luna, GPT-6 Astra, GPT-5.5). Only the fallback until
+        // the live list lands; the live list overrides these.
+        defaults: { workhorse: "gpt-5.6-luna", reviewer: "gpt-6-astra" },
+        modelsDevId: "openai",
+      },
+      {
+        mode: "api",
+        label: "OpenAI",
+        kindLabel: "API",
+        baseUrl: "https://api.openai.com/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://platform.openai.com/api-keys",
+        hint: "API key from platform.openai.com.",
+        defaults: { workhorse: "gpt-4.1-mini", reviewer: "gpt-4.1" },
+        // The ChatGPT subscription (oauth mode) has no images endpoint; the
+        // API key does. gpt-image-1 answers b64_json only.
+        images: { models: ["gpt-image-1", "gpt-image-1-mini", "dall-e-3"] },
+        modelsDevId: "openai",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "medium", "high", "xhigh", "max"] },
+  },
+  {
+    id: "github-copilot",
+    icon: "github-copilot",
+    name: "GitHub",
+    monogram: "GH",
+    modes: [
+      {
+        mode: "oauth",
+        label: "GitHub Copilot",
+        kindLabel: "Subscription",
+        baseUrl: "https://api.githubcopilot.com",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: null,
+        hint: "GitHub Copilot subscription through GitHub sign in.",
+        // Verified against the opencode primary source (anomalyco/opencode,
+        // packages/opencode/src/plugin/github-copilot/copilot.ts, fetched Sep 2026):
+        // device flow POST https://github.com/login/device/code with
+        // {client_id, scope}, poll POST https://github.com/login/oauth/access_token
+        // with the device_code grant, client id Ov23li8tweQw6odWQebz, scope
+        // read:user. The resulting GitHub token is sent directly as the Bearer
+        // token to https://api.githubcopilot.com (models via GET /models), with
+        // headers Openai-Intent, x-initiator, X-GitHub-Api-Version and
+        // X-Interaction-Id. No token exchange call exists in that source.
+        oauth: {
+          kind: "device-code",
+          clientId: "Ov23li8tweQw6odWQebz",
+          deviceUrl: "https://github.com/login/device/code",
+          tokenUrl: "https://github.com/login/oauth/access_token",
+          scopes: "read:user",
+          // UNVERIFIED: the copilot_internal exchange is reported dead (404) for
+          // individual users and the source above skips it, so slice 3 must send
+          // the GitHub token directly unless the exchange proves to work.
+          exchangeUrl: "https://api.github.com/copilot_internal/v2/token",
+        },
+        // Both ids appear in that same source (UTILITY_MODELS list).
+        // UNVERIFIED: not checked against the models.dev github-copilot entry here.
+        defaults: { workhorse: "gpt-5.4-mini", reviewer: "gpt-5.4" },
+        modelsDevId: "github-copilot",
+        headers: {
+          "X-GitHub-Api-Version": "2026-06-01",
+          "Openai-Intent": "conversation-edits",
+        },
+      },
+    ],
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "opencode-go",
+    icon: "opencode-go",
+    name: "OpenCode",
+    monogram: "Go",
+    modes: [
+      {
+        mode: "plan",
+        label: "OpenCode Go",
+        kindLabel: "Subscription",
+        baseUrl: "https://opencode.ai/zen/go/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://opencode.ai/auth",
+        hint: "Plan key from opencode.ai/auth.",
+        defaults: { workhorse: "glm-5.3-flash", reviewer: "glm-5.3" },
+        modelsDevId: "opencode-go",
+        opencodeSession: true,
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "high", "max"] },
+  },
+  {
+    id: "zai",
+    icon: "zai",
+    name: "Z.ai",
+    monogram: "Z",
+    modes: [
+      {
+        mode: "plan",
+        label: "GLM Coding Plan",
+        kindLabel: "Subscription",
+        baseUrl: "https://api.z.ai/api/coding/paas/v4",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://z.ai/manage-apikey/apikey-list",
+        hint: "GLM Coding Plan key from the Z.ai console.",
+        // UNVERIFIED: exact plan model ids are not confirmed against the
+        // models.dev zai-coding-plan entry here. The live list overrides these.
+        defaults: { workhorse: "glm-5.3-flash", reviewer: "glm-5.3" },
+        modelsDevId: "zai-coding-plan",
+      },
+      {
+        mode: "api",
+        label: "Z.ai",
+        kindLabel: "API",
+        baseUrl: "https://api.z.ai/api/paas/v4",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://z.ai/manage-apikey/apikey-list",
+        hint: "API key from the Z.ai console.",
+        // UNVERIFIED: not checked against the models.dev zai entry here.
+        defaults: { workhorse: "glm-4.5-air", reviewer: "glm-4.5" },
+        // Z.AI image generation per docs.z.ai/api-reference/image/generate-image.
+        // glm-image answers a URL the router downloads; cogview-4-250304 does too.
+        images: { models: ["glm-image", "cogview-4-250304"] },
+        modelsDevId: "zai",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "high", "max"] },
+  },
+  {
+    id: "moonshot",
+    icon: "moonshot",
+    name: "Moonshot",
+    monogram: "K",
+    modes: [
+      {
+        mode: "plan",
+        label: "Kimi Code",
+        kindLabel: "Subscription",
+        baseUrl: "https://api.kimi.com/coding/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://www.kimi.com/code/console",
+        hint: "Kimi Code key from kimi.com/code/console.",
+        // UNVERIFIED: exact plan model ids are not confirmed against the
+        // models.dev kimi-code-plan-global entry here.
+        defaults: { workhorse: "kimi-for-coding-highspeed", reviewer: "kimi-for-coding" },
+        modelsDevId: "kimi-code-plan-global",
+      },
+      {
+        mode: "api",
+        label: "Moonshot AI",
+        kindLabel: "API",
+        baseUrl: "https://api.moonshot.ai/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://platform.kimi.ai",
+        hint: "API key from platform.moonshot.ai.",
+        // UNVERIFIED: not checked against the models.dev moonshotai entry here.
+        defaults: { workhorse: "kimi-k2.6", reviewer: "kimi-k3" },
+        modelsDevId: "moonshotai",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "high", "max"] },
+  },
+  {
+    id: "alibaba",
+    icon: "alibaba",
+    name: "Alibaba",
+    monogram: "Q",
+    modes: [
+      {
+        mode: "plan",
+        label: "Qwen Coding Plan",
+        kindLabel: "Subscription",
+        // International endpoint. CN users have a separate host
+        // (https://coding.dashscope.aliyuncs.com/v1) with non portable keys,
+        // but plan keys stay on the host that issued them, so one field is enough.
+        baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
+        hint: "Coding Plan key from Alibaba ModelStudio.",
+        // UNVERIFIED: exact plan model ids are not confirmed against the
+        // models.dev alibaba-coding-plan entry here.
+        defaults: { workhorse: "qwen3.6-flash", reviewer: "qwen3.7-max" },
+        modelsDevId: "alibaba-coding-plan",
+      },
+      {
+        mode: "api",
+        label: "Qwen (DashScope)",
+        kindLabel: "API",
+        baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
+        hint: "API key from Alibaba ModelStudio.",
+        // UNVERIFIED: not checked against the models.dev alibaba entry here.
+        defaults: { workhorse: "qwen-plus", reviewer: "qwen-max" },
+        modelsDevId: "alibaba",
+      },
+    ],
+    // UNVERIFIED: Qwen thinking modes vary by model family. The ladder below is
+    // a guess the live list and adapter can narrow later.
+    reasoning: { param: "reasoning_effort", levels: ["low", "medium", "high"] },
+  },
+  {
+    id: "minimax",
+    icon: "minimax",
+    name: "MiniMax",
+    monogram: "MM",
+    modes: [
+      {
+        mode: "plan",
+        label: "MiniMax Token Plan",
+        kindLabel: "Subscription",
+        baseUrl: "https://api.minimax.io/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://platform.minimax.io/subscribe/token-plan",
+        hint: "Token Plan key from the MiniMax console.",
+        // UNVERIFIED: exact plan model ids are not confirmed against the
+        // models.dev minimax-coding-plan entry here.
+        defaults: { workhorse: "MiniMax-M2.7-highspeed", reviewer: "MiniMax-M3" },
+        modelsDevId: "minimax-coding-plan",
+      },
+      {
+        mode: "api",
+        label: "MiniMax",
+        kindLabel: "API",
+        baseUrl: "https://api.minimax.io/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://platform.minimax.io",
+        hint: "API key from the MiniMax console.",
+        // UNVERIFIED: not checked against the models.dev minimax entry here.
+        defaults: { workhorse: "MiniMax-M2.7-highspeed", reviewer: "MiniMax-M3" },
+        modelsDevId: "minimax",
+      },
+    ],
+    // UNVERIFIED: MiniMax documents thinking blocks only on its Anthropic path.
+    // Nothing is sent on the OpenAI path until the adapter says otherwise.
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "xiaomi",
+    icon: "xiaomi",
+    name: "Xiaomi",
+    monogram: "Mi",
+    modes: [
+      {
+        mode: "plan",
+        label: "MiMo Token Plan",
+        kindLabel: "Subscription",
+        // Global host. Regional hosts (token-plan-cn, token-plan-ams) exist with
+        // non portable keys, so CN or EU users need the matching host and key.
+        baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
+        protocol: "openai-chat",
+        keyHeader: "api-key",
+        listsModels: true,
+        keyUrl: "https://mimo.mi.com",
+        hint: "Token Plan key from the MiMo console.",
+        // UNVERIFIED: exact plan model ids are not confirmed against the
+        // models.dev xiaomi-token-plan-sgp entry here.
+        defaults: { workhorse: "mimo-v2.5", reviewer: "mimo-v2.5-pro" },
+        modelsDevId: "xiaomi-token-plan-sgp",
+      },
+      {
+        mode: "api",
+        label: "Xiaomi MiMo",
+        kindLabel: "API",
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        protocol: "openai-chat",
+        keyHeader: "api-key",
+        listsModels: true,
+        keyUrl: "https://mimo.mi.com",
+        hint: "API key from the MiMo console.",
+        // UNVERIFIED: not checked against the models.dev xiaomi entry here.
+        defaults: { workhorse: "mimo-v2-flash", reviewer: "mimo-v2-pro" },
+        modelsDevId: "xiaomi",
+      },
+    ],
+    // UNVERIFIED: MiMo documents a thinking toggle only, with no effort ladder.
+    // Nothing is sent until the adapter says otherwise.
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "command-code",
+    icon: "command-code",
+    name: "Command Code",
+    monogram: "CC",
+    modes: [
+      {
+        mode: "plan",
+        label: "Command Code",
+        kindLabel: "Subscription",
+        // UNVERIFIED: the digests report https://api.commandcode.ai/provider/v1
+        // (chat at /provider/v1/chat/completions). Shipped per the contract row.
+        // Fix the base if the live list or a 404 says otherwise.
+        baseUrl: "https://api.commandcode.ai/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://commandcode.ai/settings/keys",
+        hint: "Provider key from Command Code Studio.",
+        // UNVERIFIED: no models.dev entry exists, and plan model ids are unknown.
+        defaults: { workhorse: "deepseek-v3", reviewer: "deepseek-r1" },
+        modelsDevId: null,
+      },
+    ],
+    // UNVERIFIED: no reasoning catalogue is published. Nothing is sent.
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "anthropic",
+    icon: "anthropic",
+    name: "Anthropic",
+    monogram: "A",
+    modes: [
+      {
+        mode: "api",
+        label: "Anthropic",
+        kindLabel: "API",
+        baseUrl: "https://api.anthropic.com/v1",
+        protocol: "anthropic-messages",
+        keyHeader: "x-api-key",
+        listsModels: true,
+        // GET /v1/models 400s without the version header (the messages
+        // adapter sends the same value) and pages at 20 rows by default.
+        headers: { "anthropic-version": "2023-06-01" },
+        modelsQuery: { limit: "1000" },
+        keyUrl: "https://platform.claude.com/settings/keys",
+        hint: "API key from console.anthropic.com.",
+        // UNVERIFIED: not checked against the models.dev anthropic entry here.
+        defaults: { workhorse: "claude-sonnet-4-5", reviewer: "claude-opus-4-8" },
+        modelsDevId: "anthropic",
+      },
+    ],
+    reasoning: { param: "thinking", levels: ["low", "medium", "high", "xhigh", "max"] },
+  },
+  {
+    id: "google",
+    icon: "google",
+    name: "Google",
+    monogram: "G",
+    modes: [
+      {
+        mode: "api",
+        label: "Google",
+        kindLabel: "API",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://aistudio.google.com/apikey",
+        hint: "Gemini API key from AI Studio.",
+        defaults: { workhorse: "gemini-2.5-flash", reviewer: "gemini-2.5-pro" },
+        modelsDevId: "google",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "medium", "high"] },
+  },
+  {
+    id: "xai",
+    icon: "xai",
+    name: "xAI",
+    monogram: "X",
+    modes: [
+      {
+        mode: "api",
+        label: "xAI Grok",
+        kindLabel: "API",
+        baseUrl: "https://api.x.ai/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://console.x.ai",
+        hint: "API key from console.x.ai.",
+        // UNVERIFIED: not checked against the models.dev xai entry here.
+        defaults: { workhorse: "grok-4.6", reviewer: "grok-4.5" },
+        // Grok Imagine per docs.x.ai/developers/model-capabilities/images/generation.
+        images: { models: ["grok-imagine-image", "grok-imagine-image-quality"] },
+        modelsDevId: "xai",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "medium", "high", "xhigh"] },
+  },
+  {
+    id: "deepseek",
+    icon: "deepseek",
+    name: "DeepSeek",
+    monogram: "DS",
+    modes: [
+      {
+        mode: "api",
+        label: "DeepSeek",
+        kindLabel: "API",
+        // No version segment. DeepSeek serves /chat/completions and /models
+        // straight off the host.
+        baseUrl: "https://api.deepseek.com",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://platform.deepseek.com/api_keys",
+        hint: "API key from platform.deepseek.com.",
+        defaults: { workhorse: "deepseek-v4-flash", reviewer: "deepseek-v4-pro" },
+        modelsDevId: "deepseek",
+      },
+    ],
+    reasoning: { param: "reasoning_effort", levels: ["low", "high", "max"] },
+  },
+  {
+    id: "openrouter",
+    icon: "openrouter",
+    name: "OpenRouter",
+    monogram: "OR",
+    modes: [
+      {
+        mode: "api",
+        label: "OpenRouter",
+        kindLabel: "API",
+        baseUrl: "https://openrouter.ai/api/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://openrouter.ai/keys",
+        hint: "One key for many models, including Claude.",
+        defaults: { workhorse: "openai/gpt-4.1-mini", reviewer: "anthropic/claude-sonnet-4" },
+        modelsDevId: "openrouter",
+        // OpenRouter image generation per openrouter.ai/docs/features/multimodal/image-generation:
+        // POST /images answers b64_json, and GET /images/models lists what it
+        // serves with each model's formats and aspect ratios. That list fills
+        // the picker; the static id is the pick when nothing is chosen yet.
+        images: {
+          models: ["google/gemini-3.1-flash-image"],
+          path: "images",
+          listPath: "images/models",
+        },
+        headers: {
+          "HTTP-Referer": "https://bot.usefulbuild.com",
+          "X-Title": "Useful Bot",
+        },
+      },
+    ],
+    reasoning: { param: "reasoning.effort", levels: ["low", "medium", "high", "xhigh", "max"] },
+  },
+  {
+    id: "vercel",
+    icon: "vercel",
+    name: "Vercel",
+    monogram: "V",
+    modes: [
+      {
+        mode: "api",
+        label: "Vercel AI Gateway",
+        kindLabel: "API",
+        baseUrl: "https://ai-gateway.vercel.sh/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://vercel.com/dashboard",
+        hint: "API key from the Vercel dashboard.",
+        // UNVERIFIED: gateway slugs are provider/model pairs. These follow the
+        // OpenRouter convention and may need correcting from the live list.
+        defaults: { workhorse: "openai/gpt-4.1-mini", reviewer: "anthropic/claude-sonnet-4" },
+        modelsDevId: "vercel",
+      },
+    ],
+    // UNVERIFIED: the gateway passes reasoning through per upstream model.
+    reasoning: { param: "reasoning.effort", levels: ["low", "medium", "high", "xhigh", "max"] },
+  },
+  {
+    id: "cloudflare",
+    icon: "cloudflare",
+    name: "Cloudflare",
+    monogram: "CF",
+    modes: [
+      {
+        mode: "api",
+        label: "Cloudflare Workers AI",
+        kindLabel: "API",
+        baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: false,
+        keyUrl: "https://dash.cloudflare.com",
+        hint: "Account ID plus an API token.",
+        fields: [{ id: "accountId", label: "Account ID", placeholder: "Cloudflare account ID" }],
+        // No digest confirms a DeepSeek style default, so both aliases use the
+        // contract fallback. The live list is off (listsModels false).
+        defaults: {
+          workhorse: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+          reviewer: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        },
+        modelsDevId: null,
+      },
+    ],
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "opencode",
+    icon: "opencode",
+    name: "OpenCode",
+    monogram: "Z",
+    modes: [
+      {
+        mode: "api",
+        label: "OpenCode Zen",
+        kindLabel: "API",
+        baseUrl: "https://opencode.ai/zen/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://opencode.ai/auth",
+        hint: "API key from opencode.ai/auth.",
+        // UNVERIFIED: Zen model id shape is not confirmed. The live list
+        // overrides these on first refresh.
+        defaults: { workhorse: "glm-5.3-flash", reviewer: "glm-5.3" },
+        modelsDevId: "opencode",
+      },
+    ],
+    // UNVERIFIED: Zen reasoning is per model family. This passes effort through
+    // until the adapter maps per model.
+    reasoning: { param: "reasoning_effort", levels: ["low", "medium", "high", "xhigh", "max"] },
+  },
+  {
+    id: "ollama",
+    icon: "ollama",
+    name: "Ollama",
+    monogram: "Ol",
+    modes: [
+      {
+        mode: "api",
+        label: "Ollama Cloud",
+        kindLabel: "API",
+        baseUrl: "https://ollama.com/v1",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: "https://ollama.com/settings/keys",
+        hint: "API key from ollama.com/settings/keys.",
+        // UNVERIFIED: local style ids below. The live list overrides these.
+        defaults: { workhorse: "gpt-oss:20b", reviewer: "gpt-oss:120b" },
+        modelsDevId: "ollama-cloud",
+      },
+      {
+        mode: "local",
+        label: "Ollama",
+        kindLabel: "Local",
+        baseUrl: "{baseUrl}",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: null,
+        hint: "Local server, no key needed.",
+        fields: [{ id: "baseUrl", label: "Server URL", placeholder: "http://localhost:11434/v1" }],
+        // UNVERIFIED: local ids depend on what is pulled. The live list
+        // overrides these when the server runs.
+        defaults: { workhorse: "qwen3", reviewer: "llama3.3" },
+        modelsDevId: null,
+      },
+    ],
+    // UNVERIFIED: Ollama documents a native think flag, not an effort ladder.
+    // Nothing is sent until the adapter says otherwise.
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "lmstudio",
+    icon: "lmstudio",
+    name: "LM Studio",
+    monogram: "LM",
+    modes: [
+      {
+        mode: "local",
+        label: "LM Studio",
+        kindLabel: "Local",
+        baseUrl: "{baseUrl}",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: null,
+        hint: "Local server, no key needed.",
+        fields: [{ id: "baseUrl", label: "Server URL", placeholder: "http://localhost:1234/v1" }],
+        // UNVERIFIED: local ids depend on what is loaded. The live list
+        // overrides these when the server runs.
+        defaults: { workhorse: "openai/gpt-oss-20b", reviewer: "qwen/qwen3-coder-30b" },
+        modelsDevId: "lmstudio",
+      },
+    ],
+    reasoning: { param: "none", levels: [] },
+  },
+  {
+    id: "custom",
+    icon: "custom",
+    name: "Custom",
+    monogram: "+",
+    modes: [
+      {
+        mode: "local",
+        label: "Custom provider",
+        kindLabel: "API",
+        // Substituted from the baseUrl field below, so the sheet collects it.
+        baseUrl: "{baseUrl}",
+        protocol: "openai-chat",
+        keyHeader: "bearer",
+        listsModels: true,
+        keyUrl: null,
+        hint: "Any OpenAI compatible server.",
+        fields: [
+          { id: "name", label: "Name", placeholder: "My provider" },
+          { id: "baseUrl", label: "Server URL", placeholder: "https://example.com/v1" },
+          { id: "key", label: "API key", placeholder: "Optional", secret: true },
+        ],
+        // UNVERIFIED: placeholders until the live list returns real ids.
+        defaults: { workhorse: "custom-1", reviewer: "custom-1" },
+        modelsDevId: null,
+      },
+    ],
+    reasoning: { param: "none", levels: [] },
+  },
+];
+
+export function providerDef(id: string): ProviderDef {
+  const def = PROVIDER_CATALOG.find((entry) => entry.id === id);
+  if (!def) throw new Error("provider_unknown");
+  return def;
+}
+
+export function providerMode(id: string, mode: AuthMode): ProviderMode {
+  const def = providerDef(id);
+  const row = def.modes.find((entry) => entry.mode === mode);
+  if (!row) throw new Error("provider_mode_unknown");
+  return row;
+}
+
+export function connectionId(providerId: string, mode: AuthMode): string {
+  providerDef(providerId);
+  if (!MODES.includes(mode)) throw new Error("provider_mode_unknown");
+  return `${providerId}:${mode}`;
+}
+
+export function parseConnectionId(id: string): { providerId: string; mode: AuthMode } {
+  const sep = id.lastIndexOf(":");
+  if (sep <= 0 || sep === id.length - 1) throw new Error("connection_unknown");
+  const providerId = id.slice(0, sep);
+  const mode = id.slice(sep + 1) as AuthMode;
+  if (!MODES.includes(mode)) throw new Error("connection_unknown");
+  providerDef(providerId);
+  providerMode(providerId, mode);
+  return { providerId, mode };
+}

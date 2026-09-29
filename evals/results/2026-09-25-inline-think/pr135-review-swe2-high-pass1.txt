@@ -1,0 +1,34 @@
+Now let me look at the rest of the router file to see how `flush` is wired and how the non-streamed path splits.I've read the diff, `shared/inline-think.ts`, and the router state machine (feed/flush plus the non-streamed `splitThinkCompletion` path). Traced the scanner across chunk boundaries, hold/release accounting, and the streamed-vs-final equivalence.
+
+```json
+[
+  {
+    "finding": "Streamed vs whole-text divergence on a depth>1 close followed by a whitespace-only tail that is neither \"\" nor a lone \"\\n\" at the buffer end. Line 40 only hesitates on next === \"\" or next === \"\\n\": for \"</think> \", \"</think>\\t\", \"</think>\\r\\n\", or \"</think>\\n  \" at end of stream the close decrements depth and is emitted into reasoning before the end-of-message rule can apply, so the streamed block never closes and reasoning ends with a literal \"</think>…\". The identical text through splitLeadingThink (used by splitThinkCompletion and withoutLeadingThink, and the Swift thinkEnd port) closes via `final && !text.slice(after).trim()`. Reachable when thinking contains an unbalanced quoted open and the real close is followed only by trailing space/tab/CRLF; a trailing space after </think> is common. The hold should trigger on any all-whitespace tail, e.g. `!final && !text.slice(after).trim()`, not just the two single shapes.",
+    "severity": "high",
+    "file": "shared/inline-think.ts",
+    "line": 40
+  },
+  {
+    "finding": "A lone quoted opening tag can still swallow the answer when the real close is followed directly by answer text with no blank line. \"<think>the <think> tag…</think>Answer\" scans the final close at depth 2, next === \"An\" is not \"\\n\\n\" and not all-whitespace, so depth decrements and the whole message becomes thinking with answer \"\". The doc comment says the blank-line rule means a lone quoted open 'cannot swallow the answer'; that only holds when a blank line or EOS follows. This is also a regression versus the old first-close behaviour, which emitted \"Answer\" here. Inherent ambiguity (indistinguishable from a quoted pair followed by more thinking), consistent across streamed and final modes, but worth noting as a residual swallow case.",
+    "severity": "low",
+    "file": "shared/inline-think.ts",
+    "line": 38
+  }
+]
+```
+
+DISMISSED:
+
+- **Depth accounting across holds.** Every `closed:false` return puts `safe` exactly at the ambiguous tail (the close tag start for the `""`/`"\n"` close-hold, the `<` for the partial-tag hold) and returns the depth *before* that tail is counted, so the rescan of `held + rest` counts it exactly once. No double-count, no underflow (`depth` only decrements when `> 1`).
+- **Close tag split across chunks** (`</thi` + `nk>`): held via the `<`-prefix rule, re-scanned whole; if it resolves to a non-tag (`</thing>`, `</this`) it falls through to normal text in both modes.
+- **No lost or duplicated held text.** `reasoning += text.slice(0, scan.safe)` / `held = text.slice(scan.safe)` is a clean partition; on close, `slice(0, end)` and `slice(after)` partition `held + rest` once, with the close tag itself dropped by design in both modes.
+- **No unbounded holding.** Inside-mode `held` is bounded by ~`close.length + 1` (a close plus one newline, or a tag-length partial); the `"\n"` hold resolves on the very next character (closed on `"\n\n"`, decremented otherwise). Start-mode `held` is bounded by `MAX_HELD_START`.
+- **`"</think>" + EOS` and `"</think>\n" + EOS`**: held, then `flush` re-scans with `final=true` and closes via `!rest.trim()` — matches whole-text. Only the other whitespace tails diverge (finding 1).
+- **Quoted close followed by `\n\n` mid-thinking** ends the block and leaks later thinking into the answer; this is the declared blank-line disambiguator, identical in streamed, final and Swift paths.
+- **CRLF blank lines** (`</think>\r\n\r\n`) are not recognised as blank lines in either mode — consistent, not a divergence (except at EOS, which is finding 1).
+- **Cross-tag quotes** (`<thinking>` inside a `<think>` block): correctly not counted and not held in either mode; `</thinking>` never matches `</think>` at the `>`/`i` position.
+- **`gap` mode `trimStart`** mirrors whole-text `answer.trimStart()`; `flush`'s `content` trimStart matches too.
+- **`flush` in `start`/`gap`/`text` modes**: start releases held to content, gap/text emit nothing held; correct.
+- **State init `{ tag: THINK_TAGS[0], depth: 0 }`** (router line 203): only read after the start→inside transition sets `tag` and `depth = 1`; `depth: 0` is unreachable in inside mode.
+- **Swift `thinkEnd`** is a faithful port of final-mode semantics: `depth <= 1 || tail.hasPrefix("\n\n") || tail.allSatisfy(whitespace)` is equivalent to the three `final` branches.
+- **`next` computed as `text.slice(after, after + 2)`**: `next === ""` and `next === "\n"` only occur at buffer end, so the hesitation conditions are correctly buffer-end tests; no off-by-one in `end`/`after` (`after = i + close.length`).

@@ -1,0 +1,14 @@
+{
+  "name": "useful-bot-router",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.11.1 <25"
+  },
+  "scripts": {
+    "typecheck": "/usr/local/bin/node ../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
+    "test": "/usr/local/bin/node --experimental-strip-types --test test/contracts.test.ts",
+    "start": "/usr/local/bin/node --experimental-strip-types src/index.ts"
+  }
+}

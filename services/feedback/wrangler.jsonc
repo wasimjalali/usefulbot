@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "useful-bot-feedback",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-28",
+  "compatibility_flags": ["nodejs_compat"],
+  // The app posts to the custom domain only.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "feedback.usefulbuild.com", "custom_domain": true }],
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "useful-bot-feedback",
+      "database_id": "d23b8d7e-b655-4495-a5da-cd1042371136",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Locked to one sender and one inbox, so a bug here can't mail anyone else.
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "hello@usefulbuild.com",
+      "allowed_sender_addresses": ["feedback@usefulbuild.com"]
+    }
+  ],
+  "vars": {
+    "FROM_ADDRESS": "feedback@usefulbuild.com",
+    "TO_ADDRESS": "hello@usefulbuild.com"
+  },
+  // Weekly digest: Mondays 07:00 UTC.
+  "triggers": { "crons": ["0 7 * * MON"] },
+  // Set with `wrangler secret put IP_SALT`: the HMAC key for ip_hash.
+  "secrets": { "required": ["IP_SALT"] }
+}

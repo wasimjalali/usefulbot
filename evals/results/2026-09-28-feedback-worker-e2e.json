@@ -1,0 +1,413 @@
+{
+  "ranAt": "2026-09-28T15:03:12.785Z",
+  "passed": 32,
+  "failed": 0,
+  "results": [
+    {
+      "name": "GET is 405",
+      "pass": true,
+      "detail": 405
+    },
+    {
+      "name": "unknown path is 404",
+      "pass": true,
+      "detail": 404
+    },
+    {
+      "name": "text/plain is 415",
+      "pass": true,
+      "detail": {
+        "status": 415,
+        "json": {
+          "ok": false,
+          "error": "unsupported_media_type"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "broken JSON is 400",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "body",
+          "message": "Body isn't valid JSON."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "40 KB body is 413",
+      "pass": true,
+      "detail": {
+        "status": 413,
+        "json": {
+          "ok": false,
+          "error": "too_large"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "JSON array is 400",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "body",
+          "message": "Body must be a JSON object."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "kind unknown is 400 on kind",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "kind",
+          "message": "kind must be idea, problem or other."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "message whitespace only is 400 on message",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "message",
+          "message": "message is empty."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "message 4,001 chars is 400 on message",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "message",
+          "message": "message is over 4000 characters."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "message number is 400 on message",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "message",
+          "message": "message must be a string."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "replyEmail malformed is 400 on replyEmail",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "replyEmail",
+          "message": "replyEmail isn't an email address."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "replyEmail header injection is 400 on replyEmail",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "replyEmail",
+          "message": "replyEmail isn't an email address."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "installId missing is 400 on installId",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "installId",
+          "message": "installId must be a UUID."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "installId not a UUID is 400 on installId",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "installId",
+          "message": "installId must be a UUID."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "context not an object is 400 on context",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "context",
+          "message": "context must be an object or null."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "context value too long is 400 on context.chip",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "context.chip",
+          "message": "context.chip must be 1 to 64 printable characters."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "context value non-ASCII control is 400 on context.build",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "json": {
+          "ok": false,
+          "error": "invalid",
+          "field": "context.build",
+          "message": "context.build must be 1 to 64 printable characters."
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "4,000 emoji is accepted",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "json": {
+          "ok": true,
+          "id": "7e6c4a63-5e97-4de7-be4a-f863e8b1617c"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "4,000 emoji stored whole",
+      "pass": true,
+      "detail": [
+        {
+          "n": 4000
+        }
+      ]
+    },
+    {
+      "name": "empty replyEmail and null context accepted",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "json": {
+          "ok": true,
+          "id": "19bb3c27-95b7-4298-a8df-d8074f435124"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "empty replyEmail and null context stored as NULL",
+      "pass": true,
+      "detail": {
+        "reply_email": null,
+        "app_version": null,
+        "chip": null
+      }
+    },
+    {
+      "name": "ip_hash is a 64-char HMAC, not an IP",
+      "pass": true,
+      "detail": [
+        {
+          "ip_hash": "5691acb844400eaec5e8532f535eab51c9140e408a77368594470d7ca2a25da3"
+        }
+      ]
+    },
+    {
+      "name": "10 parallel sends from one install store exactly 5",
+      "pass": true,
+      "detail": [
+        201,
+        429,
+        201,
+        201,
+        201,
+        201,
+        429,
+        429,
+        429,
+        429
+      ]
+    },
+    {
+      "name": "D1 holds exactly 5 rows for the install",
+      "pass": true,
+      "detail": 5
+    },
+    {
+      "name": "429 carries Retry-After near 24 h, scope install and a plain message",
+      "pass": true,
+      "detail": {
+        "status": 429,
+        "json": {
+          "ok": false,
+          "error": "rate_limited",
+          "scope": "install",
+          "message": "You've reached today's feedback limit. Try again tomorrow."
+        },
+        "retryAfter": "86400"
+      }
+    },
+    {
+      "name": "another install on the same network still gets through",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "json": {
+          "ok": true,
+          "id": "19cd88cb-22a6-4204-b837-f394781a94fd"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "sends older than 24 h stop counting",
+      "pass": true,
+      "detail": {
+        "status": 201,
+        "json": {
+          "ok": true,
+          "id": "0449690a-9de3-48c4-a546-c358cceefb5e"
+        },
+        "retryAfter": null
+      }
+    },
+    {
+      "name": "20 sends from one network pass, the 21st is 429 scope network",
+      "pass": true,
+      "detail": {
+        "statuses": [
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          201,
+          429
+        ],
+        "last": {
+          "status": 429,
+          "json": {
+            "ok": false,
+            "error": "rate_limited",
+            "scope": "network",
+            "message": "You've reached today's feedback limit. Try again tomorrow."
+          },
+          "retryAfter": "86400"
+        }
+      }
+    },
+    {
+      "name": "Idea and Other send no email",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "a Problem sends one email",
+      "pass": true,
+      "detail": {
+        "p": {
+          "status": 201,
+          "json": {
+            "ok": true,
+            "id": "6affb443-2e6e-4e0a-a0f2-e6d23c49d095"
+          },
+          "retryAfter": null
+        },
+        "before": 0,
+        "after": 1
+      }
+    },
+    {
+      "name": "the Problem email escapes HTML and names the reply address",
+      "pass": true,
+      "detail": {
+        "htmlFile": "/Users/wasimjalali/Desktop/useful-bot/services/feedback/.wrangler/tmp/email/miniflare-01ae8e554867d3992137b06862ab026a/email-html/FEwrNAOhWrAh5WLVLmXHxg7Qo8F7H4cMjQ9x@usefulbuild.com.html",
+        "html": "<p style=\"white-space:pre-wrap\">Chat froze &lt;script&gt;alert(1)&lt;/script&gt; &amp; stayed blank.</p>\n<p style=\"color:#5c5c5c\">Reply to: owner@example.com<br>Useful Bot 0.3.0 (412)<br>macOS 15.6.1<br>Apple M1<br>ID: 6affb443-2e6e-4e0a-a0f2-e6d23c49d095<br>Sent: 2026-09-28T15:03:07.274Z</p>"
+      }
+    },
+    {
+      "name": "digest counts the week by kind, lists each message and leaves out older ones",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "textFile": "/Users/wasimjalali/Desktop/useful-bot/services/feedback/.wrangler/tmp/email/miniflare-01ae8e554867d3992137b06862ab026a/email-text/5RsuV0dumGOQAanlR1zZB5iwi55GvACaFGHe@usefulbuild.com.txt",
+        "text": "3 this week: 1 ideas, 1 problems, 1 other.\nWeek: 2026-09-21T15:03:12.531Z to 2026-09-28T15:03:12.531Z\n\nOther · 2026-09-21T17:27:08.709Z\ndigest other\nID: e2d502f9-a4c5-4bd3-b115-d91c61a42341\n\nProblem · 2026-09-26T15:03:08.709Z\ndigest problem\nID: 120761c4-3d01-4ec4-863c-69285a028319\n\nIdea · 2026-09-27T15:03:08.709Z\ndigest idea\nID: 1ed85d83-5446-4e95-9490-b824f15a031b\n\n"
+      }
+    }
+  ]
+}

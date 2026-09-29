@@ -1,0 +1,24 @@
+{
+  "note": "The phone session reads back profile + both expiry clocks.",
+  "request": {
+    "method": "GET",
+    "path": "/api/auth/session",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "cookie": "<sessionCookie>"
+    }
+  },
+  "response": {
+    "status": 200,
+    "setCookie": false,
+    "json": {
+      "ok": true,
+      "profile": "phone",
+      "expiresAt": 1790028655250,
+      "csrfToken": "<csrfToken>",
+      "credentialExpiresAt": "2026-10-21T10:10:55.828Z"
+    }
+  }
+}

@@ -1,0 +1,451 @@
+<!doctype html>
+<!-- data-release="soon" hides the download until the first release is out. PR 5 removes it. -->
+<html lang="en" data-release="soon">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Useful Bot | A team of AI bots on your Mac</title>
+    <meta name="description" content="A native Mac app for a team of AI bots. Give each one a job, use the model you already pay for and connect the apps you work in. Chats are stored on your Mac." />
+    <meta name="theme-color" content="#f8f8f8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preload" href="/fonts/geist-variable.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="canonical" href="https://bot.usefulbuild.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Useful Bot" />
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:title" content="Useful Bot | A team of AI bots on your Mac" />
+    <meta property="og:description" content="A native Mac app for a team of AI bots. Give each one a job, use the model you already pay for and connect the apps you work in." />
+    <meta property="og:url" content="https://bot.usefulbuild.com/" />
+    <meta property="og:image" content="https://bot.usefulbuild.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Useful Bot: the white bot head with glasses on black." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://bot.usefulbuild.com/#app","name":"Useful Bot","url":"https://bot.usefulbuild.com/","applicationCategory":"ProductivityApplication","operatingSystem":"macOS 14 or later, Apple Silicon","description":"A native Mac app for a team of AI bots that use the model provider you connect.","publisher":{"@type":"Organization","@id":"https://usefulbuild.com/#organization","name":"Useful Build","url":"https://usefulbuild.com/"}}</script>
+    <script>document.documentElement.classList.add("has-js");</script>
+    <style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono-variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root {
+  --surface: #f8f8f8; --paper-deep: #f0f0f0; --paper-bright: #ffffff;
+  --ink: #171717; --ink-muted: #5c5c5c; --border: #ebebeb; --rule: #e0e0e0;
+  --night: #111111; --night-raise: #1b1b1b; --night-line: #2c2c2c; --night-ink: #f2f2f2; --night-muted: #a0a0a0;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 88px; background: var(--surface); }
+html, body { margin: 0; overflow-x: clip; }
+body { min-width: 320px; color: var(--ink); background: var(--surface); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+a, button { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+::selection { background: var(--paper-deep); color: var(--ink); }
+img { max-width: 100%; }
+.wrap { width: min(100%, 1248px); margin-inline: auto; padding-inline: 24px; }
+
+.btn {
+  display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 10px;
+  padding: 0 22px; border: 1px solid transparent; border-radius: 10px;
+  color: #fafafa; background: var(--ink);
+  font: 500 15px var(--font-sans); text-decoration: none; white-space: nowrap;
+  transition: background-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+.btn svg { width: 17px; height: 17px; flex: none; }
+.btn:hover { box-shadow: 0 12px 24px -18px rgb(23 23 23 / 0.65); transform: translateY(-1px); }
+.btn:active { box-shadow: none; transform: scale(0.98); }
+.btn-light { color: var(--night); background: var(--night-ink); }
+.btn-soon, .btn-soon:hover { cursor: default; opacity: 0.72; box-shadow: none; transform: none; }
+[data-release="soon"] .when-live { display: none !important; }
+html:not([data-release="soon"]) .when-soon { display: none !important; }
+.btn-light:hover { background: #fff; box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.8); }
+.btn-light:focus-visible, .link-light:focus-visible, .cmd button:focus-visible { outline-color: var(--night-ink); }
+.link-light {
+  display: inline-flex; min-height: 44px; align-items: center; gap: 8px;
+  color: var(--night-ink); font-size: 15.5px; font-weight: 500; text-decoration: none;
+  border-bottom: 1px solid #3a3a3a; transition: border-color 150ms var(--ease-out);
+}
+.link-light:hover { border-color: var(--night-ink); }
+
+/* Nav */
+header.nav { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid transparent; transition: border-color 180ms var(--ease-out); }
+header.nav[data-scrolled="true"] { border-color: var(--rule); }
+.nav-inner { display: flex; width: min(100%, 1248px); height: 72px; align-items: center; gap: 20px; margin-inline: auto; padding-inline: 24px; }
+.nav-brand { display: flex; align-items: center; gap: 14px; margin-right: auto; min-width: 0; }
+.lockup { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; }
+.lockup img { display: block; height: 28px; width: 28px; border-radius: 7px; }
+.lockup span { font-size: 18px; font-weight: 550; letter-spacing: -0.03em; white-space: nowrap; }
+.endorsement { display: inline-flex; min-height: 40px; align-items: center; gap: 6px; padding-left: 14px; border-left: 1px solid var(--rule); color: var(--ink-muted); font-size: 13px; text-decoration: none; transition: color 150ms var(--ease-out); }
+.endorsement:hover { color: var(--ink); }
+.endorsement svg { width: 16px; height: 16px; }
+.endorsement strong { color: var(--ink); font-size: 13.5px; font-weight: 500; }
+.nav-links { display: flex; gap: 26px; }
+.nav-links a { min-height: 44px; display: inline-flex; align-items: center; font-size: 14.5px; text-decoration: none; }
+.nav-links a:hover { text-decoration: underline; text-underline-offset: 6px; }
+.btn-compact { min-height: 42px; padding: 0 16px; font-size: 14.5px; }
+.compact-label { display: none; }
+
+/* Hero: a dark sheet, the real app breaking out of its bottom edge. */
+.hero { padding: 0 12px; }
+.sheet { position: relative; overflow: hidden; border-radius: 28px; background: var(--night); color: var(--night-ink); }
+.sheet-grid { position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(#1c1c1c 1px, transparent 1px), linear-gradient(90deg, #1c1c1c 1px, transparent 1px);
+  background-size: 96px 96px; background-position: center -1px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 30%, transparent 62%); mask-image: linear-gradient(to bottom, #000 0, #000 30%, transparent 62%); }
+.hero-inner { position: relative; width: min(100%, 1248px); margin-inline: auto; padding: 80px 24px 0; }
+h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight: 500; line-height: 0.98; letter-spacing: -0.045em; text-wrap: balance; }
+.hero-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: start; margin-top: 34px; }
+.hero-row > * { min-width: 0; }
+.lede { max-width: 46ch; margin: 0; color: #bdbdbd; font-size: 18px; line-height: 1.55; text-wrap: pretty; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; }
+.facts { margin: 18px 0 0; color: #8a8a8a; font-size: 13.5px; line-height: 1.5; }
+.stage { position: relative; margin-top: 64px; }
+.stage figure { margin: 0 auto; width: min(100%, 1120px); }
+.window { overflow: hidden; border: 1px solid #2c2c2c; border-bottom: 0; border-radius: 16px 16px 0 0; background: #1b1b1b; box-shadow: 0 -30px 80px -40px rgb(255 255 255 / 0.08); }
+.window img { display: block; width: 100%; height: auto; }
+.stage figcaption { padding: 14px 0 26px; color: #8f8f8f; font-size: 12.5px; text-align: center; }
+
+.has-js [data-rise] { opacity: 0; transform: translateY(12px); }
+/* The headline is the LCP element: it only moves, it never fades in. */
+.has-js h1[data-rise] { opacity: 1; }
+.has-js [data-hero][data-visible="true"] [data-rise] { opacity: 1; transform: none; transition: opacity 600ms var(--ease-out), transform 700ms var(--ease-out); transition-delay: calc(var(--i, 0) * 90ms); }
+.has-js [data-hero] .stage[data-rise] { transform: translateY(40px); }
+.has-js [data-hero][data-visible="true"] .stage[data-rise] { transform: none; transition-duration: 700ms, 1000ms; }
+
+/* The one-line installer. */
+.cmd { display: flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 22px; padding: 6px 6px 6px 16px; border: 1px solid var(--night-line); border-radius: 12px; background: var(--night-raise); }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; color: var(--night-ink); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; white-space: nowrap; scrollbar-width: none; }
+.cmd code::-webkit-scrollbar { display: none; }
+.cmd code span { color: var(--night-muted); user-select: none; }
+.cmd button { flex: none; min-width: 72px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--night-ink); background: #262626; font: 500 13px var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
+.cmd button:hover { background: #303030; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cmd-note { margin: 10px 0 0; color: #8a8a8a; font-size: 13px; line-height: 1.5; }
+
+/* Chapters */
+.chapters { padding: 120px 0 40px; }
+.chapter { padding: 48px 0 64px; }
+.ch-copy { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 64px; align-items: end; margin-bottom: 36px; }
+.ch-copy .n { grid-column: 1 / -1; margin-bottom: -40px; display: block; color: var(--ink-muted); font-family: var(--font-mono); font-size: 12px; }
+.ch-copy h3 { max-width: 14ch; margin: 0; font-size: clamp(28px, 3vw, 42px); font-weight: 500; line-height: 1.06; letter-spacing: -0.035em; text-wrap: balance; }
+.ch-copy p { max-width: 46ch; margin: 0; color: var(--ink-muted); font-size: 17px; line-height: 1.6; }
+.shot { max-width: 1040px; margin: 0; }
+.shot-wide { max-width: none; }
+.section-title { max-width: 16ch; margin: 0 0 24px; font-size: clamp(34px, 4.4vw, 60px); font-weight: 500; line-height: 1.02; letter-spacing: -0.04em; text-wrap: balance; }
+.shot .frame { overflow: hidden; border: 1px solid var(--rule); border-radius: 16px; background: var(--paper-bright); box-shadow: 0 1px 0 rgb(23 23 23 / 0.03), 0 30px 60px -40px rgb(23 23 23 / 0.35); }
+.shot img { display: block; width: 100%; height: auto; }
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .shot { animation: shot-in linear both; animation-timeline: view(); animation-range: entry 0% cover 35%; }
+    .ch-copy h3 { animation: head-in linear both; animation-timeline: view(); animation-range: entry 5% entry 80%; }
+    .spec li { animation: head-in linear both; animation-timeline: view(); animation-range: entry 0% entry 90%; }
+  }
+}
+@keyframes shot-in { from { opacity: 0; transform: translateY(60px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes head-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+/* Spec sheet: the plain facts. */
+.spec-wrap { padding: 72px 0 120px; border-top: 1px solid var(--rule); margin-top: 48px; }
+.spec-head { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 64px; }
+.spec-head h2 { margin: 0; font-size: clamp(28px, 3vw, 42px); font-weight: 500; line-height: 1.06; letter-spacing: -0.035em; }
+.spec-head h2 + p { max-width: 30ch; margin: 18px 0 0; color: var(--ink-muted); font-size: 15px; line-height: 1.6; }
+.spec-head h2 + p a { text-underline-offset: 4px; }
+.spec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--ink); }
+.spec li { display: grid; gap: 6px; padding: 20px 0; border-bottom: 1px solid var(--rule); }
+.spec span { color: var(--ink-muted); font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.spec strong { font-size: 16px; font-weight: 500; line-height: 1.45; }
+
+/* Dark close and footer, shared with usefulbuild.com. */
+.dark { --ink: #fafafa; --ink-muted: #a3a3a3; --border: #2e2e2e; --rule: #3a3a3a; color: var(--ink); background: #171717; }
+.cta { padding-block: 112px 96px; }
+.cta-mark { display: block; width: 64px; height: 64px; margin-bottom: 56px; border-radius: 16px; }
+.cta-layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 80px; align-items: end; }
+.cta h2 { max-width: 13ch; margin: 0; font-size: clamp(38px, 5.4vw, 76px); font-weight: 500; line-height: 0.98; letter-spacing: -0.045em; text-wrap: balance; }
+.cta p { max-width: 42ch; margin: 0; color: var(--ink-muted); font-size: 16.5px; line-height: 1.6; }
+.cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 26px; margin-top: 32px; }
+.cta .quiet { color: var(--ink-muted); font-size: 15px; text-underline-offset: 4px; }
+.cta .quiet:hover { color: var(--ink); }
+.footer { padding-block: 72px 40px; border-top: 1px solid var(--border); }
+.footer-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 1.4fr; gap: clamp(1.5rem, 4vw, 3rem); }
+.footer nav { display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+.footer nav span { margin-bottom: 0.35rem; color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.footer nav a { display: inline-flex; align-items: center; min-height: 40px; font-size: 0.9375rem; text-decoration: none; }
+.footer nav a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.footer nav a[aria-current="page"] { font-weight: 600; }
+.footer-blurb p { max-width: 28ch; margin: 0; color: var(--ink-muted); line-height: 1.5; }
+.footer-blurb a { display: inline-block; margin-top: 1rem; font-family: var(--font-mono); font-size: 0.8125rem; text-decoration: none; }
+.mega-brand { display: flex; align-items: center; justify-content: center; gap: clamp(0.75rem, 2vw, 1.5rem); margin-top: clamp(3.5rem, 8vw, 6rem); text-decoration: none; }
+.mega-word { font-size: clamp(56px, 8.9vw, 128px); font-weight: 500; letter-spacing: -0.055em; line-height: 0.9; }
+.legal { display: flex; justify-content: space-between; gap: 1.5rem; margin-top: clamp(2rem, 4vw, 3rem); padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.7rem; line-height: 1.5; }
+.legal p { margin: 0; }
+.legal div { display: flex; gap: 1rem; }
+
+@media (max-width: 1100px) {
+  .hero-row, .spec-head { grid-template-columns: 1fr; gap: 28px; }
+  .chapter { padding: 32px 0 44px; }
+  .ch-copy { grid-template-columns: 1fr; gap: 14px; margin-bottom: 24px; }
+  .ch-copy .n { margin-bottom: 0; }
+  .cta-layout { grid-template-columns: 1fr; gap: 24px; align-items: start; }
+  .nav-links { display: none; }
+}
+@media (max-width: 720px) {
+  .wrap { padding-inline: 20px; }
+  .nav-inner { height: 60px; gap: 10px; padding-inline: 16px; }
+  .nav-brand { gap: 9px; }
+  .lockup img { height: 24px; width: 24px; border-radius: 6px; }
+  .lockup span { font-size: 16px; }
+  .endorsement { padding-left: 9px; font-size: 12px; }
+  .endorsement strong, .endorsement > span { display: none; }
+  .wide-label { display: none; }
+  .compact-label { display: inline; }
+  .btn-compact { min-height: 40px; padding: 0 12px; font-size: 14px; }
+  .hero { padding: 0 8px; }
+  .sheet { border-radius: 20px; }
+  .hero-inner { padding: 44px 16px 0; }
+  .lede { font-size: 16.5px; }
+  .actions { flex-direction: column; align-items: stretch; gap: 10px; }
+  .actions .btn { width: 100%; }
+  .actions .link-light { justify-content: center; border-bottom: 0; }
+  .stage { margin-top: 40px; }
+  .window { border-radius: 10px 10px 0 0; }
+  .chapters { padding-top: 72px; }
+  .spec { grid-template-columns: 1fr; }
+  .spec-wrap { padding: 40px 0 72px; }
+  .cta { padding-block: 64px 56px; }
+  .cta-mark { width: 48px; height: 48px; margin-bottom: 36px; border-radius: 12px; }
+  .cta-row { flex-direction: column; align-items: stretch; gap: 16px; }
+  .footer { padding-block: 36px 32px; }
+  .footer-nav { grid-template-columns: 1fr 1fr; }
+  .footer-blurb { grid-column: 1 / -1; }
+  .mega-brand { justify-content: flex-start; gap: 10px; margin-top: 36px; }
+  .mega-brand svg { width: 40px; height: 40px; }
+  .mega-word { font-size: clamp(34px, 11vw, 44px); }
+  .legal { flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  .has-js [data-hero] [data-rise] { opacity: 1; transform: none; }
+}
+</style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="nav-inner">
+        <div class="nav-brand">
+          <a class="lockup" href="/" aria-label="Useful Bot">
+            <img alt="" src="/brand/useful-bot-logo.svg" width="28" height="28" />
+            <span>Useful Bot</span>
+          </a>
+          <a class="endorsement" href="https://usefulbuild.com" aria-label="Useful Bot, by Useful Build">
+            <span>by</span><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 4H11V21H28V28H4Z" fill="currentColor"></path><path d="M14 4H28V18H21V11H14Z" fill="currentColor"></path></svg><strong>Useful Build</strong>
+          </a>
+        </div>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#how">What you get</a>
+          <a href="#facts">The facts</a>
+          <a href="/privacy/">Privacy</a>
+        </nav>
+        <a class="btn btn-compact when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.zip"><span class="wide-label">Download for Mac</span><span class="compact-label">Download</span></a>
+        <span class="btn btn-compact btn-soon when-soon">Coming soon</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" data-hero>
+        <div class="sheet">
+          <div class="sheet-grid" aria-hidden="true"></div>
+          <div class="hero-inner">
+            <h1 data-rise style="--i:0">A team of AI bots that lives on your Mac.</h1>
+            <div class="hero-row" data-rise style="--i:1">
+              <p class="lede">Give each bot one job: writing, research, your inbox or your files. They run on the model you already pay for, work in the apps you connect and ask before they touch anything you haven't allowed.</p>
+              <div>
+                <div class="actions">
+                  <span class="btn btn-light btn-soon when-soon">Coming soon</span>
+                  <a class="btn btn-light when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.zip">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+                    Download for Mac
+                  </a>
+                  <a class="link-light" href="#how">See how it works <span aria-hidden="true">&darr;</span></a>
+                </div>
+                <p class="cmd-note when-soon">The first release is on its way. The download goes up here the day it's out.</p>
+                <div class="when-live">
+                <div class="cmd">
+                  <code id="install-cmd"><span>$ </span>curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/install.sh | sh</code>
+                  <button type="button" data-copy="install-cmd" aria-label="Copy the install command">Copy</button>
+                </div>
+                <p class="cmd-note">Or paste this in Terminal. macOS 14+ · Apple silicon · Updates arrive in the app</p>
+                <p class="cmd-note">The app isn't notarized yet. After a download, allow it once in System Settings, Privacy &amp; Security. The Terminal line skips that step.</p>
+                <p class="visually-hidden" role="status" id="copy-status"></p>
+                </div>
+              </div>
+            </div>
+            <div class="stage" data-rise style="--i:2">
+              <figure>
+                <div class="window"><img alt="Useful Bot on a Mac: the Generalist bot explains what it can do, that it can set up other bots, where your data goes and that you can use any model." src="/shots/chat.png" width="3178" height="2106" fetchpriority="high" /></div>
+                <figcaption>The real app, asked two first questions.</figcaption>
+              </figure>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="chapters" id="how">
+        <div class="wrap">
+          <h2 class="section-title">What you get.</h2>
+          <article class="chapter">
+            <div class="ch-copy">
+              <span class="n">01</span>
+              <h3>One bot for every job.</h3>
+              <p>Make a bot for each part of your work and group them the way your week runs. Each keeps its own chat, instructions and memory, and can hand work to another.</p>
+            </div>
+            <figure class="shot">
+              <div class="frame"><img alt="The new chat picker: New Bot, Create group chat and a list of bots with their jobs." src="/shots/bots.png" width="1470" height="1033" loading="lazy" decoding="async" /></div>
+            </figure>
+          </article>
+          <article class="chapter">
+            <div class="ch-copy">
+              <span class="n">02</span>
+              <h3>Bring the model you already pay for.</h3>
+              <p>Sign in with ChatGPT or GitHub Copilot, add a coding plan or an API key, or point it at a model running on your own Mac. Pick the model per chat.</p>
+            </div>
+            <figure class="shot">
+              <div class="frame"><img alt="Useful Bot's model settings with connected providers." src="/shots/models.png" width="1710" height="1267" loading="lazy" decoding="async" /></div>
+            </figure>
+          </article>
+          <article class="chapter">
+            <div class="ch-copy">
+              <span class="n">03</span>
+              <h3>Your apps, on your terms.</h3>
+              <p>Connect Gmail, Calendar, Drive and hundreds more. Read only, Auto or Full access decides what a bot may do on its own. In Auto, anything else waits for your yes.</p>
+            </div>
+            <figure class="shot">
+              <div class="frame"><img alt="Useful Bot's connectors, with apps a bot can use." src="/shots/connectors.png" width="1498" height="1150" loading="lazy" decoding="async" /></div>
+            </figure>
+          </article>
+          <article class="chapter">
+            <div class="ch-copy">
+              <span class="n">04</span>
+              <h3>Work that runs while you're busy.</h3>
+              <p>Give a bot a routine, like a morning brief or a weekly cleanup, and it runs on schedule. Try it first with Test run. Web search is built in and free to use, with a daily allowance and no extra key.</p>
+            </div>
+            <figure class="shot shot-wide">
+              <div class="frame"><picture><source media="(max-width: 720px)" srcset="/shots/routines-pane.png" width="684" height="1122" /><img alt="A routine called Downloads triage: its schedule, instructions and Test run button." src="/shots/routines.png" width="2632" height="1122" loading="lazy" decoding="async" /></picture></div>
+            </figure>
+          </article>
+        </div>
+      </section>
+
+      <section class="spec-wrap" id="facts">
+        <div class="wrap">
+          <div class="spec-head">
+            <div>
+              <h2>Before you install.</h2>
+              <p>What leaves your Mac, in full: <a href="/privacy/">the privacy page</a>.</p>
+            </div>
+            <ul class="spec">
+              <li><span>Works on</span><strong>macOS 14 or later, Apple silicon</strong></li>
+              <li><span>Models</span><strong>ChatGPT, GitHub Copilot, Claude, Gemini, OpenRouter and more, or a local model</strong></li>
+              <li><span>Stays on your Mac</span><strong>Your chats, bots, memory and the files they make</strong></li>
+              <li><span>Leaves your Mac</span><strong>What you ask goes to the model provider you connect, and to the apps a bot uses for you</strong></li>
+              <li><span>Tracking</span><strong>None. No analytics, no crash reports, no ads</strong></li>
+              <li><span>Updates</span><strong>In the app, each one checked against its signing key</strong></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="dark">
+      <section class="cta" id="download">
+        <div class="wrap">
+          <img class="cta-mark" src="/brand/useful-bot-logo.svg" alt="" width="64" height="64" />
+          <div class="cta-layout">
+            <h2>Put a team of bots on your Mac.</h2>
+            <div>
+              <p class="when-live">Download the app, connect a model and make your first bot. It takes a couple of minutes.</p>
+              <p class="when-soon">The first release is on its way. Come back here for the download.</p>
+              <div class="cta-row">
+                <a class="btn btn-light when-live" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.zip">Download for Mac</a>
+                <span class="btn btn-light btn-soon when-soon">Coming soon</span>
+                <a class="quiet" href="https://cal.com/usefulbuild/free-audit">Want bots like this for your team? Book a free audit</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div class="wrap">
+          <div class="footer-nav">
+            <nav aria-label="Product links">
+              <span>Products</span>
+              <a href="https://bot.usefulbuild.com" aria-current="page">Useful Bot</a>
+              <a href="https://brain.usefulbuild.com">Useful Brain</a>
+              <a href="https://voice.usefulbuild.com">Useful Voice</a>
+              <a href="https://usefulapply.com">Useful Apply</a>
+            </nav>
+            <nav aria-label="Site links">
+              <span>Useful Build</span>
+              <a href="https://usefulbuild.com/#services">What we build</a>
+              <a href="https://usefulbuild.com/#work">Proof</a>
+              <a href="https://usefulbuild.com/#process">How it works</a>
+              <a href="https://usefulbuild.com/#about">About</a>
+            </nav>
+            <nav aria-label="Contact links">
+              <span>Contact</span>
+              <a href="https://cal.com/usefulbuild/free-audit">Book a free audit</a>
+              <a href="mailto:hello@usefulbuild.com">Email us</a>
+              <a href="https://github.com/wasimjalali" rel="me noopener">GitHub</a>
+            </nav>
+            <div class="footer-blurb">
+              <p>AI systems that take repetitive work off your team. Fixed fee, live in weeks and yours to keep.</p>
+              <a href="mailto:hello@usefulbuild.com">hello@usefulbuild.com</a>
+            </div>
+          </div>
+          <a class="mega-brand" href="https://usefulbuild.com" aria-label="Useful Build">
+            <svg width="80" height="80" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 4H11V21H28V28H4Z" fill="currentColor"></path><path d="M14 4H28V18H21V11H14Z" fill="currentColor"></path></svg>
+            <span class="mega-word">usefulbuild.</span>
+          </a>
+          <div class="legal">
+            <p>Useful Build is a studio operated by Karko AI Inc., a US Delaware corporation. &copy; 2026 Karko AI Inc.</p>
+            <div>
+              <a href="https://usefulbuild.com/imprint/">Imprint</a>
+              <a href="/privacy/">Privacy</a>
+              <a href="https://usefulbuild.com/terms/">Terms</a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+    <script>
+      const hero = document.querySelector("[data-hero]");
+      requestAnimationFrame(() => requestAnimationFrame(() => { if (hero) hero.dataset.visible = "true"; }));
+      const nav = document.querySelector("header.nav");
+      const updateNav = () => { if (nav) nav.dataset.scrolled = window.scrollY > 24 ? "true" : "false"; };
+      updateNav();
+      window.addEventListener("scroll", updateNav, { passive: true });
+      for (const button of document.querySelectorAll("[data-copy]")) {
+        button.addEventListener("click", async () => {
+          const code = document.getElementById(button.dataset.copy);
+          const status = document.getElementById("copy-status");
+          const text = code.textContent.replace(/^\$ /, "");
+          try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = "Copied";
+            status.textContent = "Install command copied.";
+          } catch {
+            window.getSelection()?.selectAllChildren(code);
+            button.textContent = "Selected";
+            status.textContent = "Couldn't copy. The command is selected: press Command-C.";
+          }
+          setTimeout(() => { button.textContent = "Copy"; status.textContent = ""; }, 1800);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "note": "Loopback address but no local Origin/Referer — no auto-session.",
+  "request": {
+    "method": "GET",
+    "path": "/api/auth/session",
+    "headers": {}
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false
+    }
+  }
+}

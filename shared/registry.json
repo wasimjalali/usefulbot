@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "alias": "workhorse",
+      "upstream": "opencode-go",
+      "upstreamModelId": "glm-5.3-flash",
+      "protocol": "chat-completions",
+      "catalogContextTokens": 1000000,
+      "catalogMaxOutputTokens": 131072,
+      "modelContextWindowTokens": 131072,
+      "maxOutputTokens": 32768,
+      "reasoningEffort": "low",
+      "modalities": ["text"],
+      "capabilities": { "streaming": true, "tools": true, "reasoningReplay": true },
+      "evidence": {
+        "sourceUrls": [
+          "https://raw.githubusercontent.com/anomalyco/models.dev/dev/models/zhipuai/glm-5.3-flash.toml"
+        ],
+        "checkedAt": "2026-09-12",
+        "liveGate": "S1",
+        "liveVerified": true,
+        "packageLockHash": "9da99cfb1f5bb31bc07deab1ad8c6b522ecb05517fd9bee1e55b72d515fa2a67"
+      },
+      "fallbackAliases": []
+    },
+    {
+      "alias": "reviewer",
+      "upstream": "opencode-go",
+      "upstreamModelId": "glm-5.3",
+      "protocol": "chat-completions",
+      "catalogContextTokens": 1000000,
+      "catalogMaxOutputTokens": 131072,
+      "modelContextWindowTokens": 131072,
+      "maxOutputTokens": 4096,
+      "reasoningEffort": "high",
+      "modalities": ["text"],
+      "capabilities": { "streaming": true, "tools": true, "reasoningReplay": true },
+      "evidence": {
+        "sourceUrls": [
+          "https://raw.githubusercontent.com/anomalyco/models.dev/dev/models/zhipuai/glm-5.3.toml"
+        ],
+        "checkedAt": "2026-09-12",
+        "liveGate": "S1",
+        "liveVerified": true,
+        "packageLockHash": "9da99cfb1f5bb31bc07deab1ad8c6b522ecb05517fd9bee1e55b72d515fa2a67"
+      },
+      "fallbackAliases": []
+    }
+  ]
+}

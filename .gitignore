@@ -1,0 +1,54 @@
+# dependencies
+node_modules/
+scripts/brand-tools/node_modules
+
+# secrets and local runtime config (never committed)
+.env
+.env.*
+router/.env
+secrets/
+*.pem
+
+# eve runtime state and build output
+.eve/
+dist/
+router/dist/
+.next/
+web/.next/
+build/
+
+# verification screenshots (large, per-session evidence)
+review-*.png
+dup-*.png
+ondemand-*.png
+
+# release verification report (reproduce with npm run verify:release)
+release-verify.json
+
+# spike scratch (never evidence)
+spikes/**/scratch/
+
+# macOS
+.DS_Store
+
+# generated ts
+*.tsbuildinfo
+web/tsconfig.tsbuildinfo
+
+# Root-level QA screenshots from verification runs. Root-anchored so brand/
+# and docs/grokbot-ui-reference/ images stay tracked.
+/final-*.png
+/crash-fix-*.png
+/fold-*.png
+/fold3-*.png
+/baseline-app.png
+/providers-*.png
+/orch-*.png
+/perf-batch*.png
+/full-access-*.png
+/r4-*.png
+/polish-shots/
+/.playwright-mcp/
+/cli-verify-*.png
+/ownapp-*.png
+yarn.lock

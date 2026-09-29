@@ -1,0 +1,21 @@
+{
+  "note": "S9: introspection answers the same verdict — a dead credential row is a 401 credential_invalid that destroys the session and clears the cookie.",
+  "request": {
+    "method": "GET",
+    "path": "/api/auth/session",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "cookie": "<sessionCookie>"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": true,
+    "json": {
+      "ok": false,
+      "error": "credential_invalid"
+    }
+  }
+}

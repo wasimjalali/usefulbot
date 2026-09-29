@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<!--
+  Useful Bot logo master: the inverse logo, the black head on a white square.
+  The head is the bot face from avatar-face.svg with its colours flipped (see below).
+  Its geometry is copied unchanged, in the face source's own units: circle centre (512, 420),
+  radius 352, face box 768 units. Only the placement matrix differs between masters.
+  The hairline edge is left off.
+-->
+<!--
+  Placement matches the first-run Welcome tile: a 76 pt face box in a 112 pt tile, so the
+  768-unit face box spans 19/28 of the artboard. Scale 19/21 about the face box centre puts
+  the circle centre on (512, 512). Circle diameter 636.95 = 62.2% of the artboard.
+-->
+<!--
+  Inverse: the same head in black for white surfaces. Every colour flips so the face never
+  becomes a black blob: head #000000, glasses, eyes and mouth #FFFFFF, eye highlights #000000.
+  The tongue keeps #FF8FA3. Geometry and placement are identical to the white masters.
+-->
+<title>Useful Bot</title>
+<rect id="tile" width="1024" height="1024" fill="#FFFFFF"/>
+<g id="face" transform="matrix(.904762 0 0 .904762 48.762 132)">
+  <g id="head"><circle cx="512" cy="420" r="352" fill="#000000"/></g>
+  <g id="glasses"><path fill="#FFFFFF" fill-rule="evenodd" d="M225.024 363.52c18.432-1.536 26.88-13.056 49.92-23.04 27.648-10.752 56.064-13.056 81.408-13.056 58.368-.768 92.16 9.216 112.128 31.488 9.216 10.752 10.752 19.2 17.664 21.504 7.68 2.304 14.592-.768 26.112-.768s18.432 3.072 26.112.768c6.912-2.304 8.448-10.752 17.664-21.504 19.968-22.272 53.76-32.256 112.128-31.488 25.344 0 53.76 2.304 81.408 13.056 23.04 9.984 31.488 21.504 49.92 23.04 6.144 1.536 6.144 6.912 6.144 16.128 0 10.752-1.536 12.288-9.984 15.36-11.52 4.608-11.52 13.824-13.824 29.952-3.84 41.472-11.52 72.96-31.488 91.392-16.896 16.128-46.08 23.04-81.408 23.04-46.848 0-80.64-9.984-99.072-30.72-19.2-19.968-25.344-49.92-29.952-79.104-2.304-16.128-6.912-25.344-27.648-25.344s-25.344 9.216-27.648 25.344c-4.608 29.184-10.752 59.136-29.952 79.104-18.432 20.736-52.224 30.72-99.072 30.72-35.328 0-64.512-6.912-81.408-23.04-19.968-18.432-27.648-49.92-31.488-91.392-2.304-16.128-2.304-25.344-13.824-29.952-8.448-3.072-9.984-4.608-9.984-15.36 0-9.216 0-14.592 6.144-16.128m131.328-14.592c-42.24 0-69.888 6.144-84.48 23.808-16.896 19.968-13.824 49.152-9.216 79.104 3.84 27.648 11.52 46.848 28.416 57.6 15.36 9.984 36.864 13.824 64.512 13.824 40.704 0 67.584-8.448 84.48-26.88 14.592-16.128 22.272-41.472 26.112-68.352 3.072-24.576-.768-43.776-12.288-56.832-16.896-17.664-48.384-22.272-97.536-22.272m311.808 0c-49.152 0-80.64 4.608-97.536 22.272-11.52 13.056-15.36 32.256-12.288 56.832 3.84 26.88 11.52 52.224 26.112 68.352 16.896 18.432 43.776 26.88 84.48 26.88 27.648 0 49.152-3.84 64.512-13.824 16.896-10.752 24.576-29.952 28.416-57.6 4.608-29.952 7.68-59.136-9.216-79.104-14.592-17.664-42.24-23.808-84.48-23.808"/></g>
+  <g id="mouth"><path d="M436 596 Q512 626 588 596 C586 646 552 672 512 672 C472 672 438 646 436 596 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="22" stroke-linejoin="round"/><path id="tongue" d="M474 656 C490 636 534 636 550 656 C540 668 527 672 512 672 C497 672 484 668 474 656 Z" fill="#FF8FA3"/></g>
+  <g id="eye-left"><ellipse cx="370.944" cy="441.088" fill="#FFFFFF" rx="50.688" ry="70.656"/><g id="eye-highlight-left"><path fill="none" stroke="#000000" stroke-linecap="round" stroke-width="15.36" d="M365.568 404.224c-9.984 2.304-17.664 10.752-21.504 23.808"/></g></g>
+  <g id="eye-right"><ellipse cx="653.568" cy="441.088" fill="#FFFFFF" rx="50.688" ry="70.656"/><g id="eye-highlight-right"><path fill="none" stroke="#000000" stroke-linecap="round" stroke-width="15.36" d="M648.192 404.224c-9.984 2.304-17.664 10.752-21.504 23.808"/></g></g>
+</g>
+</svg>

@@ -1,0 +1,19 @@
+{
+  "note": "S9 at mint: while phoneEnabled is false a phone credential gets credential_invalid — the same verdict the routes answer.",
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/session",
+    "headers": {
+      "origin": "http://127.0.0.1:4399",
+      "authorization": "Bearer contract-fixture-phone-token-32bytes"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "credential_invalid"
+    }
+  }
+}

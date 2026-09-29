@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "eve/workflow-modules"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["agent/**/*.ts", "evals/**/*.ts", "shared/**/*.ts", "test/**/*.ts", "spikes/**/*.ts"],
+  "exclude": ["web", "node_modules"]
+}

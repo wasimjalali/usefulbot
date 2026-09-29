@@ -1,0 +1,49 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "../shared/eve-stream.ts",
+    "../shared/shell-store.ts",
+    "../shared/shell-io.ts",
+    "../shared/policy.ts",
+    "../shared/web-sessions.ts",
+    "../shared/eve-proxy.ts",
+    "../shared/agent-store.ts",
+    "../shared/handoffs.ts",
+    "../shared/threads.ts",
+    "../shared/agents-send.ts",
+    "../shared/bot-face.ts",
+    "../agent/lib/approvals.ts",
+    "../agent/lib/memory.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

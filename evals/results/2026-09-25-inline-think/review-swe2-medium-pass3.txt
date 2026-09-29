@@ -1,0 +1,27 @@
+```json
+[
+  {
+    "finding": "\"A clean pass from both counts as the PR review\" assumes exactly two reviewers. The same sentence now permits two Opus 5.5 reviewers for a large diff, which makes three reviewers total, so \"from both\" is stale and could be read as exempting the third reviewer. \"from all reviewers\" (or similar) would cover both cases.",
+    "severity": "low",
+    "file": "CLAUDE.md",
+    "line": 35
+  },
+  {
+    "finding": "\"plus one Opus 5.5 reviewer (two at most, for a large diff)\" is ambiguous read cold: \"two at most\" can parse as two Opus reviewers (the owner's intent, matching the global rule) or as two reviewers total (SWE-2 plus one Opus is already two, making the parenthetical meaningless). Since it mirrors the owner's own phrasing this is cosmetic, but \"up to two Opus reviewers for a large diff\" would remove the ambiguity.",
+    "severity": "low",
+    "file": "CLAUDE.md",
+    "line": 27
+  }
+]
+```
+
+DISMISSED:
+
+- **"each on the areas it suits" vs. decision's "split by area"**: same instruction in plainer words; an agent reading it cold gets parallel reviewers with disjoint scopes. Fine.
+- **262k context guidance**: "save the diff to a file, name the exact files and line ranges, tell it to make one tool call at a time, and never ask it to review 'the branch'; a pass should take minutes" states every element of the decision verbatim. Fine.
+- **Expiry**: line 38 unchanged, still 2026-10-15 with "ask Wasim what to move to". Matches the decision.
+- **`dangerous` permission-mode justification**: unchanged from prior wording; it explains why `auto`/`smart` fail in print mode, which supports the "SWE-2 in the Devin CLI" instruction. No contradiction.
+- **Removed "not parallel Opus subagents"**: correctly deleted; parallel Opus reviewers are now required, so keeping it would contradict the decision.
+- **No command for launching the Opus reviewer** (`claude -p --model claude-opus-5-5 --effort high`): not required by the decision statement, and the global rules file carries it. Repo file stays readable without it. Fine.
+- **Tier table (max/high/medium criteria) absent from repo file**: pre-existing omission, not introduced by this diff; the command form `swe-2-max|high|medium` is still documented. Out of scope.
+- **No contradiction with the rest of the file**: the only other process text (Verification section, lines 40-53) covers app testing and rebuilds, unrelated to reviewer selection. Checked lines 1-50; nothing else governs reviews.
