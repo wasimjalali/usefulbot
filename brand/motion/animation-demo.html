@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Useful Bot motion</title>
+  <link rel="icon" href="../favicon/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../tokens.css">
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:var(--ub-black);color:var(--ub-white);font:16px/1.5 system-ui,sans-serif}main{max-width:640px;margin:auto;padding:32px 24px}a{color:inherit;text-underline-offset:4px;display:inline-flex;min-height:44px;align-items:center}h1{font-size:28px;font-weight:600;letter-spacing:-.03em}img{display:block;width:100%;height:auto}button{min-height:44px;padding:10px 20px;border:1px solid var(--ub-white);border-radius:6px;color:var(--ub-black);background:var(--ub-white);font:inherit;cursor:pointer}button:hover{background:var(--ub-edge-shade)}button:active{background:var(--ub-edge-shade)}button:disabled{opacity:.5;cursor:default}:focus-visible{outline:2px solid var(--ub-white);outline-offset:4px}
+  </style>
+</head>
+<body><main><a href="../preview.html">Back to assets</a><h1>Useful Bot motion</h1><img id="mascot" src="../svg/useful-bot-mark.svg" width="1024" height="1024" alt="Useful Bot"><button id="motion-toggle" type="button" aria-pressed="false">Play animation</button><p id="motion-status">2.8 seconds. Float and blink.</p></main>
+  <script>
+    const media = matchMedia('(prefers-reduced-motion: reduce)'), button = document.getElementById('motion-toggle'), mascot = document.getElementById('mascot');
+    let playing = false;
+    function update() {
+      if (media.matches) playing = false;
+      mascot.src = playing ? 'useful-bot-animated.svg' : '../svg/useful-bot-mark.svg';
+      button.textContent = playing ? 'Stop animation' : 'Play animation';
+      button.setAttribute('aria-pressed', String(playing)); button.disabled = media.matches;
+      document.getElementById('motion-status').textContent = media.matches ? 'Reduced motion is enabled. The static mark is shown.' : '2.8 seconds. Float and blink.';
+    }
+    button.addEventListener('click', () => { playing = !playing; update(); }); media.addEventListener('change', update); update();
+  </script>
+</body>
+</html>

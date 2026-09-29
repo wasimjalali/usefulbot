@@ -1,0 +1,21 @@
+{
+  "note": "Mint-side over tailnet while disabled: still credential_invalid, because the enrolled signature keeps the request class tailnet.",
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/session",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "authorization": "Bearer contract-fixture-phone-token-32bytes"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "credential_invalid"
+    }
+  }
+}

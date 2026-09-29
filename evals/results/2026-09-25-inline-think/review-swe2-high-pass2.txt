@@ -1,0 +1,29 @@
+Now let me check how these functions are wired into the router — where `onFound`/`noteInlineThink` and `splitThinkCompletion` are called.Let me check the test file's `block` helper and the new tests in context.Let me check the shared helpers (`THINK_TAGS`, `splitLeadingThink`).Let me check how the tests run, then verify them.Tests pass. Let me verify typecheck on the touched file compiles cleanly.All checks done. Tests pass (21/21), typecheck clean. Here's my verdict.
+
+```json
+[
+  {
+    "finding": "splitThinkCompletion has no equivalent of the native-reasoning guard: a non-streamed message with a populated reasoning_content/reasoning field whose content opens with a think tag still returns true, so index.ts:797 learns the model. A native-reasoning provider that emits both (some R1/vLLM-style endpoints leave the tag in content and fill the field) is learned through the non-streamed path, and rewrapThinkHistory then strips its reasoning field into content on later requests, the same false-learning fix 1 removes for streams.",
+    "severity": "low",
+    "file": "router/src/inline-think.ts",
+    "line": 244
+  }
+]
+```
+
+DISMISSED:
+
+- **Ordering of the native check vs the feed in the same chunk (lines 203-206 vs 211):** the check runs before `feed` for that choice, so a delta carrying both `reasoning_content` and `content: "<think>…"` sets `stream.native` before the tag-open branch can learn. Correct.
+- **`settled()` fast path (line 172) bypassing native detection:** once every choice is in `text` mode no tag can open (tags only open in `start`), and choices appearing later pass through unparsed per the documented design, so the skipped flag has no consequence.
+- **`if (state.mode === "text") continue` (line 201) skips the native check:** a text-mode choice can never open a tag, so skipping changes nothing. It could only matter if another choice later opened a tag, i.e. `n > 1`, which eve never requests (stated in the function comment).
+- **Native reasoning arriving after the tag already opened can't unlearn:** inherent to learn-on-first-observation; providers emit reasoning before content, so the ordering the guard handles is the real one.
+- **256-cap off-by-one (line 77):** `text.length <= MAX_HELD_START` holds at most 256 chars and releases at 257, matching "at most 256". No off-by-one.
+- **Cap only gates the ambiguous branch:** a complete tag is matched at line 65 before the length check, so 300 spaces + `<think>` in one chunk still splits; the cap only bounds whitespace/partial-tag holding. Correct design.
+- **Tag straddling the 256 boundary is released as text** and a later `hink>` chunk passes through literally: the intended tradeoff of the cap; a model emitting >256 leading whitespace then a think tag is pathological.
+- **Non-string truthy reasoning (`reasoning_content: []`/object) doesn't set `native`:** no openai-chat provider emits structured reasoning in deltas; string is the convention.
+- **Empty-string reasoning fields don't set `native`:** an empty placeholder field isn't the model filling the reasoning field; learning an inline thinker then is still correct.
+- **`rewrapThinkHistory` guard (line 286):** runs before the destructure and returns `item` by identity, so array/object content is untouched rather than overwritten by a bare think block (which was real data loss before). `content: null`, absent and `""` still wrap correctly, asserted by `out[2]` in the test.
+- **Multi-choice same-payload ordering:** a tag-opening choice iterated before a reasoning-bearing choice in one payload still learns; unreachable at `n = 1`.
+- **`addReasoning` merges split thinking into the existing native field** rather than a second field: intended, asserted by the "native inline" tests.
+- **`MAX_HELD_START` doc comment says "Whitespace held"** though held text can include a partial tag: wording nit, the `Mode` doc above already describes held text correctly.
+- **Test adequacy:** each fix has a dedicated test and all pass. Not pinned: the exact 256/257 boundary, and same-chunk reasoning+tag ordering (the test at line 145 exercises it but doesn't assert `found`). Verified correct by inspection; missing pins are a nit, not a defect.

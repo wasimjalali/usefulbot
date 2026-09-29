@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy · Useful Bot</title>
+    <meta name="description" content="What the Useful Bot Mac app keeps on your Mac, what it sends and to whom." />
+    <meta name="theme-color" content="#f8f8f8" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="canonical" href="https://bot.usefulbuild.com/privacy/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bot.usefulbuild.com/privacy/" />
+    <meta property="og:title" content="Privacy · Useful Bot" />
+    <meta property="og:description" content="What the Useful Bot Mac app keeps on your Mac, what it sends and to whom." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:image" content="https://bot.usefulbuild.com/og.png" />
+    <style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/fonts/geist-mono-variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root {
+  --surface: #f8f8f8; --paper-bright: #ffffff; --ink: #171717; --ink-muted: #5c5c5c; --rule: #e0e0e0;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body { min-width: 320px; color: var(--ink); background: var(--surface); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.nav-inner { display: flex; width: min(100%, 1248px); height: 72px; align-items: center; gap: 20px; margin-inline: auto; padding-inline: 24px; }
+.lockup { display: inline-flex; min-height: 44px; align-items: center; gap: 9px; margin-right: auto; text-decoration: none; }
+.lockup img { display: block; width: 28px; height: 28px; border-radius: 7px; }
+.lockup span { font-size: 18px; font-weight: 550; letter-spacing: -0.03em; }
+.back { display: inline-flex; min-height: 44px; align-items: center; font-size: 14.5px; text-decoration: none; }
+.back:hover { text-decoration: underline; text-underline-offset: 6px; }
+main { width: min(100%, 760px); margin-inline: auto; padding: 56px 24px 120px; }
+.eyebrow { margin: 0 0 18px; color: var(--ink-muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(36px, 5vw, 56px); font-weight: 500; line-height: 1.02; letter-spacing: -0.04em; }
+.lede { margin: 22px 0 0; color: var(--ink-muted); font-size: 18px; line-height: 1.6; }
+.summary { display: grid; gap: 0; margin: 44px 0 8px; padding: 0; list-style: none; border-top: 1px solid var(--ink); }
+.summary li { display: grid; grid-template-columns: minmax(130px, 0.4fr) minmax(0, 1fr); gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.summary span { color: var(--ink-muted); font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.06em; line-height: 1.9; text-transform: uppercase; }
+.summary strong { font-size: 16px; font-weight: 500; line-height: 1.5; }
+h2 { margin: 56px 0 12px; font-size: 24px; font-weight: 500; letter-spacing: -0.025em; }
+h3 { margin: 28px 0 6px; font-size: 16px; font-weight: 600; }
+p, li { font-size: 16px; line-height: 1.65; }
+p { margin: 0 0 14px; }
+.body ul { margin: 0 0 14px; padding-left: 20px; }
+.body li { margin-bottom: 6px; }
+code { font-family: var(--font-mono); font-size: 0.9em; overflow-wrap: anywhere; }
+.muted { color: var(--ink-muted); }
+footer { border-top: 1px solid var(--rule); }
+.legal { display: flex; justify-content: space-between; gap: 1.5rem; width: min(100%, 1248px); margin-inline: auto; padding: 24px; color: var(--ink-muted); font-family: var(--font-mono); font-size: 0.7rem; line-height: 1.5; }
+.legal p { margin: 0; font-size: inherit; }
+.legal div { display: flex; gap: 1rem; }
+.legal a { display: inline-flex; align-items: center; min-height: 40px; }
+@media (max-width: 720px) {
+  .nav-inner { height: 60px; padding-inline: 16px; }
+  main { padding: 32px 20px 72px; }
+  .summary li { grid-template-columns: 1fr; gap: 4px; }
+  .legal { flex-direction: column; }
+}
+</style>
+  </head>
+  <body>
+    <header>
+      <div class="nav-inner">
+        <a class="lockup" href="/" aria-label="Useful Bot home">
+          <img alt="" src="/brand/useful-bot-logo.svg" width="28" height="28" />
+          <span>Useful Bot</span>
+        </a>
+        <a class="back" href="/">Back to Useful Bot</a>
+      </div>
+    </header>
+
+    <main>
+      <p class="eyebrow">Last updated 29 September 2026</p>
+      <h1>Privacy</h1>
+      <p class="lede">Useful Bot is a Mac app. Your bots, chats and files live on your Mac, and we never see them. This page lists everything the app sends, where it goes and why.</p>
+
+      <ul class="summary">
+        <li><span>We receive</span><strong>Only feedback you choose to send from Settings</strong></li>
+        <li><span>Your model provider receives</span><strong>Your messages and what a bot needs to answer them</strong></li>
+        <li><span>Tracking</span><strong>None. No analytics, no crash reports, no ads, no selling data</strong></li>
+      </ul>
+
+      <div class="body">
+        <h2>Who we are</h2>
+        <p>Useful Bot is made by Useful Build, a studio operated by Karko AI Inc., 1207 Delaware Ave #412, Wilmington, DE 19806, USA. Karko AI Inc. is the controller for the feedback described below. Questions and requests go to <a href="mailto:hello@usefulbuild.com">hello@usefulbuild.com</a>.</p>
+
+        <h2>What stays on your Mac</h2>
+        <p>Your bots, their instructions and memory, your chats, the images you send and the files the bots make are stored on your Mac, in your user folders. We have no copy and no account system.</p>
+        <p>Model provider keys and sign-ins are stored on your Mac in files only your user account can read. The app's own local tokens and any secrets for connections you add are kept in the macOS Keychain.</p>
+
+        <h2>What leaves your Mac, and why</h2>
+
+        <h3>The model provider you connect</h3>
+        <p>To answer you, a bot sends your conversation (messages, attachments and tool results) to the model provider you connected: for example OpenAI, GitHub Copilot, Anthropic, Google, OpenRouter or another listed provider. That provider handles it under its own terms and privacy policy. If you connect a local model such as Ollama or LM Studio, it stays on your Mac. The app also fetches each provider's list of models, and public model details from <code>models.dev</code>. Requests to OpenRouter carry the app's name and a website address as the referrer, as OpenRouter asks.</p>
+
+        <h3>Apps and tools you connect</h3>
+        <ul>
+          <li><strong>Connectors</strong> (Gmail, Calendar, Drive and others) run through Composio with your own Composio key. When a bot uses one, what it sends and gets back passes through Composio and that app.</li>
+          <li><strong>Web search</strong> sends the search words to Firecrawl to find results.</li>
+          <li><strong>Drawings and MCP servers</strong>: when a bot draws, it uses Excalidraw's server. Servers you add yourself get what a bot sends them. Interactive widgets from those servers may load code from that server or from <code>esm.sh</code>.</li>
+          <li><strong>App logos</strong> in Connectors load from Composio's logo server, which sees your IP address and which logos are shown.</li>
+          <li><strong>Command-line tools</strong> a bot installs or runs, within the access level you chose, reach whatever those tools reach.</li>
+        </ul>
+        <p>Nothing here happens in the background on its own: each is a bot acting on your request or a routine you set up, within the access level you chose (Read only, Auto or Full access).</p>
+
+        <h3>Updates</h3>
+        <p>The app checks GitHub for new versions. GitHub sees your IP address and the app version, as with any download. No system profile is sent. Every update is checked against the app's signing key before it installs.</p>
+
+        <h3>Feedback you send us</h3>
+        <p>Settings &gt; Feedback sends us your message, its type, the reply email if you give one and a random install ID (made on your Mac, used only to limit spam). If you tick the box, it adds the app version and build, macOS version and chip. We store it with Cloudflare and email it to our team. Cloudflare handles the request like any other; in the feedback we store, your IP address is kept only as a salted hash, used to stop abuse. We keep feedback until it's no longer useful to improve the app, or until you ask us to delete it.</p>
+
+        <h2>What we don't do</h2>
+        <p>No analytics, telemetry or crash reporting in the app, and the frameworks it runs on have theirs switched off. No ads or cross-site tracking. We don't sell data and we don't train AI models on anything you send us.</p>
+
+        <h2>This website</h2>
+        <p>bot.usefulbuild.com is served by Cloudflare, which processes technical request data such as IP addresses to deliver the site and protect it from abuse. This site runs no analytics and sets no cookies. The download comes from GitHub.</p>
+
+        <h2>Your rights</h2>
+        <p>If you're in the EEA or the UK, we rely on legitimate interests to handle feedback and keep the service safe. You can ask to see, correct or delete feedback you sent, or object to how we use it, at <a href="mailto:hello@usefulbuild.com">hello@usefulbuild.com</a>. You can also complain to your local data protection authority. Data we hold is processed in the United States.</p>
+
+        <h2>Changes</h2>
+        <p>If what the app sends changes, we update this page and its date first.</p>
+      </div>
+    </main>
+
+    <footer>
+      <div class="legal">
+        <p>Useful Build is a studio operated by Karko AI Inc., a US Delaware corporation. &copy; 2026 Karko AI Inc.</p>
+        <div>
+          <a href="https://usefulbuild.com/imprint/">Imprint</a>
+          <a href="/privacy/" aria-current="page">Privacy</a>
+          <a href="https://usefulbuild.com/terms/">Terms</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

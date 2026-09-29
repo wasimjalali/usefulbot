@@ -1,0 +1,21 @@
+{
+  "note": "S9: the bound credential revoked mid-session → 401 credential_invalid.",
+  "request": {
+    "method": "GET",
+    "path": "/api/status",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "cookie": "<sessionCookie>"
+    }
+  },
+  "response": {
+    "status": 401,
+    "setCookie": false,
+    "json": {
+      "ok": false,
+      "error": "credential_invalid"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "note": "Loopback class auto-session (S8): the desktop login wall is loopback-only.",
+  "request": {
+    "method": "GET",
+    "path": "/api/auth/session",
+    "headers": {
+      "origin": "http://127.0.0.1:4399"
+    }
+  },
+  "response": {
+    "status": 200,
+    "setCookie": true,
+    "json": {
+      "ok": true,
+      "profile": "desktop",
+      "expiresAt": 1790028654281,
+      "csrfToken": "<csrfToken>"
+    }
+  }
+}

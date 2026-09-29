@@ -1,0 +1,16 @@
+{"ev":"app_init","pid":72375,"run":"cold-cold_first_open_tools-2-ff1b3590","t":24786210344750}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"initial_selection","run":"cold-cold_first_open_tools-2-ff1b3590","t":24786594783125}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"ready","run":"cold-cold_first_open_tools-2-ff1b3590","t":24786789200250}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_first_open_tools-2-ff1b3590","source":"disk_snapshot","t":24786912247541}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":24786912247541,"run":"cold-cold_first_open_tools-2-ff1b3590","stallMaxMs":1.3058749999999999,"t":24787951037833}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"step","index":1,"label":"cold_first_open_tools","name":"Perf Long Tools","run":"cold-cold_first_open_tools-2-ff1b3590","t":24789469387083}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"select_start","run":"cold-cold_first_open_tools-2-ff1b3590","t":24789469570541}
+{"blocks":36,"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"landed","events":3445,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":35,"run":"cold-cold_first_open_tools-2-ff1b3590","source":"disk_snapshot","t":24789745392958}
+{"ev":"prewarm_start","run":"cold-cold_first_open_tools-2-ff1b3590","t":24789939258708}
+{"ev":"prewarm_end","run":"cold-cold_first_open_tools-2-ff1b3590","t":24789956242041}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"responsive","landedAt":24789745392958,"run":"cold-cold_first_open_tools-2-ff1b3590","stallMaxMs":132.84729200000001,"t":24790915002666}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_first_open_tools-2-ff1b3590","t":24792474852500}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"select_start","run":"cold-cold_first_open_tools-2-ff1b3590","t":24792474952125}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_first_open_tools-2-ff1b3590","source":"stash_snapshot","t":24792684583708}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":24792684583708,"run":"cold-cold_first_open_tools-2-ff1b3590","stallMaxMs":1.3146249999999999,"t":24793724896166}
+{"ev":"quit","run":"cold-cold_first_open_tools-2-ff1b3590","t":24796913484458}

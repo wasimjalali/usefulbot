@@ -1,0 +1,29 @@
+{
+  "app": "macos/dist/Useful Bot.app",
+  "installedApp": "/Applications/Useful Bot.app",
+  "buildHint": "npm run build:app, then restart the web service",
+  "shellState": "~/.useful-bot/shell.json",
+  "node": "/usr/local/bin/node",
+  "webBuildStamp": "web/.next/ub-sources.sha256",
+  "webServiceProcess": "scripts/service.mjs web",
+  "resultsDir": "evals/results",
+  "windowTitle": "Useful Bot",
+  "minWindowHeight": 400,
+  "fps": 60,
+  "scale": 0.5,
+  "crop": { "left": 250, "top": 70, "right": 0, "bottom": 170 },
+  "changeThreshold": 0.6,
+  "settleQuietMs": 600,
+  "maxExternalCpu": 250,
+  "ownProcesses": ["UsefulBotApp", "scripts/service.mjs", "eve/bin/eve.js", "local-server-child", "next-server",
+                   "router/src/index.ts", "perfrec", "perfguard.py", "caffeinate", "ps -Ao"],
+  "pauseMs": 1500,
+  "fixtures": {
+    "shortA": "Perf Short A",
+    "shortB": "Perf Short B",
+    "longTools": "Perf Long Tools",
+    "longReplies": "Perf Long Replies"
+  },
+  "runs": { "cold": 5, "coldNoSnapshot": 5, "warmShort": 10, "warmLong": 30 },
+  "budgetRule": { "medianFactor": 1.2, "floorMs": 20, "worstFactor": 1.25, "worstOverMedian": 1.5, "stallFloorMs": 150 }
+}

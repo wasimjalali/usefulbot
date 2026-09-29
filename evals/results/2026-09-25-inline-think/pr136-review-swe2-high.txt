@@ -1,0 +1,40 @@
+I'll start by reading the diff.Now reading the repin/landRestored section (lines 440-535).Now the landing loop section (lines 740-800).Now the ScrollPinnedTracker section (lines 1751-1925).Now let me find every consumer of `distance` / `scrollProbe` elsewhere in the file.Let me look at the tracker attachment and send/follow flow around lines 700-870.Now the send/follow flow (lines 800-870).Now the ScrollProbe class definition — let me find it.Let me check for a bottom inset and the `chatHead` value, to confirm `contentInsets.bottom` is zero and what the 62pt is.One more check — whether any other file duplicates the old bottom-edge formula or reads `visibleRect`/scroll geometry.All consumers reviewed. I traced every read of `distance`/`scrollProbe.distance` in the file (grep confirmed they all live in `ChatView.swift`: lines 480, 776, 1772, 1776, 1815-1828, 1848, 1902), plus the probe lifecycle (`ScrollProbe.reset` at 1714, `markAppScroll` at 1727) and the send/hold paths at 813-859.
+
+```json
+[
+  {
+    "finding": "movedAway's `new.distance > 2` floor is now a live threshold for the first time. Under the old formula distance never read below ~62, so the clause was vacuous and any wheel/keyboard up-move that increased distance by >0.25 unpinned. With the corrected distance, an up-move that settles within 2pt of the bottom fails `new.distance > 2`, leaves `pinned` true, and the next resize triggers the drift check, which scrolls the reader back down against their input. The doc comment at 1866-1869 still claims a move up 'however small' unpins. Impact is small (wheel ticks are typically well over 2pt; trackpad scrolls go through the phase-end path, which already has an equivalent |netUp| <= 2 dead zone at line 1818-1824), but this is a real behavioral change the diff does not mention: either the floor is intended and the comment is now wrong, or the floor should not apply near the bottom.",
+    "severity": "low",
+    "file": "macos/Sources/UsefulBotApp/ChatView.swift",
+    "line": 1772
+  }
+]
+```
+
+DISMISSED:
+
+- **`landRestored` `distance <= 1` (line 480).** Was dead code before (distance >= 62 always, so restored chats ran to the 10s `landingCap`). Now reads true only at the real bottom. Cannot land early: `atBottom` is ANDed with `height == lastHeight` (two consecutive equal heights) and `confirmed` (transcriptReady / own send / non-snapshot). A transient `distance == 0` while rows are still mounting is caught by the confirmed gate and the equal-height requirement; `slimFirstPaint` handles the short-column case. This is the intended fix.
+
+- **Replay landing loop `distance <= 1` (line 776).** Same reasoning. `!scrollProbe.seen` still short-circuits to `atBottom` (unchanged), and `steady` still needs 3 passes or the height/pending conditions. The loop now terminates in ~150ms instead of hitting the cap, which is what the measurements in PERFORMANCE.md show.
+
+- **`cameBack` `distance <= tolerance` (line 1776).** Under the old formula `distance <= 48` required overscrolling ~14pt past the true bottom, i. it only fired during a rubber-band bounce: the wheel-scroll re-pin path was effectively dead. Now it matches the comment (re-pin within 48pt of the bottom). The subsequent resize or streamed row triggers the drift check, which scrolls the newly pinned reader the rest of the way. Intended fix, not a regression.
+
+- **Gesture-end judging `end <= 2` / `end <= Self.tolerance` (lines 1815-1824).** Both thresholds were unreachable at rest under the old formula (`end` was >= 62), so a flick up that settled at the bottom still unpinned, and scrolling back down could never re-pin. Now both work as the comment describes. `netUp` is computed from raw offsets, where the 62pt shift cancels, so it is unaffected. The `|netUp| <= 2` -> `atBottom = pinned` dead zone is an offset comparison, unchanged by this diff.
+
+- **Gesture-end catch-up `if atBottom, end > 1 { onDrift() }` (line 1828).** Previously `end > 1` was always true at rest, so this fired `onDrift` on every gesture end, including when already at the bottom (a redundant `scrollToBottom`). Now it fires only when the reader is genuinely short of the bottom. Nothing lost: when `end <= 1` the reader is already there and no scroll is needed.
+
+- **Drift check `pinned && new.distance > 1 && resized` (lines 1902-1904).** Previously `new.distance > 1` was always true, so every content/viewport resize while pinned called `onDrift`. Now it fires only when actually short of the bottom. Checked the case where the old always-fire behavior could have been load-bearing: during a reload that transiently shrinks content while the offset stays mid-history, `distance` can clamp to 0 for one frame, but the very next growth frame reads `distance > 1` and fires, so the final state still re-pins. The parked-reply case is unaffected because `repinAfterBannerChange`'s `!holdingReplyAnchor` guard still suppresses the scroll regardless of how often drift fires.
+
+- **`height <= scrollProbe.viewport + 1` "fits the window" checks (lines 480, 498, 777).** `viewport` is `containerSize.height`, which includes the 62pt header band, so a chat between visible-height and container-height reports "fits" while its top rows sit under the header. Pre-existing, unchanged by this diff, and conservative in the right direction (at-bottom is trivially true when everything fits).
+
+- **`scrollProbe.distance = .infinity` before first report and after `reset()` (lines 1695, 1715).** `distance <= 1` is correctly false until geometry reports; `seen` and `slowAfter` handle the never-reports case. Unchanged.
+
+- **`distance` clamping to 0 during an overscroll bounce past the bottom.** Could make `atBottom` read true mid-bounce in the landing loops, but the transcript is hidden under the mascot during landing and no gesture is in flight; the gesture path judges only at rest.
+
+- **`replyHeight > viewportHeight - chatHead - replyAnchorSlack` (line 849) and the `minHeight` spacer (line 680).** Both use `viewportHeight`/`containerSize.height`, not `distance`; the top-inset accounting via `chatHead` is unchanged.
+
+- **"half a line" comment vs `tolerance = 48` (line 1761).** The comment under-describes 48pt, but the wording and constant are pre-existing; the diff only made the threshold reachable. Not introduced here.
+
+- **PERFORMANCE.md claims.** The documented measurements (592ms/621ms cold landings vs 10s cap, pin held through a tool-step turn) are consistent with what the corrected `distance <= 1` and drift-check behavior produce. No code claims to verify beyond that.
+
+Overall: the corrected formula makes every `distance` threshold mean what its comment says, and the two previously dead re-pin paths (`cameBack`, gesture-end `end <= tolerance`) now work. The only finding is the newly effective 2pt floor in `movedAway`, rated low.

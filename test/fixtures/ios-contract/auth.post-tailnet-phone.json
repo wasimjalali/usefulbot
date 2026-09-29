@@ -1,0 +1,24 @@
+{
+  "note": "The phone credential exchanges over tailnet for a bound session.",
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/session",
+    "headers": {
+      "tailscale-user-login": "owner@tailnet.example",
+      "x-forwarded-for": "100.64.1.2",
+      "x-forwarded-proto": "https",
+      "authorization": "Bearer contract-fixture-phone-token-32bytes"
+    }
+  },
+  "response": {
+    "status": 200,
+    "setCookie": true,
+    "json": {
+      "ok": true,
+      "profile": "phone",
+      "expiresAt": 1790028655250,
+      "csrfToken": "<csrfToken>",
+      "credentialExpiresAt": "2026-10-21T10:10:37.912Z"
+    }
+  }
+}

@@ -1,0 +1,75 @@
+# The iOS app project. Regenerate with `xcodegen generate` from ios/; the
+# output ios/UsefulBot.xcodeproj is committed and must match regeneration
+# byte-for-byte.
+name: UsefulBot
+options:
+  bundleIdPrefix: com.usefulbot
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+packages:
+  UsefulBot:
+    path: ../macos
+targets:
+  UsefulBot:
+    type: application
+    platform: iOS
+    sources:
+      - path: UsefulBot
+    dependencies:
+      - package: UsefulBot
+        product: UsefulBotCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.usefulbot.app
+        PRODUCT_NAME: Useful Bot
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Useful Bot
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: "The camera is used only to scan the pairing code shown on your Mac."
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+  UsefulBotCoreTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../macos/Tests/UsefulBotCoreTests
+    dependencies:
+      - package: UsefulBot
+        product: UsefulBotCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.usefulbot.coretests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5"
+  UsefulBotUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UsefulBotUITests
+    dependencies:
+      - target: UsefulBot
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.usefulbot.app.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: UsefulBot
+        SWIFT_VERSION: "5"
+schemes:
+  UsefulBot:
+    build:
+      targets:
+        UsefulBot: all
+        UsefulBotCoreTests: [test]
+        UsefulBotUITests: [test]
+    test:
+      targets:
+        - name: UsefulBotCoreTests
+        - name: UsefulBotUITests

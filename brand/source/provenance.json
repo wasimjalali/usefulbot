@@ -1,0 +1,33 @@
+{
+  "masters": {
+    "head": {
+      "path": "brand/source/useful-bot-head.svg",
+      "sha256": "992d67ae77bdaea3d8b46b1463dea9b44cb57831c46b04506410f5bf38a67065"
+    },
+    "logo": {
+      "path": "brand/source/useful-bot-logo.svg",
+      "sha256": "d823c018a33abc6d2b35988f805a59925bf07a88a3ff201fb046092628a9bfda"
+    },
+    "appIconMacos": {
+      "path": "brand/source/useful-bot-app-icon-macos.svg",
+      "sha256": "d0480ba63b17872cca29e18d0b2c347a0a236f5b95210449e2654b1ae7768989"
+    }
+  },
+  "headDiameter": {
+    "mark": 0.622,
+    "favicon": 0.84,
+    "macosTile": 0.622
+  },
+  "avatarPaletteSha256": "71241b61c3cfc5edd7dbda409c32909a81c9a2b5e61bc832b57770d77ae48293",
+  "avatarFaceSha256": "b34093280b110f1a491c4a41320348681ada4c39e2bc90ca6c0222221ab1e22e",
+  "motionTimingSha256": "9ad72d920e120434a719a53a859cc5d5a86c1c6a84384fb1e3ebfc86a2d96862",
+  "note": "Hand-written vector masters. The head reuses the avatar-face geometry unchanged, in Original white, without its hairline edge. Every raster renders from these SVGs. No raster source, AI enhancement or bitmap trace.",
+  "font": {
+    "family": "Inter",
+    "weight": 600,
+    "version": "4.1",
+    "license": "SIL OFL 1.1",
+    "source": "https://github.com/rsms/inter/releases/tag/v4.1",
+    "sha256": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3"
+  }
+}

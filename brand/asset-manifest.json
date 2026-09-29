@@ -1,0 +1,1113 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "brand/app/AppIcon.appiconset/Contents.json",
+      "bytes": 1257,
+      "sha256": "7155e04b17691591a1f0b09c05b5280c670de80254d06e18bd204da67819db2f",
+      "kind": "appiconset"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_128x128.png",
+      "bytes": 4668,
+      "sha256": "84ba5d48d45d1c47c6b761bebccad8d6188cbf96fd00568ea1d75109c1b37786",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_128x128@2x.png",
+      "bytes": 9864,
+      "sha256": "8d2f6d8a9c8739151f13db664566aed0801f96f69df30a1310c9dba512a457db",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_16x16.png",
+      "bytes": 722,
+      "sha256": "0eec2662f598060f41c41d8793c860dd6808b97095430de20483aa7f29d4bc0f",
+      "kind": "png",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_16x16@2x.png",
+      "bytes": 1235,
+      "sha256": "dc1733ecb724ecc008b61f57a9bb47f2f9d27a3e3f97fb33b85248e7b9d180c8",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_256x256.png",
+      "bytes": 9864,
+      "sha256": "8d2f6d8a9c8739151f13db664566aed0801f96f69df30a1310c9dba512a457db",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_256x256@2x.png",
+      "bytes": 21020,
+      "sha256": "849f68e1bab56111c7ad3a9f4e1f12523e3dcbcf9a2676b23bdf28690066ffc5",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_32x32.png",
+      "bytes": 1235,
+      "sha256": "dc1733ecb724ecc008b61f57a9bb47f2f9d27a3e3f97fb33b85248e7b9d180c8",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_32x32@2x.png",
+      "bytes": 2350,
+      "sha256": "0e16155b4649f1e3f263e680c5d3552dc3964ef663b0e878f340978fc7e15bda",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_512x512.png",
+      "bytes": 21020,
+      "sha256": "849f68e1bab56111c7ad3a9f4e1f12523e3dcbcf9a2676b23bdf28690066ffc5",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/AppIcon.appiconset/icon_512x512@2x.png",
+      "bytes": 44784,
+      "sha256": "3f49797abfaa10a658601e786188d545c9331e226b0780b5f1bd0cf26e105906",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.icns",
+      "bytes": 119208,
+      "sha256": "85efabb2ec788f02b4ff16cd67cdd12c720d528afb6b71ce42d8e87651b13df0",
+      "kind": "icns"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_128x128.png",
+      "bytes": 4668,
+      "sha256": "84ba5d48d45d1c47c6b761bebccad8d6188cbf96fd00568ea1d75109c1b37786",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_128x128@2x.png",
+      "bytes": 9864,
+      "sha256": "8d2f6d8a9c8739151f13db664566aed0801f96f69df30a1310c9dba512a457db",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_16x16.png",
+      "bytes": 722,
+      "sha256": "0eec2662f598060f41c41d8793c860dd6808b97095430de20483aa7f29d4bc0f",
+      "kind": "png",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_16x16@2x.png",
+      "bytes": 1235,
+      "sha256": "dc1733ecb724ecc008b61f57a9bb47f2f9d27a3e3f97fb33b85248e7b9d180c8",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_256x256.png",
+      "bytes": 9864,
+      "sha256": "8d2f6d8a9c8739151f13db664566aed0801f96f69df30a1310c9dba512a457db",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_256x256@2x.png",
+      "bytes": 21020,
+      "sha256": "849f68e1bab56111c7ad3a9f4e1f12523e3dcbcf9a2676b23bdf28690066ffc5",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_32x32.png",
+      "bytes": 1235,
+      "sha256": "dc1733ecb724ecc008b61f57a9bb47f2f9d27a3e3f97fb33b85248e7b9d180c8",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_32x32@2x.png",
+      "bytes": 2350,
+      "sha256": "0e16155b4649f1e3f263e680c5d3552dc3964ef663b0e878f340978fc7e15bda",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_512x512.png",
+      "bytes": 21020,
+      "sha256": "849f68e1bab56111c7ad3a9f4e1f12523e3dcbcf9a2676b23bdf28690066ffc5",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/macos/UsefulBot.iconset/icon_512x512@2x.png",
+      "bytes": 44784,
+      "sha256": "3f49797abfaa10a658601e786188d545c9331e226b0780b5f1bd0cf26e105906",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "macos"
+    },
+    {
+      "path": "brand/app/useful-bot-app-icon-1024.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/app/useful-bot-app-icon-2048.png",
+      "bytes": 90021,
+      "sha256": "d4f4178951af518dfaa3281400a80ae7f4024254e84bea8e4e058e20d6b799b0",
+      "kind": "png",
+      "width": 2048,
+      "height": 2048,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/avatars/blue-256.png",
+      "bytes": 19794,
+      "sha256": "5a8313f057a49e4849547771f0e81c87f90109e7f469fbc62ca26b9a4d297395",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "blue"
+    },
+    {
+      "path": "brand/avatars/blue.svg",
+      "bytes": 2745,
+      "sha256": "d0e086b493b35af9b23333503232f6ee2161581caf66fe34969ae5075ca5b43c",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/brown-256.png",
+      "bytes": 19865,
+      "sha256": "a1d8c8e03d45f764e798d4951f9a42ca27f359a5392c4f5f51fadf8601332eb0",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "brown"
+    },
+    {
+      "path": "brand/avatars/brown.svg",
+      "bytes": 2745,
+      "sha256": "882dc967db1946b97f1849a07f0457a311ac772d51a3cfd30514a729f8c585a6",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/gold-256.png",
+      "bytes": 19458,
+      "sha256": "cde3f5d6fe851b2a58f2c828be5ce16d732aaec404b906d362dc8b49e520489e",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "gold"
+    },
+    {
+      "path": "brand/avatars/gold.svg",
+      "bytes": 2745,
+      "sha256": "afa726434ad0579a59502d79594a9e000a5bd16870cceeecfa7cbf3426cb1f8c",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/gray-256.png",
+      "bytes": 19888,
+      "sha256": "8e726d01e324afa0702a59fdc5c16cb7ba6e5e8cd259983c47d8a659da86ee70",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "gray"
+    },
+    {
+      "path": "brand/avatars/gray.svg",
+      "bytes": 2745,
+      "sha256": "1594023fa5c5b6b75d3ca6d33949a4eeed1ddfa86e51a53a45ef9c31508f4a25",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/green-256.png",
+      "bytes": 19612,
+      "sha256": "efc62cbaa488ed48f5364377b3609506e17f35d8670c82ff09e8dcfbdfb14257",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "green"
+    },
+    {
+      "path": "brand/avatars/green.svg",
+      "bytes": 2745,
+      "sha256": "75385c8951432aa68156e0eb41c22d1cfddfad0e0ae922591bb0745b478fd9fd",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/ink-256.png",
+      "bytes": 19497,
+      "sha256": "864489c689f64f0e88d055ea0fd3d1fb8da643b470d8ae3735f26b0f4c392ef3",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "ink"
+    },
+    {
+      "path": "brand/avatars/ink.svg",
+      "bytes": 2742,
+      "sha256": "1a7260bd781bb2436bc350345bc28c4501e892cdda0b0255eef10e14cdff6c7a",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/orange-256.png",
+      "bytes": 19555,
+      "sha256": "5f7f722f9aa6a03b46eb8b29aceb5ea5eca83f91598bef067a70fbc03ec72034",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "orange"
+    },
+    {
+      "path": "brand/avatars/orange.svg",
+      "bytes": 2745,
+      "sha256": "8c37ab29276e968a99ed3b8747003cff577e709cff0593f3b6f3daf86b4d0268",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/pink-256.png",
+      "bytes": 19840,
+      "sha256": "a5ae8bc24b4a8951ef2be0ab3e0e603db17f27499a752fa97115d0359f949103",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "pink"
+    },
+    {
+      "path": "brand/avatars/pink.svg",
+      "bytes": 2745,
+      "sha256": "07329ece0b0bfcc13885c0e7994fefefe192cce6ed0a37e9796950a820f40ff4",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/purple-256.png",
+      "bytes": 19929,
+      "sha256": "5d2355ff9b0d28a695f0ed697cd05f9bba19add798fba232ffdb2b3428571497",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "purple"
+    },
+    {
+      "path": "brand/avatars/purple.svg",
+      "bytes": 2745,
+      "sha256": "04f56c9a9048cf15aef4bd6024751031f8a3dccc39801286edc2b7692d45a246",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/red-256.png",
+      "bytes": 19598,
+      "sha256": "15dbe8d48ad11a476abfb63f898442a16fb0618f529cf8135edce637684a0149",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "red"
+    },
+    {
+      "path": "brand/avatars/red.svg",
+      "bytes": 2745,
+      "sha256": "d9fecabce563027993f373cd54a45b7132d98cbec2e423a812ef4e5a93a1b3f8",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/teal-256.png",
+      "bytes": 19573,
+      "sha256": "19ad3b9d40e9992da33f0f7a85442f5223c09b0a52e3cc6a5c198b8153944667",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "teal"
+    },
+    {
+      "path": "brand/avatars/teal.svg",
+      "bytes": 2745,
+      "sha256": "3c842a1f532721a984bc46fa09250f2b77418f4da995e11ad23b02c8bd1ec421",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/favicon/apple-touch-icon.png",
+      "bytes": 6030,
+      "sha256": "d2e0df2f9d0be7a1293fa6eef928198365a580289f3f34d0122296af9636b66c",
+      "kind": "png",
+      "width": 180,
+      "height": 180,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/favicon/favicon-16x16.png",
+      "bytes": 798,
+      "sha256": "6003a4a8e88ce84a2fe8401988f7d7dd81eb84c5e60a4e4a01ee631cdad7e5bf",
+      "kind": "png",
+      "width": 16,
+      "height": 16,
+      "alpha": false,
+      "family": "favicon"
+    },
+    {
+      "path": "brand/favicon/favicon-32x32.png",
+      "bytes": 1547,
+      "sha256": "10801e06106f8ce443c72800c1de844113bb74bf82cb718ef47db28996d3a564",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": false,
+      "family": "favicon"
+    },
+    {
+      "path": "brand/favicon/favicon.ico",
+      "bytes": 15086,
+      "sha256": "ff16cc0bb341862e2d42f8fd4634a83eb99680fa7c3310dbcadb31fad4c08716",
+      "kind": "ico"
+    },
+    {
+      "path": "brand/favicon/favicon.svg",
+      "bytes": 2718,
+      "sha256": "55b3d0c828af0159cc0856135586982d52ac57f39b2de7a90ef9f8bf1440b20e",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/motion/native/eye-left.png",
+      "bytes": 8093,
+      "sha256": "0525adc6002625546bee6ad5a51590b81c5ba9c2ae3ef88080c0cd28501573c9",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "motion-layer",
+      "layer": "eye-left"
+    },
+    {
+      "path": "brand/motion/native/eye-right.png",
+      "bytes": 7986,
+      "sha256": "6ef4a07c7287a5eb932b3a2bd18684552830d5533e3ffa546c5f64149f55f1ba",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "motion-layer",
+      "layer": "eye-right"
+    },
+    {
+      "path": "brand/motion/native/glasses.png",
+      "bytes": 18569,
+      "sha256": "dda71dd10c483aad74075e8ff7dfe350ef0256db0ede7c5b3362a819d9847101",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "motion-layer",
+      "layer": "glasses"
+    },
+    {
+      "path": "brand/motion/native/head.png",
+      "bytes": 38751,
+      "sha256": "8104555bda3bb0e35191ce65e6be0c97f50701ccb3eb75402e3c4e5495f42097",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "motion-layer",
+      "layer": "head"
+    },
+    {
+      "path": "brand/motion/native/mouth.png",
+      "bytes": 8299,
+      "sha256": "86d5064021b2eb7193e94b1e0ba902d16a8c6e10615638a2457874e36ead6cc4",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "motion-layer",
+      "layer": "mouth"
+    },
+    {
+      "path": "brand/motion/useful-bot-animated.svg",
+      "bytes": 3151,
+      "sha256": "c659196cd69b4e1f4b3948f12e7886d9b9149cc78cce7e35766576959cee4b2c",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/png/black/useful-bot-1024.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-128.png",
+      "bytes": 4251,
+      "sha256": "5b13a09b24b81ee40c70e02a5528347dd604e67b89c18954517666420c04aec2",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-2048.png",
+      "bytes": 90021,
+      "sha256": "d4f4178951af518dfaa3281400a80ae7f4024254e84bea8e4e058e20d6b799b0",
+      "kind": "png",
+      "width": 2048,
+      "height": 2048,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-256.png",
+      "bytes": 8939,
+      "sha256": "c481184f1c7593e91c4c11f8b92929f538dee0435e3eb23de09a4e53590679fe",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-32.png",
+      "bytes": 1139,
+      "sha256": "9aebe1690fe4a121004b176ed09f4d6cc48865feebcb882d481972fd14243f3a",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-512.png",
+      "bytes": 19241,
+      "sha256": "afaabbd9d4169f59854663e4378ec0cff11ebbccae7443b4d4c6c6197d398038",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/black/useful-bot-64.png",
+      "bytes": 2151,
+      "sha256": "35541402fbbd6ec4eecb569260ca52744dc90dbc3d6652f2ec57a8506417d63f",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-1024.png",
+      "bytes": 37011,
+      "sha256": "54c3d2c640a12d2f4ec8f92f79d649f23c2c2340f934400ecd237f2bfbebf61d",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-128.png",
+      "bytes": 3976,
+      "sha256": "06362558248694453661a66012567a1fb52950f18da179ca8865761cce2f6528",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-2048.png",
+      "bytes": 84220,
+      "sha256": "cc318a4db845a3e0829d31a4b9f6ff7b0e0ed5b896db747627678e9396292127",
+      "kind": "png",
+      "width": 2048,
+      "height": 2048,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-256.png",
+      "bytes": 7933,
+      "sha256": "b75c0fae61911d74035137d8c282b5358f8a0fc94a06917a3d5f438844b735c4",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-32.png",
+      "bytes": 1105,
+      "sha256": "04c18d6e7e1223fea45bcd6c04aff38f2b705989ce820585c9629ae7573921b3",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-512.png",
+      "bytes": 16935,
+      "sha256": "3700f2571dac5fd8a52452a43e3b534752029f033b9135cc1336ffd86c3797d2",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark-inverse/useful-bot-64.png",
+      "bytes": 2022,
+      "sha256": "4be35e75abc9ea2c2da9cbc1bc0f3b2e5adb5d2960afde39601e89c863f50cdf",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-1024.png",
+      "bytes": 40495,
+      "sha256": "19ad012536e11734d9bdd025da7ac1fdff96971721dd154c405a124f76b99706",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-128.png",
+      "bytes": 4392,
+      "sha256": "66c3dee157be2ee4f19a71cc0f392c6bc0b221178b7b3ec2c142cdd52f2f6915",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-2048.png",
+      "bytes": 89866,
+      "sha256": "60c8b8de0746cc43e763a5ac9db3d02a5d124cab9a5e3f42dbccfc6882047934",
+      "kind": "png",
+      "width": 2048,
+      "height": 2048,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-256.png",
+      "bytes": 9142,
+      "sha256": "85bd9724f190daf85141014ca147007b725fb4296ce92be9c30f011c256e6db9",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-32.png",
+      "bytes": 1122,
+      "sha256": "6d20611e6b2227b1f165d939f213fbbec935fb1299b1829b70cdecc3e53ba1ca",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-512.png",
+      "bytes": 19011,
+      "sha256": "10d2f68aa6d0ce67a6f8b01a23dd7d65722986ba0f10d2f86a6d9a46d152f69e",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/mark/useful-bot-64.png",
+      "bytes": 2162,
+      "sha256": "a908928d5ec6e7cd2d5c7bc4865762ce8ee2d08d5cc0a8d3fd2914121aff0bb7",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "family": "primary"
+    },
+    {
+      "path": "brand/png/white/useful-bot-1024.png",
+      "bytes": 39444,
+      "sha256": "c1a6fb9d3d2256176c10ee4a3600f82183bdd14f0f00e67b29db269e041faeb7",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-128.png",
+      "bytes": 3995,
+      "sha256": "dd36b629672f47aeff104779c2b8f81a42b6000ad058ee4c37e94fb9d74102ba",
+      "kind": "png",
+      "width": 128,
+      "height": 128,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-2048.png",
+      "bytes": 88763,
+      "sha256": "4e16ae893ebe558be65ba034f1ec733b7e6040f72c4353904b1baa9557cf8b73",
+      "kind": "png",
+      "width": 2048,
+      "height": 2048,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-256.png",
+      "bytes": 8258,
+      "sha256": "eb90b92e2d6fe924230d52fea4739f8c5d75b04e757ca5dc1788741bb8f1e380",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-32.png",
+      "bytes": 1138,
+      "sha256": "5c37062e962d4bf1ab55c6368a2e5713203a761b5f61d4fd65558b8b469a34ad",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-512.png",
+      "bytes": 18207,
+      "sha256": "d124ef35354692b06d8322f4801fec301613fd2868a5f76ab67f419162c73da4",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/png/white/useful-bot-64.png",
+      "bytes": 2058,
+      "sha256": "50a6d4b5416205d11ea1fe38f38f72462ec8c8d01f91240de8c5fef7598c414b",
+      "kind": "png",
+      "width": 64,
+      "height": 64,
+      "alpha": false,
+      "family": "primary-inverse"
+    },
+    {
+      "path": "brand/pwa/icon-192.png",
+      "bytes": 6550,
+      "sha256": "7349d38d94252afa41890f1bc2abe80d67392e8fcfc602b7e2808e7785db400f",
+      "kind": "png",
+      "width": 192,
+      "height": 192,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/pwa/icon-512.png",
+      "bytes": 19241,
+      "sha256": "afaabbd9d4169f59854663e4378ec0cff11ebbccae7443b4d4c6c6197d398038",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/pwa/icon-maskable-192.png",
+      "bytes": 6550,
+      "sha256": "7349d38d94252afa41890f1bc2abe80d67392e8fcfc602b7e2808e7785db400f",
+      "kind": "png",
+      "width": 192,
+      "height": 192,
+      "alpha": false,
+      "family": "maskable"
+    },
+    {
+      "path": "brand/pwa/icon-maskable-512.png",
+      "bytes": 19241,
+      "sha256": "afaabbd9d4169f59854663e4378ec0cff11ebbccae7443b4d4c6c6197d398038",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "maskable"
+    },
+    {
+      "path": "brand/pwa/site.webmanifest",
+      "bytes": 711,
+      "sha256": "cd175184acb9d9b8eb6bc4671a62617224a8e05c623b2d99328a177824df04ab",
+      "kind": "manifest"
+    },
+    {
+      "path": "brand/social/avatar-1024.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/social/github-social-preview.png",
+      "bytes": 32271,
+      "sha256": "837a3764ed6341cc253605c11fd81bacd03d61497aeacc64ca8b3ac61de236c0",
+      "kind": "png",
+      "width": 1280,
+      "height": 640,
+      "alpha": false
+    },
+    {
+      "path": "brand/social/linkedin-profile.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/social/og-image.png",
+      "bytes": 31494,
+      "sha256": "5071a889c9b987577bef2667353890217578342cf02ef08f8509918bb2e5765f",
+      "kind": "png",
+      "width": 1200,
+      "height": 630,
+      "alpha": false
+    },
+    {
+      "path": "brand/social/x-profile.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "brand/source/provenance.json",
+      "bytes": 1350,
+      "sha256": "7f4e67e30a0e10eea5e52f89b5d07f57e9fc7736a60426fa496549ea44416268",
+      "kind": "provenance"
+    },
+    {
+      "path": "brand/source/useful-bot-lockup-horizontal-inverse-text.svg",
+      "bytes": 2930,
+      "sha256": "3f24b47332189a6ef2922bb9bc6a413125ef4d4d3ee45491b298d40015b92512",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/source/useful-bot-lockup-horizontal-text.svg",
+      "bytes": 2969,
+      "sha256": "0e1d1c80fed6fb4008a8552b456d875f8fbe23178831e6b34bcefb0cbb946374",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/source/useful-bot-lockup-stacked-inverse-text.svg",
+      "bytes": 2933,
+      "sha256": "1461d40688c0a513015af96e9135300214fc51df84b1df33aad19736874b4598",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/source/useful-bot-lockup-stacked-text.svg",
+      "bytes": 2972,
+      "sha256": "93f883ef37afffda050bee6abbd2689d28526fccddcdf0d63cdfe9521222b75b",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/source/useful-bot-wordmark-inverse-text.svg",
+      "bytes": 362,
+      "sha256": "d5971994b5143d438ffb110556c30a10a561927cf7751177da524f763e0d6c88",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/source/useful-bot-wordmark-text.svg",
+      "bytes": 374,
+      "sha256": "e5b6dd82db5ceb7da807ff74e6d7fe514925273a239bab10c4222efcf1b2c859",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-app-icon-macos.svg",
+      "bytes": 3177,
+      "sha256": "33c59bf8f20c6938ae120469e2d2bc6d54e5fd70ca0e1a63b3dcfc764471cc9c",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-lockup-horizontal-inverse.svg",
+      "bytes": 5549,
+      "sha256": "eea5dd415d79ce8cc6b91cd61997c50c1b3ee440333696c4f06d70c82fcb1ed4",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-lockup-horizontal.svg",
+      "bytes": 5588,
+      "sha256": "1f613796d6a0bdc36daf33b3674a8a9b739195ff7316486ab093df8dce74d5cf",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-lockup-stacked-inverse.svg",
+      "bytes": 5613,
+      "sha256": "36f76fd25722d6cb484c1a89b8f55806625bbc1d5bc44842a8116f247b38d4ae",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-lockup-stacked.svg",
+      "bytes": 5652,
+      "sha256": "c9155460e1eb794d8692e99fed872da48537f4f09c92b01ca4b5aaf1d43f40b9",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-logo-inverse.svg",
+      "bytes": 2723,
+      "sha256": "49a2a8092ee02a5cdde2b96fb93c2cdd701d4fd91f76adc108ec155ffc6e1b43",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-logo.svg",
+      "bytes": 2750,
+      "sha256": "077408468b202f9829ceb8dddaaef7ba8255a66347a4d22f9ee09531ce42ff54",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-mark-inverse.svg",
+      "bytes": 2667,
+      "sha256": "0af471e2a8881d445abc4186b676398c9df67261112fc8c670985a92dba672ea",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-mark.svg",
+      "bytes": 2694,
+      "sha256": "5cfaf0c075e20a268298d846f39544a0d253dee83f7907a6a9767b359e15f6b9",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-wordmark-inverse.svg",
+      "bytes": 2992,
+      "sha256": "b1a21001c7ec33d2b83a021fc1224594f5c7f000cd6d1c7d1cf3d1c115271b10",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/svg/useful-bot-wordmark.svg",
+      "bytes": 3004,
+      "sha256": "8b04e3a3cf8704c4c2c909ce5686fc768b3120b2c81d7bfa98ab91e8b2fb46d8",
+      "kind": "svg"
+    },
+    {
+      "path": "ios/UsefulBot/Resources/Assets.xcassets/AppIcon.appiconset/useful-bot-app-icon-1024.png",
+      "bytes": 41279,
+      "sha256": "a8b04657c97f05656bc26a21804a5afc12a2b08b853b709a363bae0bd7196c52",
+      "kind": "png",
+      "width": 1024,
+      "height": 1024,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "ios/UsefulBot/Resources/Assets.xcassets/useful-bot-badge.imageset/useful-bot-badge.svg",
+      "bytes": 2750,
+      "sha256": "077408468b202f9829ceb8dddaaef7ba8255a66347a4d22f9ee09531ce42ff54",
+      "kind": "svg"
+    },
+    {
+      "path": "public/apple-touch-icon.png",
+      "bytes": 6030,
+      "sha256": "d2e0df2f9d0be7a1293fa6eef928198365a580289f3f34d0122296af9636b66c",
+      "kind": "png",
+      "width": 180,
+      "height": 180,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "public/favicon-16x16.png",
+      "bytes": 798,
+      "sha256": "6003a4a8e88ce84a2fe8401988f7d7dd81eb84c5e60a4e4a01ee631cdad7e5bf",
+      "kind": "png",
+      "width": 16,
+      "height": 16,
+      "alpha": false,
+      "family": "favicon"
+    },
+    {
+      "path": "public/favicon-32x32.png",
+      "bytes": 1547,
+      "sha256": "10801e06106f8ce443c72800c1de844113bb74bf82cb718ef47db28996d3a564",
+      "kind": "png",
+      "width": 32,
+      "height": 32,
+      "alpha": false,
+      "family": "favicon"
+    },
+    {
+      "path": "public/favicon.ico",
+      "bytes": 15086,
+      "sha256": "ff16cc0bb341862e2d42f8fd4634a83eb99680fa7c3310dbcadb31fad4c08716",
+      "kind": "ico"
+    },
+    {
+      "path": "public/favicon.svg",
+      "bytes": 2718,
+      "sha256": "55b3d0c828af0159cc0856135586982d52ac57f39b2de7a90ef9f8bf1440b20e",
+      "kind": "svg"
+    },
+    {
+      "path": "public/icon-192.png",
+      "bytes": 6550,
+      "sha256": "7349d38d94252afa41890f1bc2abe80d67392e8fcfc602b7e2808e7785db400f",
+      "kind": "png",
+      "width": 192,
+      "height": 192,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "public/icon-512.png",
+      "bytes": 19241,
+      "sha256": "afaabbd9d4169f59854663e4378ec0cff11ebbccae7443b4d4c6c6197d398038",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "primary"
+    },
+    {
+      "path": "public/icon-maskable-192.png",
+      "bytes": 6550,
+      "sha256": "7349d38d94252afa41890f1bc2abe80d67392e8fcfc602b7e2808e7785db400f",
+      "kind": "png",
+      "width": 192,
+      "height": 192,
+      "alpha": false,
+      "family": "maskable"
+    },
+    {
+      "path": "public/icon-maskable-512.png",
+      "bytes": 19241,
+      "sha256": "afaabbd9d4169f59854663e4378ec0cff11ebbccae7443b4d4c6c6197d398038",
+      "kind": "png",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "family": "maskable"
+    },
+    {
+      "path": "public/site.webmanifest",
+      "bytes": 711,
+      "sha256": "cd175184acb9d9b8eb6bc4671a62617224a8e05c623b2d99328a177824df04ab",
+      "kind": "manifest"
+    }
+  ]
+}

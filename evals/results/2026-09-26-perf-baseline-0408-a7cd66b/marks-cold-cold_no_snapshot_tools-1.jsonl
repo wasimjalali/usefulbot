@@ -1,0 +1,16 @@
+{"ev":"app_init","pid":58371,"run":"cold-cold_no_snapshot_tools-1-05270b65","t":791931228282666}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"initial_selection","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791931664532208}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"ready","modelId":"","modelLabel":"","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791931979592791}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_tools-1-05270b65","source":"disk_snapshot","t":791932161612625}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":791932161612625,"run":"cold-cold_no_snapshot_tools-1-05270b65","stallMaxMs":1.322875,"t":791933195564333}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"step","index":1,"label":"cold_no_snapshot_tools","name":"Perf Long Tools","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791933767279750}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"select_start","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791933767456708}
+{"ev":"prewarm_start","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791935231835000}
+{"ev":"prewarm_end","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791935300687541}
+{"blocks":36,"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"landed","events":3445,"fromCache":false,"fromSnapshot":false,"reason":"settled","rows":35,"run":"cold-cold_no_snapshot_tools-1-05270b65","source":"none","t":791940675170708}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"responsive","landedAt":791940675170708,"run":"cold-cold_no_snapshot_tools-1-05270b65","stallMaxMs":5.1134170000000001,"t":791941784444041}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791942321643833}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"select_start","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791942321880791}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_tools-1-05270b65","source":"stash_snapshot","t":791943070288875}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":791943070288875,"run":"cold-cold_no_snapshot_tools-1-05270b65","stallMaxMs":117.212208,"t":791944243717166}
+{"ev":"quit","run":"cold-cold_no_snapshot_tools-1-05270b65","t":791944701778500}

@@ -1,0 +1,16 @@
+{"ev":"app_init","pid":80052,"run":"cold-cold_first_open_tools-1-b6e0fc61","t":809323790687083}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"initial_selection","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809324626223000}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"ready","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809324935094750}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_first_open_tools-1-b6e0fc61","source":"disk_snapshot","t":809325088575375}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":809325088575375,"run":"cold-cold_first_open_tools-1-b6e0fc61","stallMaxMs":1.8058749999999999,"t":809326123116958}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"step","index":1,"label":"cold_first_open_tools","name":"Perf Long Tools","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809327648432875}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"select_start","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809327648676500}
+{"blocks":36,"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"landed","events":3445,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":35,"run":"cold-cold_first_open_tools-1-b6e0fc61","source":"disk_snapshot","t":809327955636458}
+{"ev":"prewarm_start","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809328191827333}
+{"ev":"prewarm_end","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809328208766083}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"responsive","landedAt":809327955636458,"run":"cold-cold_first_open_tools-1-b6e0fc61","stallMaxMs":173.94954100000001,"t":809329170854916}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809330687375666}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"select_start","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809330687602791}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_first_open_tools-1-b6e0fc61","source":"stash_snapshot","t":809330918837125}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":809330918837125,"run":"cold-cold_first_open_tools-1-b6e0fc61","stallMaxMs":1.322292,"t":809331953961375}
+{"ev":"quit","run":"cold-cold_first_open_tools-1-b6e0fc61","t":809335048403250}

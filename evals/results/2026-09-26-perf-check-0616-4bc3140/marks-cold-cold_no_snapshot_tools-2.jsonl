@@ -1,0 +1,16 @@
+{"ev":"app_init","pid":21846,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799764612409833}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"initial_selection","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799765021578166}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"ready","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799765256954500}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","source":"disk_snapshot","t":799765442676541}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":799765442676541,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","stallMaxMs":2.2508330000000001,"t":799766518300208}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"step","index":1,"label":"cold_no_snapshot_tools","name":"Perf Long Tools","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799766957918458}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"select_start","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799766958133291}
+{"ev":"prewarm_start","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799768505680208}
+{"ev":"prewarm_end","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799768557022500}
+{"blocks":36,"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"landed","events":3445,"fromCache":false,"fromSnapshot":false,"reason":"cap","rows":35,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","source":"none","t":799778125985125}
+{"bot":"0bdf0aaa-1c4f-409c-ab7e-6f68710065d8","ev":"responsive","landedAt":799778125985125,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","stallMaxMs":2.2995830000000002,"t":799779227321208}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799780729108416}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"select_start","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799780729283208}
+{"blocks":7,"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"landed","events":65,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","source":"stash_snapshot","t":799780974927958}
+{"bot":"48bf6740-f84f-48f3-9f3c-ff7f7186a54e","ev":"responsive","landedAt":799780974927958,"run":"cold-cold_no_snapshot_tools-2-cf152dfc","stallMaxMs":2.5652080000000002,"t":799782050157708}
+{"ev":"quit","run":"cold-cold_no_snapshot_tools-2-cf152dfc","t":799785155503666}
