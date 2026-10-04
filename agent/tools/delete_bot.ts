@@ -1,24 +1,38 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
-import { activeBotId } from "../lib/active-bot.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission, settle } from "../lib/permission.ts";
+import {
+  callerOf,
+  callerRole,
+  inAppGate,
+  notAvailable,
+  ORCHESTRATOR_ONLY_HINT,
+  orchestratorId,
+  READ_ONLY_BLOCKED,
+  sessionPermission,
+  settle,
+} from "../lib/permission.ts";
 import { deleteThread } from "../../shared/agent-store.ts";
 import { deleteRoutinesForBot } from "../../shared/routines-store.ts";
 import { readShell, updateShell } from "../../shared/shell-io.ts";
-import { applyShellAction, DEFAULT_BOT_ID } from "../../shared/shell-store.ts";
+import { unbindBot } from "../../shared/session-bindings.ts";
+import { applyShellAction } from "../../shared/shell-store.ts";
 import { removeSessionGrant } from "../../shared/workspace-store.ts";
 
 export default defineTool({
   description:
-    "Delete a teammate bot or group chat when the owner asks for it. It cannot be undone, so in Auto the owner sees an approval card and nothing is removed until they approve it; Full access deletes at once; Read only refuses. This also removes that bot's routines and recent chats, and it cannot be undone, so confirm which bot they mean before calling it. The section it sat in stays; call railAction removeSection to tidy an emptied one.",
+    "Delete a teammate bot or group with its routines and recent chats. Only the main bot can, and never itself; a teammate can't. Irreversible: in Auto the owner approves the exact bot on a card, Full access deletes at once, Read only refuses. Confirm which bot first. Its section stays: call rail_action removeSection to tidy an emptied one.",
   inputSchema: z.object({
     botId: z.string().min(1).max(80),
     reason: z.string().max(300).optional(),
   }),
   async execute(input, ctx) {
     const shell = readShell();
+    const who = await callerOf(shell, ctx);
+    if (!who.ok) return who.result;
+    // Deleting a bot is the orchestrator's alone.
+    if (who.caller.role !== "orchestrator") return notAvailable(ORCHESTRATOR_ONLY_HINT);
     const requested = input.botId.trim();
     // An id is exact. A name is not: the roster allows two bots whose names
     // differ only in case, and this call deletes something, so an ambiguous
@@ -36,13 +50,12 @@ export default defineTool({
     }
     const target = byId ?? byName[0] ?? null;
     if (!target) {
-      return { status: "not_found", error: `no bot matches ${requested}`, hint: "Call listBots for exact ids." };
+      return { status: "not_found", error: `no bot matches ${requested}`, hint: "Call list_bots for exact ids." };
     }
-    if (target.id === DEFAULT_BOT_ID) {
+    if (target.id === orchestratorId(shell)) {
       return { status: "refused", error: "the default Useful Bot runs this app and cannot be deleted" };
     }
-    const selfId = activeBotId(shell, ctx);
-    if (target.id === selfId) {
+    if (target.id === who.caller.id) {
       return { status: "refused", error: "that is this bot; the owner deletes it from the rail" };
     }
     if (shell.bots.length <= 1) {
@@ -80,6 +93,11 @@ export default defineTool({
       // owner was deciding. The approval belongs to the revision on the card,
       // so a bot renamed or re-profiled in the meantime is not deleted.
       const next = updateShell((current) => {
+        // The caller's class is re-read with the roster: the orchestrator can
+        // have been hidden or deleted while the card was open.
+        const caller = current.bots.find((bot) => bot.id === who.caller.id);
+        if (!caller || callerRole(current, caller) !== "orchestrator") throw new Error("not_available_for_this_bot");
+        if (target.id === orchestratorId(current)) throw new Error("bot_changed");
         const live = current.bots.find((bot) => bot.id === target.id);
         if (!live) throw new Error("bot_missing");
         if (live.updatedAt !== target.updatedAt) throw new Error("bot_changed");
@@ -96,6 +114,13 @@ export default defineTool({
         } catch {
           /* the store's own prune is the backstop */
         }
+      }
+      // The deleted bot's session bindings go with it; the only way a row
+      // leaves the identity store.
+      try {
+        unbindBot(target.id);
+      } catch {
+        /* a leftover row names a bot that no longer exists and binds nothing */
       }
       // Routines and the transcript outlive their bot in their own stores, and
       // none of the three locks can be taken together. So the roster commits

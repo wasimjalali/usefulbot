@@ -2,18 +2,15 @@ import avatarPalette from "../brand/source/avatar-palette.json" with { type: "js
 
 // Legacy shape values remain wire-compatible. Clients render only the mascot.
 export const AVATAR_SHAPES = ["circle", "oval", "square", "pill", "triangle", "hex", "blob", "drop"] as const;
+// 30 pickable colors (10 hues x light, mid, deep; Neutral light keeps the
+// legacy id "ink") plus 10 legacy ids that still validate and render for
+// bots that already have them. brand/source/avatar-palette.json marks the
+// legacy ones.
 export const AVATAR_COLORS = [
-  "ink",
-  "brown",
-  "red",
-  "orange",
-  "gold",
-  "green",
-  "teal",
-  "blue",
-  "purple",
-  "pink",
-  "gray",
+  "ink", "red-light", "orange-light", "amber-light", "yellow-light", "green-light", "teal-light", "sky-light", "blue-light", "lilac-light",
+  "neutral-mid", "red-mid", "orange-mid", "amber-mid", "yellow-mid", "green-mid", "teal-mid", "sky-mid", "blue-mid", "lilac-mid",
+  "neutral-deep", "red-deep", "orange-deep", "amber-deep", "yellow-deep", "green-deep", "teal-deep", "sky-deep", "blue-deep", "lilac-deep",
+  "brown", "red", "orange", "gold", "green", "teal", "blue", "purple", "pink", "gray",
 ] as const;
 
 export type AvatarShape = (typeof AVATAR_SHAPES)[number];
@@ -26,7 +23,10 @@ export type BotFace = {
 };
 
 // "ink" is the legacy ID for Original. Color applies to surfaces, not a backdrop.
-export const AVATAR_PALETTE: Record<AvatarColor, { label: string; fill: string }> = avatarPalette;
+export const AVATAR_PALETTE: Record<AvatarColor, { label: string; fill: string; legacy?: boolean }> = avatarPalette;
+
+// What a new bot may pick: every id that is not legacy.
+export const AVATAR_PICKABLE_COLORS = AVATAR_COLORS.filter((color) => !AVATAR_PALETTE[color].legacy);
 
 export function isAvatarShape(value: unknown): value is AvatarShape {
   return typeof value === "string" && (AVATAR_SHAPES as readonly string[]).includes(value);
@@ -51,7 +51,7 @@ export function defaultFaceFor(id: string): BotFace {
     shape: AVATAR_SHAPES[hash % AVATAR_SHAPES.length],
     // Unsigned shift: `>>` wraps the hash back to a signed int32, which made
     // colors undefined for hashes above 2^31.
-    color: AVATAR_COLORS[(hash >>> 3) % AVATAR_COLORS.length],
+    color: AVATAR_PICKABLE_COLORS[(hash >>> 3) % AVATAR_PICKABLE_COLORS.length],
     image: null,
   };
 }
@@ -62,7 +62,7 @@ export function randomFace(at = Date.now()): BotFace {
   const seed = (at ^ Math.floor(Math.random() * 0xffffff)) >>> 0;
   return {
     shape: AVATAR_SHAPES[seed % AVATAR_SHAPES.length],
-    color: AVATAR_COLORS[(seed >>> 4) % AVATAR_COLORS.length],
+    color: AVATAR_PICKABLE_COLORS[(seed >>> 4) % AVATAR_PICKABLE_COLORS.length],
     image: null,
   };
 }

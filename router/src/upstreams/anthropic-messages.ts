@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { RouterError } from "../errors.ts";
+import { dumpUpstreamBody } from "../payload-probe.ts";
 
 /**
  * anthropic-messages protocol: translate the router's chat-completions
@@ -53,6 +55,19 @@ function toolInput(args: unknown): Record<string, unknown> {
     if (error instanceof RouterError) throw error;
     throw new RouterError({ status: 400, type: "invalid_request_error", code: "invalid_request", message: "invalid_request" });
   }
+}
+
+const SAFE_TOOL_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Messages accepts tool ids of `[a-zA-Z0-9_-]{1,64}` only, and a history that
+ * crossed a model switch can hold ids another provider wrote (dots, colons,
+ * long hashes). An unsafe id maps to a hash of itself, so the same call and
+ * its result always get the same id and nothing else collides with it.
+ */
+export function safeToolId(id: string): string {
+  if (SAFE_TOOL_ID.test(id)) return id;
+  return `toolu_${createHash("sha256").update(id).digest("hex").slice(0, 32)}`;
 }
 
 /**
@@ -111,7 +126,7 @@ function pushUser(messages: Array<Record<string, unknown>>, content: Array<Recor
 
 export function buildMessagesBody(
   chatBody: Record<string, unknown>,
-  opts: { model: string },
+  opts: { model: string; cache?: boolean },
 ): Record<string, unknown> {
   if (!Array.isArray(chatBody.messages)) throw protocolError();
   if (typeof chatBody.max_tokens !== "number") throw protocolError();
@@ -133,21 +148,22 @@ export function buildMessagesBody(
     }
     if (item.role === "tool") {
       if (typeof item.tool_call_id !== "string") throw protocolError();
-      toolResults.push({ type: "tool_result", tool_use_id: item.tool_call_id, content: contentString(item.content) });
+      toolResults.push({ type: "tool_result", tool_use_id: safeToolId(item.tool_call_id), content: contentString(item.content) });
       continue;
     }
     flushTools();
     if (item.role === "assistant" && Array.isArray(item.tool_calls)) {
       const content: Array<Record<string, unknown>> = [];
       const text = contentString(item.content);
-      if (text) content.push({ type: "text", text });
+      if (text.trim()) content.push({ type: "text", text });
       for (const call of item.tool_calls) {
         if (!isRecord(call) || typeof call.id !== "string" || !isRecord(call.function) || typeof call.function.name !== "string") {
           throw protocolError();
         }
-        content.push({ type: "tool_use", id: call.id, name: call.function.name, input: toolInput(call.function.arguments) });
+        content.push({ type: "tool_use", id: safeToolId(call.id), name: call.function.name, input: toolInput(call.function.arguments) });
       }
-      messages.push({ role: "assistant", content });
+      // Messages refuses an assistant turn with no content at all.
+      if (content.length > 0) messages.push({ role: "assistant", content });
       continue;
     }
     if (Array.isArray(item.content)) {
@@ -156,7 +172,10 @@ export function buildMessagesBody(
     } else if (item.role === "user") {
       pushUser(messages, [{ type: "text", text: contentString(item.content) }]);
     } else if (item.role === "assistant") {
-      messages.push({ role: "assistant", content: contentString(item.content) });
+      // Empty (or blank) assistant turns, left by a model that answered with
+      // nothing, are a 400 on Messages: drop them.
+      const text = contentString(item.content);
+      if (text.trim()) messages.push({ role: "assistant", content: text });
     } else {
       throw protocolError();
     }
@@ -168,6 +187,9 @@ export function buildMessagesBody(
     max_tokens: chatBody.max_tokens,
     messages,
   };
+  // Automatic prompt caching: one top-level marker and the API puts the
+  // breakpoint on the last cacheable block, moving it forward as the chat grows.
+  if (opts.cache) out.cache_control = { type: "ephemeral" };
   if (systemParts.length > 0) out.system = systemParts.join("\n\n");
   if (chatBody.tools !== undefined) out.tools = toAnthropicTools(chatBody.tools);
   if (chatBody.tool_choice !== undefined) out.tool_choice = toAnthropicToolChoice(chatBody.tool_choice);
@@ -185,9 +207,29 @@ function anthropicFinish(stopReason: unknown, hasTools: boolean): string {
   return "stop";
 }
 
-function anthropicUsage(input: unknown, output: unknown): { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null {
+/**
+ * Messages reports input_tokens EXCLUDING cache reads and writes. The chat
+ * shape the rest of the router reads has prompt_tokens including them, with the
+ * cached part in prompt_tokens_details, so budgets see the whole prompt.
+ */
+function anthropicUsage(
+  input: unknown,
+  output: unknown,
+  cacheRead?: unknown,
+  cacheWrite?: unknown,
+): Record<string, unknown> | null {
   if (typeof input !== "number" || typeof output !== "number") return null;
-  return { prompt_tokens: input, completion_tokens: output, total_tokens: input + output };
+  const read = typeof cacheRead === "number" ? cacheRead : null;
+  const write = typeof cacheWrite === "number" ? cacheWrite : null;
+  const prompt = input + (read ?? 0) + (write ?? 0);
+  return {
+    prompt_tokens: prompt,
+    completion_tokens: output,
+    total_tokens: prompt + output,
+    ...(read !== null || write !== null
+      ? { prompt_tokens_details: { ...(read !== null ? { cached_tokens: read } : {}), ...(write !== null ? { cache_write_tokens: write } : {}) } }
+      : {}),
+  };
 }
 
 /** Non-stream Messages JSON to a chat.completion. */
@@ -212,6 +254,8 @@ export function translateMessagesJson(payload: unknown, model: string): Record<s
   const usage = anthropicUsage(
     isRecord(payload.usage) ? payload.usage.input_tokens : null,
     isRecord(payload.usage) ? payload.usage.output_tokens : null,
+    isRecord(payload.usage) ? payload.usage.cache_read_input_tokens : null,
+    isRecord(payload.usage) ? payload.usage.cache_creation_input_tokens : null,
   );
   const out: Record<string, unknown> = {
     id: typeof payload.id === "string" ? payload.id : "chatcmpl-msg",
@@ -233,6 +277,8 @@ interface MessagesStreamState {
   toolCount: number;
   inputTokens: number | null;
   outputTokens: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
   stopReason: unknown;
   errored: boolean;
   enqueue: (line: string) => void;
@@ -252,13 +298,21 @@ function mchunk(state: MessagesStreamState, delta: Record<string, unknown>): voi
   })}\n\n`);
 }
 
+/** message_start carries the input side, message_delta the final counts; later numbers win. */
+function noteUsage(state: MessagesStreamState, usage: Record<string, unknown>): void {
+  if (typeof usage.input_tokens === "number") state.inputTokens = usage.input_tokens;
+  if (typeof usage.output_tokens === "number") state.outputTokens = usage.output_tokens;
+  if (typeof usage.cache_read_input_tokens === "number") state.cacheRead = usage.cache_read_input_tokens;
+  if (typeof usage.cache_creation_input_tokens === "number") state.cacheWrite = usage.cache_creation_input_tokens;
+}
+
 function applyMessagesEvent(state: MessagesStreamState, event: Record<string, unknown>): "done" | "error" | "open" {
   const type = event.type;
   if (typeof type !== "string") return "open";
   if (type === "message_start" && isRecord(event.message)) {
     if (typeof event.message.id === "string") state.id = event.message.id;
     const usage = event.message.usage;
-    if (isRecord(usage) && typeof usage.input_tokens === "number") state.inputTokens = usage.input_tokens;
+    if (isRecord(usage)) noteUsage(state, usage);
     return "open";
   }
   if (type === "content_block_start" && typeof event.index === "number" && isRecord(event.content_block)) {
@@ -302,11 +356,11 @@ function applyMessagesEvent(state: MessagesStreamState, event: Record<string, un
   }
   if (type === "message_delta" && isRecord(event.delta)) {
     state.stopReason = event.delta.stop_reason;
-    if (isRecord(event.usage) && typeof event.usage.output_tokens === "number") state.outputTokens = event.usage.output_tokens;
+    if (isRecord(event.usage)) noteUsage(state, event.usage);
     return "open";
   }
   if (type === "message_stop") {
-    const usage = anthropicUsage(state.inputTokens, state.outputTokens);
+    const usage = anthropicUsage(state.inputTokens, state.outputTokens, state.cacheRead, state.cacheWrite);
     state.enqueue(`data: ${JSON.stringify({
       id: state.id,
       object: "chat.completion.chunk",
@@ -350,6 +404,8 @@ export async function translateMessagesStream(upstream: Response, model: string)
         toolCount: 0,
         inputTokens: null,
         outputTokens: null,
+        cacheRead: null,
+        cacheWrite: null,
         stopReason: null,
         errored: false,
         enqueue: (line: string) => controller.enqueue(new TextEncoder().encode(line)),
@@ -429,9 +485,12 @@ export async function postMessages(input: {
   body: Record<string, unknown>;
   headers: Record<string, string>;
   signal: AbortSignal;
+  /** Documented only for Anthropic's own API: other vendors may refuse the field. */
+  cache?: boolean;
   fetchImpl?: typeof fetch;
 }): Promise<Response> {
-  const outgoing = buildMessagesBody(input.body, { model: input.model });
+  const outgoing = buildMessagesBody(input.body, { model: input.model, cache: input.cache });
+  dumpUpstreamBody("anthropic-messages", input.model, outgoing);
   const url = `${input.baseUrl.replace(/\/$/, "")}/messages`;
   const res = await (input.fetchImpl ?? fetch)(url, {
     method: "POST",

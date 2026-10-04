@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import {
   existsSync,
   mkdirSync,
@@ -12,8 +11,10 @@ import {
   rmdirSync,
   statSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
 import { createHash, randomUUID } from "node:crypto";
+import { parseModelSelection, type ModelSelection } from "./session-selection.ts";
 // The permission vocabulary is client-safe and lives beside the bot fields
 // that carry it; this store only adds persistence on top.
 import {
@@ -45,6 +46,15 @@ export type SessionGrant = {
   /** The attached folder, or null when the bot works under the owner's home. */
   path: string | null;
   permission: WorkspacePermission;
+  /**
+   * The model the bot runs on, stamped with the permission at turn start. The
+   * agent prefers the owning bot's CURRENT selection at a turn's first step;
+   * the grant is the fallback for a brand new session no bot owns yet, and the
+   * source on the no-turn-id path (it only changes at turn start, so it is
+   * stable within a turn). Absent on a grant stamped before this field, or by
+   * a caller that passes none; the agent then uses the bot's own selection.
+   */
+  selection?: ModelSelection;
   updatedAt: string;
 };
 
@@ -63,7 +73,7 @@ export type WorkspaceStore = {
 
 export function defaultWorkspacePath(): string {
   if (process.env.UB_WORKSPACE_STORE_PATH) return process.env.UB_WORKSPACE_STORE_PATH;
-  return join(homedir(), ".useful-bot", "workspace.json");
+  return statePath("workspace.json");
 }
 
 function seedStore(at = new Date()): WorkspaceStore {
@@ -88,10 +98,12 @@ function parseGrant(raw: unknown): SessionGrant | null {
   else return null;
   const permission = parseWorkspacePermission(rec.permission);
   if (!sessionId || !permission) return null;
+  const selection = parseModelSelection(rec.selection);
   return {
     sessionId,
     path,
     permission,
+    ...(selection ? { selection } : {}),
     updatedAt: typeof rec.updatedAt === "string" ? rec.updatedAt : new Date(0).toISOString(),
   };
 }
@@ -244,7 +256,7 @@ export function readSessionGrant(sessionId: string, path = defaultWorkspacePath(
 }
 
 export function upsertSessionGrant(
-  input: { sessionId: string; path: string | null; permission: WorkspacePermission },
+  input: { sessionId: string; path: string | null; permission: WorkspacePermission; selection?: ModelSelection },
   at = new Date(),
   path = defaultWorkspacePath(),
 ): void {

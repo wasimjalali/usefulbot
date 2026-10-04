@@ -277,17 +277,25 @@ public struct MemoryNote: Codable, Identifiable, Equatable, Sendable {
     public var body: String
     public var updatedAt: String
     public var truncated: Bool
+    public var revision: MemoryRevision?
+    /// "owner", "model" or "model-after-outside-content".
+    public var source: String
+
+    /// Written by the bot after it read content from outside.
+    public var afterOutsideContent: Bool { source == "model-after-outside-content" }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        revision = try? c.decodeIfPresent(MemoryRevision.self, forKey: .revision)
+        source = (try? c.decode(String.self, forKey: .source)) ?? ""
         title = (try? c.decode(String.self, forKey: .title)) ?? "Note"
         body = (try? c.decode(String.self, forKey: .body)) ?? ""
         updatedAt = (try? c.decode(String.self, forKey: .updatedAt)) ?? ""
         truncated = (try? c.decode(Bool.self, forKey: .truncated)) ?? false
     }
 
-    enum CodingKeys: String, CodingKey { case id, title, body, updatedAt, truncated }
+    enum CodingKeys: String, CodingKey { case id, title, body, updatedAt, truncated, revision, source }
 }
 
 /// `/api/providers` composer state, mirrored from `ComposerPublic`.
@@ -326,6 +334,10 @@ public struct ComposerState: Codable, Equatable, Sendable {
     public var speeds: [Option]
     public var models: [Option]
     public var groups: [Group]
+    /// False when this bot's stored connection is gone or disconnected, or its
+    /// model has left the catalogue. `modelLabel` is still the stored model,
+    /// never a stand-in, and a send is refused until another is picked.
+    public var available: Bool
 
     /// What the chip shows after the model name: effort plus fast, or nil
     /// when neither applies.
@@ -335,7 +347,7 @@ public struct ComposerState: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case connectionId, modelId, modelLabel, effort, effortLabel, speed, efforts, speeds, models, groups
+        case connectionId, modelId, modelLabel, effort, effortLabel, speed, efforts, speeds, models, groups, available
     }
 
     public init(from decoder: Decoder) throws {
@@ -350,7 +362,54 @@ public struct ComposerState: Codable, Equatable, Sendable {
         speeds = (try? c.decode([Option].self, forKey: .speeds)) ?? []
         models = (try? c.decode([Option].self, forKey: .models)) ?? []
         groups = (try? c.decode([Group].self, forKey: .groups)) ?? []
+        // A server without the field predates per-bot selection and has no
+        // way to say a model is gone.
+        available = (try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? true
     }
+}
+
+/// Which bot's chip state the composer shows, and when an answer may change
+/// it. Every read and save names its bot, and an answer for a bot the owner
+/// has since left only fills that bot's cache: the chip never shows another
+/// bot's model, and a save for bot A landing after a move to bot B cannot
+/// overwrite B's chip. A read that began before a save started is dropped,
+/// so a slow poll cannot put the old pick back over the new one.
+public struct ComposerSelection: Equatable, Sendable {
+    public private(set) var selectedBotId: String?
+    /// What the chip shows now: the selected bot's own state, or nil.
+    public private(set) var shown: ComposerState?
+    private var byBot: [String: ComposerState] = [:]
+    private var epoch = 0
+
+    public init() {}
+
+    /// The owner opened another bot: its last read paints at once, or the
+    /// placeholder when none was read yet.
+    public mutating func select(_ botId: String?) {
+        selectedBotId = botId
+        shown = botId.flatMap { byBot[$0] }
+    }
+
+    /// A save is about to go out. Returns the token a read must carry.
+    public mutating func beginSave() { epoch &+= 1 }
+
+    /// The token a read takes before it asks the server.
+    public var readToken: Int { epoch }
+
+    /// Record an answer for `botId`. `readToken` is the token a read took
+    /// before asking; a save's answer passes nil. Returns whether the chip
+    /// changed.
+    @discardableResult
+    public mutating func apply(_ state: ComposerState, for botId: String?, readToken: Int? = nil) -> Bool {
+        if let readToken, readToken != epoch { return false }
+        if let botId { byBot[botId] = state }
+        guard botId == selectedBotId, state != shown else { return false }
+        shown = state
+        return true
+    }
+
+    /// The cached model label for a bot, whether or not it is open.
+    public func modelLabel(for botId: String) -> String? { byBot[botId]?.modelLabel }
 }
 
 /// A file that survived `POST /api/attachments`.
@@ -382,23 +441,59 @@ public struct ApprovalItem: Codable, Identifiable, Equatable, Sendable {
     public let actionSha256: String
     public let preview: String
     public let tool: String
+    /// Who raised it, when the server says (older servers do not).
+    public let botId: String?
+    public let botName: String?
+    /// The session that raised it.
+    public let sessionId: String?
+    /// Raised by a sub-agent rather than the bot itself.
+    public let subagent: Bool
+    /// The chat's own session, which a sub-agent's card can differ from.
+    public let rootSessionId: String?
+
+    /// What the card says about where it came from: a sub-agent's, or another
+    /// bot's when the chat open is not that bot's. Nil for the open bot's own.
+    public func originLabel(openBotId: String?, openSessionId: String? = nil) -> String? {
+        let name = (botName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if subagent {
+            var label = name.isEmpty ? "Sub-agent" : "Sub-agent of \(name)"
+            if let root = rootSessionId, !root.isEmpty, let open = openSessionId, root != open { label += ", from another chat" }
+            return label
+        }
+        if !name.isEmpty, let botId, botId != openBotId { return name }
+        return nil
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        botId = try? c.decodeIfPresent(String.self, forKey: .botId)
+        botName = try? c.decodeIfPresent(String.self, forKey: .botName)
+        sessionId = try? c.decodeIfPresent(String.self, forKey: .sessionId)
+        subagent = (try? c.decodeIfPresent(Bool.self, forKey: .subagent)) ?? false
+        rootSessionId = try? c.decodeIfPresent(String.self, forKey: .rootSessionId)
         actionSha256 = (try? c.decode(String.self, forKey: .actionSha256)) ?? ""
         preview = (try? c.decode(String.self, forKey: .preview)) ?? ""
         tool = (try? c.decode(String.self, forKey: .tool)) ?? ""
     }
 
-    public init(id: String, actionSha256: String, preview: String, tool: String) {
+    public init(
+        id: String, actionSha256: String, preview: String, tool: String,
+        botId: String? = nil, botName: String? = nil, sessionId: String? = nil, subagent: Bool = false,
+        rootSessionId: String? = nil
+    ) {
+        self.rootSessionId = rootSessionId
+        self.botId = botId
+        self.botName = botName
+        self.sessionId = sessionId
+        self.subagent = subagent
         self.id = id
         self.actionSha256 = actionSha256
         self.preview = preview
         self.tool = tool
     }
 
-    enum CodingKeys: String, CodingKey { case id, actionSha256, preview, tool }
+    enum CodingKeys: String, CodingKey { case id, actionSha256, preview, tool, botId, botName, sessionId, subagent, rootSessionId }
 }
 
 /// `/api/providers` row, mirrored from `ProviderPublic`. Legacy shape, kept so
@@ -742,13 +837,24 @@ public struct UsagePayload: Codable, Equatable, Sendable {
         }
     }
 
-    /// The owner's daily token budget and the range the control may move it in.
+    /// The owner's daily token budget and the floor the control may move it to.
+    /// `max` is null: there is no product ceiling, only the safe integer.
     public struct Budget: Codable, Equatable, Sendable {
         public let tokens: Int
         public let isDefault: Bool
         public let `default`: Int
         public let min: Int
-        public let max: Int
+        public let max: Int?
+        public let step: Int
+    }
+
+    /// The owner's daily request budget, shaped like the token one.
+    public struct RequestBudget: Codable, Equatable, Sendable {
+        public let requests: Int
+        public let isDefault: Bool
+        public let `default`: Int
+        public let min: Int
+        public let max: Int?
         public let step: Int
     }
 
@@ -759,6 +865,7 @@ public struct UsagePayload: Codable, Equatable, Sendable {
     public let caps: Caps
     public let week: Window?
     public let budget: Budget?
+    public let requestBudget: RequestBudget?
     public let charged: Charged?
 
     /// Tokens spent in the rolling 24 hours the caps are measured over.
@@ -777,6 +884,7 @@ public struct UsagePayload: Codable, Equatable, Sendable {
         case caps
         case week
         case budget
+        case requestBudget
         case charged
     }
 }

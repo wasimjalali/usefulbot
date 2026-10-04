@@ -28,7 +28,7 @@ import {
   startMcpOAuth,
 } from "./mcp-oauth.ts";
 import { readShell } from "./shell-io.ts";
-import { DEFAULT_BOT_ID } from "./shell-store.ts";
+import { DEFAULT_BOT_ID, orchestratorId } from "./shell-store.ts";
 import { putConnectionIndex, putConnectionOperations } from "./connection-tools-store.ts";
 import { specWireBytes } from "./tool-wire-size.ts";
 import {
@@ -78,10 +78,16 @@ function resumeMessage(card: Stored, connectionId: string): string {
 function queueResume(card: Stored, storePath: string, connectionId = card.connectionId): boolean {
   const targetId = card.sourceBotId ?? card.threadId;
   let targetName = "Useful Bot";
+  // The resume is sent by the orchestrator under its real name. The roster
+  // not reading falls back to the default bot, as the name always did.
+  let source = { id: DEFAULT_BOT_ID, name: "Useful Bot" };
   try {
-    targetName = readShell().bots.find((bot) => bot.id === targetId)?.name ?? targetName;
+    const shell = readShell();
+    targetName = shell.bots.find((bot) => bot.id === targetId)?.name ?? targetName;
+    const orchestrator = shell.bots.find((bot) => bot.id === orchestratorId(shell));
+    if (orchestrator) source = { id: orchestrator.id, name: orchestrator.name };
   } catch {
-    /* the name is cosmetic */
+    /* the names are cosmetic */
   }
   const message = resumeMessage(card, connectionId);
   let handoffId: string;
@@ -90,14 +96,14 @@ function queueResume(card: Stored, storePath: string, connectionId = card.connec
     const existing = listHandoffs().find(
       (record) => record.targetBotId === targetId
         && record.message === message
-        && record.sourceBotId === DEFAULT_BOT_ID
+        && record.sourceBotId === source.id
         && record.status !== "failed"
         && Number.isFinite(flippedAt)
         && Date.parse(record.createdAt) >= flippedAt - 1_000,
     );
     handoffId = existing?.id ?? queueHandoff({
-      sourceBotId: DEFAULT_BOT_ID,
-      sourceName: "Useful Bot",
+      sourceBotId: source.id,
+      sourceName: source.name,
       targetBotId: targetId,
       targetName,
       message,

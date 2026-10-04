@@ -4,6 +4,8 @@ import { lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { effectiveRoot, resolveWorkspacePath } from "../lib/workspace.ts";
 import { wrapUntrusted } from "../../shared/untrusted.ts";
+import { markOutside } from "../lib/outside-content.ts";
+import { authoritySessionId, BOT_CONTEXT_MISSING, isBotContextMissing } from "../lib/active-bot.ts";
 
 const LIST_MAX_ENTRIES = 500;
 
@@ -20,7 +22,15 @@ export default defineTool({
     limit: z.number().int().min(1).max(LIST_MAX_ENTRIES).optional(),
   }),
   execute(input, ctx) {
-    const { root } = effectiveRoot(ctx?.session?.id);
+    markOutside(ctx);
+    let grantSession: string | undefined;
+    try {
+      grantSession = authoritySessionId(ctx);
+    } catch (error) {
+      if (isBotContextMissing(error)) return BOT_CONTEXT_MISSING;
+      throw error;
+    }
+    const { root } = effectiveRoot(grantSession);
     const target = resolveWorkspacePath(input.path || ".", root);
     let stat;
     try {

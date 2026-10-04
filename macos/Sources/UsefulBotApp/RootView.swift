@@ -124,6 +124,7 @@ struct RootView: View {
         .animation(.easeOut(duration: DesignTokens.Motion.overlay), value: connectorsOpen)
         .animation(.easeOut(duration: DesignTokens.Motion.overlay), value: libraryOpen)
         .animation(.easeOut(duration: DesignTokens.Motion.overlay), value: model.appSettingsOpen)
+        .animation(.easeOut(duration: DesignTokens.Motion.overlay), value: model.instructionsEditorBotId)
     }
 
     /// Into the first chat: the rail slides in from the left, the stage lifts
@@ -199,22 +200,36 @@ struct RootView: View {
                 .transition(.opacity)
             }
 
+            if let botId = model.instructionsEditorBotId {
+                InstructionsEditorView(botId: botId) { model.instructionsEditorBotId = nil }
+                    .transition(.opacity)
+            }
+
             if let kind = createKind {
                 switch kind {
                 case .bot:
                     CreateBotDialog(
                         sectionName: model.store?.sections.first { $0.id == createSectionId }?.name,
                         onClose: { createKind = nil },
-                        onSubmit: { input in
+                        onSubmit: { input, finish in
                             model.createBot(
                                 name: input.name,
                                 petname: input.name,
                                 label: input.label,
                                 description: input.description,
                                 sectionId: createSectionId
-                            )
-                            pickerOpen = false
-                            createKind = nil
+                            ) { error in
+                                // The dialog can't be closed while it waits,
+                                // but if it is gone anyway the model shows
+                                // the failure instead.
+                                guard case .bot = createKind else { return false }
+                                finish(error)
+                                if error == nil {
+                                    pickerOpen = false
+                                    createKind = nil
+                                }
+                                return true
+                            }
                         }
                     )
                     .transition(.opacity)
@@ -543,15 +558,18 @@ struct CreateGroupInput {
 struct CreateBotDialog: View {
     let sectionName: String?
     let onClose: () -> Void
-    let onSubmit: (CreateBotInput) -> Void
+    /// Calls `finish` with nil once the bot exists, or with the failure copy.
+    let onSubmit: (CreateBotInput, @escaping @MainActor (String?) -> Void) -> Void
 
     @State private var name = ""
     @State private var label = ""
     @State private var description = ""
+    @State private var creating = false
+    @State private var failure: String?
     @FocusState private var focused: Bool
 
     var body: some View {
-        NativeDialog(maxWidth: DesignTokens.Control.dialogFormWidth, ariaLabel: "Create bot", onClose: onClose) {
+        NativeDialog(maxWidth: DesignTokens.Control.dialogFormWidth, ariaLabel: "Create bot", onClose: { if !creating { onClose() } }) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Create bot")
                     .font(.system(size: DesignTokens.FontSize.dialogTitle, weight: .semibold))
@@ -578,25 +596,57 @@ struct CreateBotDialog: View {
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
-                            .frame(minHeight: 80)
+                            // Capped: an uncapped TextEditor takes every point the
+                            // window offers and pushes the dialog to its edges.
+                            .frame(minHeight: 96, maxHeight: 200)
                             .background(Theme.C.surface)
                             .overlay(
                                 RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous)
                                     .strokeBorder(Theme.C.borderStrong, lineWidth: 1)
                             )
                             .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous))
+                        switch InstructionsLimit.footer(for: description) {
+                        case .none:
+                            EmptyView()
+                        case .near(let text):
+                            Text(text)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.C.inkMuted)
+                                .monospacedDigit()
+                        case .over(let text):
+                            Text(text)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.C.danger)
+                                .monospacedDigit()
+                        }
                     }
                 }
                 .padding(.top, 16)
+                if let failure {
+                    Text(failure)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.danger)
+                        .padding(.top, 12)
+                }
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
-                    NativeButton("Cancel", kind: .secondary, small: true, action: onClose)
-                    NativeButton("Create bot", kind: .primary, small: true, enabled: !trimmedName.isEmpty) {
+                    NativeButton("Cancel", kind: .secondary, small: true, enabled: !creating, action: onClose)
+                    NativeButton(
+                        "Create bot",
+                        kind: .primary,
+                        small: true,
+                        enabled: !trimmedName.isEmpty && InstructionsLimit.canSave(description) && !creating
+                    ) {
+                        creating = true
+                        failure = nil
                         onSubmit(CreateBotInput(
                             name: trimmedName,
                             label: label.trimmingCharacters(in: .whitespacesAndNewlines),
                             description: description.trimmingCharacters(in: .whitespacesAndNewlines)
-                        ))
+                        )) { error in
+                            creating = false
+                            failure = error
+                        }
                     }
                 }
                 .padding(.top, 20)

@@ -74,7 +74,8 @@ public enum Transcript {
     public static func merge(
         events: [AgentEvent],
         messages: [ChatMessage],
-        failures: [FailureMark] = []
+        failures: [FailureMark] = [],
+        compactions: [CompactionMark] = []
     ) -> [TranscriptRow] {
         var durable: [TranscriptRow] = []
         var durableUserCounts: [String: Int] = [:]
@@ -123,6 +124,18 @@ public enum Transcript {
         var failuresByAnchor: [String: [FailureMark]] = [:]
         var unplaced: [FailureMark] = []
         let messageIds = Set(messages.map(\.id))
+        var compactionsByAnchor: [String: [CompactionMark]] = [:]
+        var unplacedCompactions: [CompactionMark] = []
+        for mark in compactions {
+            if let anchor = mark.anchorId, messageIds.contains(anchor) {
+                compactionsByAnchor[anchor, default: []].append(mark)
+            } else {
+                unplacedCompactions.append(mark)
+            }
+        }
+        func compactionRow(_ mark: CompactionMark, after message: ChatMessage?) -> TranscriptRow {
+            TranscriptRow(id: mark.rowId, kind: .note, text: CompactionMark.text, at: mark.at ?? message?.at)
+        }
         for mark in failures {
             if let anchor = mark.anchorId, messageIds.contains(anchor) {
                 failuresByAnchor[anchor, default: []].append(mark)
@@ -135,6 +148,9 @@ public enum Transcript {
         }
         for message in messages {
             defer {
+                for mark in compactionsByAnchor.removeValue(forKey: message.id) ?? [] {
+                    live.append(compactionRow(mark, after: message))
+                }
                 for mark in failuresByAnchor.removeValue(forKey: message.id) ?? [] {
                     live.append(failureRow(mark, after: message))
                 }
@@ -162,6 +178,7 @@ public enum Transcript {
             }
         }
         // A mark whose row is gone still says what happened, at the end.
+        live.append(contentsOf: unplacedCompactions.map { compactionRow($0, after: nil) })
         live.append(contentsOf: unplaced.map { failureRow($0, after: nil) })
         return interleave(durable: durable, live: live)
     }
@@ -211,35 +228,21 @@ public enum Transcript {
         return keys
     }
 
-    /// Attribute an untagged group reply by the member mention in the user turn
-    /// that produced it.
-    public static func attributeGroupReplies(_ rows: [TranscriptRow], roster: [Speaker]) -> [TranscriptRow] {
-        guard !roster.isEmpty else { return rows }
+    /// Credit an untagged group reply to the orchestrator, whoever the owner
+    /// mentioned: the server answers a group turn as the orchestrator, and the
+    /// member does not speak (`speakerLabel` in `shared/threads.ts`). A reply
+    /// that already names its author keeps it.
+    public static func attributeGroupReplies(
+        _ rows: [TranscriptRow],
+        group: ShellBot,
+        orchestrator: Speaker?
+    ) -> [TranscriptRow] {
+        let label = Threads.speakerLabel(bot: group, orchestrator: orchestrator)
+        guard label.authorName != nil else { return rows }
         var next = rows
-        // One forward pass. The user turn in force is carried along and its
-        // mentions are resolved once, on the first reply that needs them: a
-        // backward search plus a fresh regex parse per bubble made a long run
-        // of replies under one message quadratic, on every publish.
-        var previousUserText: String?
-        var resolved = false
-        var speaker: Speaker?
-        for (index, row) in rows.enumerated() {
-            if row.kind == .user {
-                previousUserText = row.text
-                resolved = false
-                speaker = nil
-                continue
-            }
-            if row.kind != .assistant || row.authorBotId != nil { continue }
-            guard let previousUserText else { continue }
-            if !resolved {
-                resolved = true
-                let mentions = Threads.parseMentions(previousUserText, bots: roster).mentionIds
-                speaker = mentions.count == 1 ? roster.first(where: { $0.id == mentions[0] }) : nil
-            }
-            guard let speaker else { continue }
-            next[index].authorBotId = speaker.id
-            next[index].author = speaker.name
+        for (index, row) in rows.enumerated() where row.kind == .assistant && row.authorBotId == nil && row.author == nil {
+            next[index].authorBotId = label.authorBotId
+            next[index].author = label.authorName
         }
         return next
     }

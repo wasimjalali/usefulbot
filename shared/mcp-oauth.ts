@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { assertConnectionUrl, assertPublicHttpsUrl, assertResolvedPublic, ConnectionUrlError } from "./connection-url.ts";
+import { statePath } from "./stack.ts";
 
 /**
  * Generic MCP OAuth: protected-resource metadata, authorization-server
@@ -52,7 +53,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 export function oauthPendingPath(root = process.env.UB_OAUTH_PENDING_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/connections-oauth.json");
+  return statePath("connections-oauth.json");
 }
 
 function readPending(path = oauthPendingPath()): OAuthPending[] {

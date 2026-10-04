@@ -76,6 +76,13 @@ struct ProposalCardView: View {
                     }
                 }
                 .padding(.top, 8)
+                if let description = proposal.description, !description.isEmpty {
+                    Text(description)
+                        .font(.system(size: 13))
+                        .lineSpacing(3)
+                        .foregroundStyle(Theme.C.inkMuted)
+                        .padding(.top, 8)
+                }
                 actions(confirm: "Create group", dismiss: "Not now")
             }
         case .updateBotProfile:
@@ -84,11 +91,9 @@ struct ProposalCardView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     patchRow("Name", before: target?.name ?? "", after: proposal.patch?.name ?? "")
                     patchRow("Title", before: target?.label ?? "", after: proposal.patch?.title ?? "")
-                    patchRow(
-                        "Description",
-                        before: target?.description ?? "",
-                        after: proposal.patch?.description ?? ""
-                    )
+                    if let description = proposal.patch?.description {
+                        patchRow("Description", before: target?.description ?? "", after: description)
+                    }
                 }
                 actions(confirm: "Apply profile", dismiss: "Keep as is")
             }

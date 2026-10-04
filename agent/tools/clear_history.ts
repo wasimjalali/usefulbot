@@ -1,9 +1,19 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
-import { activeBotId } from "../lib/active-bot.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission, settle } from "../lib/permission.ts";
+import {
+  callerOf,
+  callerRole,
+  inAppGate,
+  mayActOn,
+  notAvailable,
+  ORCHESTRATOR_ONLY_HINT,
+  READ_ONLY_BLOCKED,
+  SELF_ONLY_HINT,
+  sessionPermission,
+  settle,
+} from "../lib/permission.ts";
 import { clearThread } from "../../shared/agent-store.ts";
 import { readShell, updateShell } from "../../shared/shell-io.ts";
 import { applyShellAction } from "../../shared/shell-store.ts";
@@ -18,7 +28,7 @@ import { applyShellAction } from "../../shared/shell-store.ts";
  */
 export default defineTool({
   description:
-    "Clear the message history of a chat: this bot's own, another bot's, or every bot's at once. This cannot be undone, so in Auto the owner sees an approval card listing exactly which chats it will empty and nothing is cleared until they approve; Full access clears at once; Read only refuses. Confirm which chat they mean before calling it.",
+    "Empty a chat's messages: this bot's, another bot's (botId) or every bot's (all: true). Irreversible: in Auto the owner approves a card listing the exact chats, Full access clears at once, Read only refuses. Name the chats back to them before calling. Only the main bot can clear other bots' chats or all; a teammate can clear only its own.",
   inputSchema: z.object({
     botId: z.string().min(1).max(80).optional(),
     all: z.boolean().optional(),
@@ -26,7 +36,10 @@ export default defineTool({
   }),
   async execute(input, ctx) {
     const shell = readShell();
-    const selfId = activeBotId(shell, ctx);
+    const who = await callerOf(shell, ctx);
+    if (!who.ok) return who.result;
+    const caller = who.caller;
+    const selfId = caller.id;
     if (input.all === true && input.botId) {
       return {
         status: "refused",
@@ -37,6 +50,7 @@ export default defineTool({
 
     let targets: typeof shell.bots;
     if (input.all === true) {
+      if (caller.role !== "orchestrator") return notAvailable(ORCHESTRATOR_ONLY_HINT);
       targets = shell.bots;
     } else {
       const requested = (input.botId ?? selfId ?? "").trim();
@@ -60,6 +74,8 @@ export default defineTool({
       if (!target) {
         return { status: "not_found", error: `no bot matches ${requested}`, hint: "Call list_bots for exact ids." };
       }
+      // A plain bot or a group clears only its own chat.
+      if (!mayActOn(caller, target.id)) return notAvailable(SELF_ONLY_HINT);
       targets = [target];
     }
     if (targets.length === 0) {
@@ -104,6 +120,14 @@ export default defineTool({
       // card. A chat that took a new turn in that window is left alone.
       const cleared: string[] = [];
       updateShell((current) => {
+        // The caller's class is re-read with the roster, so a card raised by
+        // the orchestrator is not spent after it lost that role.
+        const actor = current.bots.find((bot) => bot.id === caller.id);
+        if (!actor) throw new Error("bot_missing");
+        const role = callerRole(current, actor);
+        if (input.all === true ? role !== "orchestrator" : !(role === "orchestrator" || actor.id === targets[0].id)) {
+          throw new Error("not_available_for_this_bot");
+        }
         let next = current;
         for (const target of targets) {
           const live = next.bots.find((bot) => bot.id === target.id);

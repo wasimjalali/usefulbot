@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
 
 /**
  * Connectors state: the owner's Composio API key, the stable user id the
@@ -42,7 +43,7 @@ function sleep(ms: number): void {
 
 export function connectorsPath(root = process.env.UB_CONNECTORS_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/connectors.json");
+  return statePath("connectors.json");
 }
 
 export function isToolkitSlug(value: unknown): value is string {

@@ -12,8 +12,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
 
 export type BrowserSession = {
   callerId: string;
@@ -31,7 +31,7 @@ export type BrowserSession = {
 
 export function defaultWebSessionsPath(): string {
   if (process.env.UB_WEB_SESSIONS_PATH) return process.env.UB_WEB_SESSIONS_PATH;
-  return join(homedir(), ".useful-bot", "web-sessions.json");
+  return statePath("web-sessions.json");
 }
 
 export function sessionKey(token: string): string {

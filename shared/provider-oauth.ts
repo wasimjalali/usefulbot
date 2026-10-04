@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { providerMode } from "./provider-catalog.ts";
 import type { Credential } from "./providers.ts";
+import { statePath } from "./stack.ts";
 
 /**
  * OAuth device flow for the catalogue oauth modes (openai ChatGPT via the
@@ -50,7 +51,7 @@ const EXCHANGE_REFRESH_WINDOW_MS = 5 * 60 * 1000;
 
 export function providerPendingPath(root = process.env.UB_PROVIDER_OAUTH_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/provider-oauth.json");
+  return statePath("provider-oauth.json");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

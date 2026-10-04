@@ -86,7 +86,12 @@ function sandbox(connected: string[] = ["gmail"], withKey = true): Box {
     catalogue: process.env.UB_CATALOGUE_PATH,
     shell: process.env.UB_SHELL_PATH,
     store: process.env.UB_AGENT_STORE_PATH,
+    owners: process.env.UB_SESSION_OWNERS_PATH,
+    active: process.env.UB_ACTIVE_BOT_ID,
   };
+  process.env.UB_SESSION_OWNERS_PATH = join(dir, "session-owners.json");
+  // A tool call acts as some bot; with no session, the pin names it.
+  process.env.UB_ACTIVE_BOT_ID = "bot-useful";
   process.env.UB_CONNECTORS_PATH = join(dir, "connectors.json");
   process.env.UB_WORKSPACE_STORE_PATH = join(dir, "workspace.json");
   process.env.UB_APPROVALS_PATH = join(dir, "approvals.json");
@@ -119,6 +124,8 @@ function sandbox(connected: string[] = ["gmail"], withKey = true): Box {
       put("UB_CATALOGUE_PATH", previous.catalogue);
       put("UB_SHELL_PATH", previous.shell);
       put("UB_AGENT_STORE_PATH", previous.store);
+      put("UB_SESSION_OWNERS_PATH", previous.owners);
+      put("UB_ACTIVE_BOT_ID", previous.active);
       setComposioFactory(null);
     },
   };

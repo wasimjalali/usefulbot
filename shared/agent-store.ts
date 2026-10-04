@@ -11,8 +11,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
+import { DESCRIPTION_MAX, PROPOSE_DESCRIPTION_MAX } from "./shell-store.ts";
 import type { ConnectionAuthKind, ConnectionKind } from "./connections-store.ts";
 
 /**
@@ -77,7 +78,8 @@ export type BotProfileDraft = {
   name: string;
   petname: string;
   title: string;
-  description: string;
+  /** Absent means the description is unchanged: the card leaves it alone. */
+  description?: string;
   avatarShape: string | null;
   avatarColor: string | null;
 };
@@ -93,22 +95,38 @@ export type BotProposal = {
   sourceBotId: string | null;
   threadId: string;
   brief: string;
+  /**
+   * The bot whose tool call raised the card. Confirming re-checks that bot's
+   * authority against the live roster; a card with no proposer is refused.
+   */
+  proposerId?: string;
 };
 
 export type GroupProposal = {
   kind: "createGroup";
   name: string;
   memberIds: string[];
+  /** The group's standing instructions, stored and confirmed like a bot's. */
+  description: string;
   sourceBotId: string | null;
   threadId: string;
+  /** See `BotProposal.proposerId`. */
+  proposerId?: string;
 };
 
 export type ProfileProposal = {
   kind: "updateBotProfile";
   botId: string;
   patch: BotProfileDraft;
+  /**
+   * The target's `profileRevision` when the card was raised. The confirm path
+   * refuses the card once the profile has moved on (shell-store.ts).
+   */
+  baseRevision: number;
   sourceBotId: string | null;
   threadId: string;
+  /** See `BotProposal.proposerId`. */
+  proposerId?: string;
 };
 
 export type FanoutProposal = {
@@ -207,7 +225,7 @@ const EVENT_KINDS = new Set<AgentEventKind>([
 
 export function agentStorePath(): string {
   if (process.env.UB_AGENT_STORE_PATH) return process.env.UB_AGENT_STORE_PATH;
-  return join(homedir(), ".useful-bot", "agents.json");
+  return statePath("agents.json");
 }
 
 export function newEventId(prefix = "evt"): string {
@@ -229,6 +247,16 @@ export function threadIdFor(botId: string): string {
 
 function clip(value: unknown, max = TEXT_MAX): string {
   return typeof value === "string" ? value.slice(0, max) : "";
+}
+
+/**
+ * A proposal description over its cap is refused, never clipped. A stored
+ * card that is over (hand-edited file) is dropped by the parser, since the
+ * card must show exactly the text that would be written.
+ */
+function descriptionWithin(value: unknown, max: number): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text.length > max ? null : text;
 }
 
 function isId(value: unknown, max = 80): value is string {
@@ -316,34 +344,57 @@ function parseProposal(raw: unknown): Proposal | null {
     threadId: clip(rec.threadId, 80),
   };
   if (rec.kind === "createBot") {
+    const description = descriptionWithin(rec.description, PROPOSE_DESCRIPTION_MAX);
+    if (description === null) return null;
     return {
       ...base,
       kind: "createBot",
       name: clip(rec.name, 80),
       petname: clip(rec.petname, 80),
       title: clip(rec.title, 24),
-      description: clip(rec.description, 500),
+      description,
       sectionId: isId(rec.sectionId) ? rec.sectionId : null,
       brief: clip(rec.brief, 1000),
+      proposerId: isId(rec.proposerId) ? rec.proposerId : "",
     };
   }
   if (rec.kind === "createGroup") {
     const memberIds = Array.isArray(rec.memberIds)
       ? rec.memberIds.filter((id): id is string => isId(id)).slice(0, 6)
       : [];
-    return { ...base, kind: "createGroup", name: clip(rec.name, 80), memberIds };
+    const description = descriptionWithin(rec.description, DESCRIPTION_MAX);
+    if (description === null) return null;
+    return {
+      ...base,
+      kind: "createGroup",
+      name: clip(rec.name, 80),
+      memberIds,
+      description,
+      proposerId: isId(rec.proposerId) ? rec.proposerId : "",
+    };
   }
   if (rec.kind === "updateBotProfile") {
     const patchRaw = (rec.patch ?? {}) as Record<string, unknown>;
+    // Present only when the card changes it; an absent one stays absent.
+    const description = typeof patchRaw.description === "string"
+      ? descriptionWithin(patchRaw.description, DESCRIPTION_MAX)
+      : undefined;
+    if (description === null) return null;
     return {
       ...base,
       kind: "updateBotProfile",
+      proposerId: isId(rec.proposerId) ? rec.proposerId : "",
       botId: isId(rec.botId) ? rec.botId : "",
+      // A card with no recorded revision is stale by construction: -1 never
+      // matches a bot's revision.
+      baseRevision: Number.isInteger(rec.baseRevision) && (rec.baseRevision as number) >= 0
+        ? (rec.baseRevision as number)
+        : -1,
       patch: {
         name: clip(patchRaw.name, 80),
         petname: clip(patchRaw.petname, 80),
         title: clip(patchRaw.title, 24),
-        description: clip(patchRaw.description, 500),
+        ...(description !== undefined ? { description } : {}),
         avatarShape: typeof patchRaw.avatarShape === "string" ? patchRaw.avatarShape : null,
         avatarColor: typeof patchRaw.avatarColor === "string" ? patchRaw.avatarColor : null,
       },
@@ -651,11 +702,24 @@ export function appendAgentEvent(
   }, path);
 }
 
+/** Refuse a card whose description is over its cap (see `descriptionWithin`). */
+function assertProposalDescription(payload: ProposalPayload): void {
+  const check = (text: string, max: number) => {
+    if (text.trim().length > max) throw new Error("shell_description_too_long");
+  };
+  if (payload.kind === "createBot") check(payload.description, PROPOSE_DESCRIPTION_MAX);
+  else if (payload.kind === "createGroup") check(payload.description, DESCRIPTION_MAX);
+  else if (payload.kind === "updateBotProfile") {
+    if (payload.patch.description !== undefined) check(payload.patch.description, DESCRIPTION_MAX);
+  }
+}
+
 export function createProposal<P extends ProposalPayload>(
   payload: P,
   path = agentStorePath(),
 ): P & Pick<Proposal, "id" | "createdAt" | "expiresAt" | "status"> {
   type Stored = P & Pick<Proposal, "id" | "createdAt" | "expiresAt" | "status">;
+  assertProposalDescription(payload);
   return withAgentStore((store) => {
     const now = Date.now();
     const proposal = {
@@ -668,6 +732,39 @@ export function createProposal<P extends ProposalPayload>(
     store.proposals.push(proposal);
     const keep = store.proposals.filter((item) => Date.now() - Date.parse(item.createdAt) < PROPOSAL_TTL_MS * 7);
     store.proposals = keep.slice(-80);
+    return proposal;
+  }, path);
+}
+
+/**
+ * Raise a profile card unless the target bot already has one waiting: one
+ * pending profile proposal per bot. The check and the write share one lock, so
+ * two concurrent calls cannot both land. Returns null when one is pending.
+ */
+export function createProfileProposalOnce(
+  payload: ProfileProposal,
+  path = agentStorePath(),
+): (ProfileProposal & Pick<Proposal, "id" | "createdAt" | "expiresAt" | "status">) | null {
+  type Stored = ProfileProposal & Pick<Proposal, "id" | "createdAt" | "expiresAt" | "status">;
+  assertProposalDescription(payload);
+  return withAgentStore((store) => {
+    const now = Date.now();
+    const waiting = store.proposals.some((item) => (
+      item.kind === "updateBotProfile"
+      && item.botId === payload.botId
+      && item.status === "pending"
+      && Date.parse(item.expiresAt) > now
+    ));
+    if (waiting) return null;
+    const proposal = {
+      ...payload,
+      id: newProposalId(),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + PROPOSAL_TTL_MS).toISOString(),
+      status: "pending",
+    } as Stored;
+    store.proposals.push(proposal);
+    store.proposals = store.proposals.slice(-80);
     return proposal;
   }, path);
 }

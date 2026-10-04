@@ -1,6 +1,7 @@
 import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { assertConnectionUrl } from "./connection-url.ts";
+import { statePath } from "./stack.ts";
 
 /**
  * Owner-approved MCP and OpenAPI connections. Secrets live in Keychain;
@@ -72,7 +73,7 @@ function sleep(ms: number): void {
 
 export function connectionsPath(root = process.env.UB_CONNECTIONS_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/connections.json");
+  return statePath("connections.json");
 }
 
 export function isConnectionId(value: unknown): value is string {

@@ -1,7 +1,18 @@
 import { accessSync, constants, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
+import { foldPath } from "../../shared/fold-path.ts";
+import { APP_STATE_DIR, RUNTIME_INSTALL_DIRS } from "../../shared/stack.ts";
 import { ownerPath, pathCandidates } from "../../shared/user-path.ts";
 import { delimiter, dirname, join } from "node:path";
+import {
+  PLANTED_CONFIG_CREATE_ALLOW,
+  PLANTED_CONFIG_HOME_CREATE_DENY,
+  isPlantedConfigPath,
+  PLANTED_CONFIG_SYMLINK_DENY_LEAVES,
+  PLANTED_CONFIG_NAMES,
+  PLANTED_CONFIG_PATTERNS,
+  PLANTED_CONFIG_WRITE_ALLOW,
+} from "../../shared/policy.ts";
 
 /**
  * Confinement for a shell line that runs without a card.
@@ -31,7 +42,10 @@ export const PROTECTED_NAMES = [
   // tripwire lowercases, the kernel does not.
   "Library/Keychains", "Library/Cookies",
   // The app's own stores and the launch agents that start it.
-  ".useful-bot", "LaunchAgents",
+  APP_STATE_DIR, "LaunchAgents",
+  // The runtime install folders (service code and the `.eve/` transcripts),
+  // both stacks. RUNTIME_INSTALL_PATTERN below adds the case-folded form.
+  ...RUNTIME_INSTALL_DIRS,
   // Shell startup files: a planted line runs in the owner's own shell.
   ".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout",
   ".bash_profile", ".bashrc", ".bash_login", ".bash_logout", ".profile", ".inputrc",
@@ -92,6 +106,22 @@ const SECRETS_DENY_PATTERN = "/secrets($|[/.])";
  */
 const SECRETS_ALLOW_PATTERN = "/python3\\.[0-9]+/([^/]+/)*secrets\\.(py|pyc|pyi|so)$";
 
+/**
+ * The app's other state folders, `.useful-bot-dev` and `.useful-bot-dev-app`
+ * (the dev stack's). The name list above matches `.useful-bot` followed by an
+ * end, a slash or a dot, which a dashed sibling does not satisfy, so these
+ * get their own rule. `.useful-botany` still matches neither.
+ */
+const APP_STATE_DASHED_PATTERN = `/${regexEscape(APP_STATE_DIR)}-[^/]*($|/)`;
+
+/**
+ * `~/Library/Application Support/Useful Bot` and `.../Useful Bot Dev`, whole
+ * folders in either posture. APFS folds case, so each letter is a class: the
+ * kernel matches the path as the line spelled it.
+ */
+const caseless = (text: string) => text.replace(/[A-Za-z]/g, (c) => `[${c.toUpperCase()}${c.toLowerCase()}]`);
+const RUNTIME_INSTALL_PATTERN = `/${caseless(RUNTIME_INSTALL_DIRS[0])}( ${caseless("Dev")})?($|/)`;
+
 export type SandboxScope = "folder" | "computer";
 
 /**
@@ -109,93 +139,6 @@ export type SandboxScope = "folder" | "computer";
  * so a spelling the substring misses still cannot land.
  */
 const SYSTEM_WRITE_DENIED = ["/etc", "/private/etc", "/var/db", "/private/var/db", "/Library/Keychains", "/Library/Cookies"];
-
-/**
- * Config that a tool reads and then executes, relative to the owner's home
- * or to the folder the line runs in. A hook planted in one of these runs
- * unconfined the next time the owner runs that tool themselves, exactly the
- * way a line planted in `.zshrc` would, which is why those are already here.
- * The shell startup files were the whole of this class when this profile was
- * written; the agent CLIs are the rest of it now.
- *
- * Writes are refused in every posture, including Full access and including
- * inside a store this same profile opened for a CLI to authenticate.
- * Reading stays open: a bot may need to explain what a hook does, and
- * reading one is not what gets it run.
- */
-const PLANTED_CONFIG_WRITE_DENIED = [
-  // Claude Code runs all of these, not just its settings file: a skill, a
-  // subagent, a plugin or a slash command planted here runs in the owner's
-  // own next session. `.claude.json` holds the MCP servers it launches.
-  ".claude/settings.json",
-  ".claude/settings.local.json",
-  ".claude/hooks",
-  ".claude/skills",
-  ".claude/agents",
-  ".claude/plugins",
-  ".claude/commands",
-  ".claude.json",
-  // The standing instructions each agent reads at startup. Denying a skill
-  // while leaving the file that tells the agent what to do is not a guard:
-  // both run in the owner's own next session.
-  ".claude/CLAUDE.md",
-  ".claude/global-rules.md",
-  ".codex/config.toml",
-  ".codex/AGENTS.md",
-  ".config/gh/config.yml",
-  // The whole directory, not one filename: the config is `opencode.jsonc` as
-  // often as `opencode.json`, and `plugin/` beside it is executed too. A
-  // suffix-matched name missed the file that actually exists on this Mac.
-  ".config/opencode",
-  ".gemini/settings.json",
-  ".gemini/GEMINI.md",
-  // A git config runs commands too, which is why the hooks alone are not the
-  // whole of it: `core.hooksPath` moves the hooks somewhere undenied, and
-  // `[alias] x = !sh -c`, `core.pager`, `core.sshCommand` and
-  // `credential.helper` are each a command the owner's next git run executes.
-  // Only the GLOBAL ones: a repository's own `.git/config` is written by
-  // `git init` and `git clone`, and denying it refuses both outright
-  // ("could not lock config file"), which is ordinary work for a bot in a
-  // folder the owner handed over.
-  ".gitconfig",
-  ".config/git/config",
-  // A workflow runs on the owner's CI, with the repository's secrets.
-  ".github/workflows",
-];
-
-/**
- * The same class, for entries the name-to-regex shape above cannot express.
- *
- * A git hook has no extension; the templates `git init` writes are all
- * `*.sample`. Denying the hooks DIRECTORY refuses `git init` and `git clone`
- * outright, because both create it and fill it with those templates - a
- * regression measured, not guessed. Denying the hook names themselves leaves
- * both working and still refuses a planted `post-checkout`.
- */
-const PLANTED_CONFIG_PATTERNS = [
-  "/\\.git/hooks($|/)",
-];
-
-/**
- * Allowed back after those denies, and nothing else. The hooks directory
- * itself, because `git init` and `git clone` create it, and the templates
- * they fill it with, which git never runs. A real hook has none of these
- * names, so denying everything and naming the exceptions is the way round
- * that stays correct when git adds a hook nobody here thought of.
- */
-const PLANTED_CONFIG_WRITE_ALLOW = [
-  "/\\.git/hooks/[^/]+\\.sample$",
-];
-
-/**
- * The hooks directory itself, and ONLY the right to bring it into being.
- * `git init` and `git clone` create it; nothing needs to unlink it, rename
- * it or swap it for a symlink, and `file-write*` would have permitted all
- * three - which would put the hooks somewhere this profile never looks.
- */
-const PLANTED_CONFIG_CREATE_ALLOW = [
-  "/\\.git/hooks$",
-];
 
 /**
  * Every directory on the PATH a bot's own lines run with.
@@ -234,18 +177,64 @@ function toolBinDirs(): string[] {
   return [...dirs];
 }
 
-function plantedConfigRules(allowToolInstall: boolean): string[] {
-  const rules = [
-    ...PLANTED_CONFIG_WRITE_DENIED.map((name) => `(deny file-write* (regex #"/${regexEscape(name)}($|[/.])"))`),
+/**
+ * The planted-config denies, from the one list in shared/policy.ts (the write
+ * tool's `isPlantedConfigPath` reads the same list). The kernel on this volume
+ * folds case, so plain lowercase rules also match `.Claude/Settings.json`;
+ * `(?i)` loads but matches nothing, so it is never used (spike 2026-10-01,
+ * evals/results/2026-10-01-ub009-spikes/sbpl-case.md).
+ */
+export function toSbplRules(): string[] {
+  return [
+    ...PLANTED_CONFIG_NAMES.map((name) => `(deny file-write* (regex #"/${regexEscape(name)}($|[/.])"))`),
     ...PLANTED_CONFIG_PATTERNS.map((pattern) => `(deny file-write* (regex #"${pattern}"))`),
+    ...PLANTED_CONFIG_SYMLINK_DENY_LEAVES.map((leaf) => `(deny file-write-create (require-all (vnode-type SYMLINK) (regex #"/${regexEscape(leaf)}$")))`),
     ...PLANTED_CONFIG_WRITE_ALLOW.map((pattern) => `(allow file-write* (regex #"${pattern}"))`),
     ...PLANTED_CONFIG_CREATE_ALLOW.map((pattern) => `(allow file-write-create (regex #"${pattern}"))`),
   ];
+}
+
+/**
+ * Creating a tool's config folder directly under the owner's home, in every
+ * confined profile except a registered coding-tool CLI's own line at Full
+ * access: an approved line (a first-time `codex login` makes `~/.codex`)
+ * may, and planted files inside stay denied by the name rules either way.
+ */
+export function homeCreateRules(): string[] {
+  let home: string;
+  try {
+    home = realpathSync(homedir());
+  } catch {
+    home = homedir();
+  }
+  return PLANTED_CONFIG_HOME_CREATE_DENY.map((leaf) => `(deny file-write-create (regex #"^${regexEscape(home)}/${regexEscape(leaf)}$"))`);
+}
+
+function plantedConfigRules(allowToolInstall: boolean, confined = false): string[] {
+  const rules = [...toSbplRules(), ...(confined ? homeCreateRules() : [])];
   if (allowToolInstall) return rules;
   for (const path of toolBinDirs()) {
     rules.push(`(deny file-write* (subpath ${sbplString(path)}))`);
   }
   return rules;
+}
+
+/**
+ * Whether the guard would refuse a write at this absolute path: planted config,
+ * a tool's config folder name, a protected credential or app-state name, or a
+ * PATH directory. Used to tell a refusal this profile made from any other
+ * "Operation not permitted" (a macOS privacy prompt, a read-only volume).
+ */
+export function isGuardedPath(abs: string): boolean {
+  const folded = foldPath(abs);
+  if (isPlantedConfigPath(abs)) return true;
+  const segments = folded.split("/").filter(Boolean);
+  if (segments.some((segment) => PLANTED_CONFIG_SYMLINK_DENY_LEAVES.includes(segment as never))) return true;
+  if (PROTECTED_NAMES.some((name) => {
+    const n = foldPath(name);
+    return folded.endsWith(`/${n}`) || folded.includes(`/${n}/`) || folded.includes(`/${n}.`);
+  })) return true;
+  return toolBinDirs().some((dir) => folded === foldPath(dir) || folded.startsWith(`${foldPath(dir)}/`));
 }
 
 /**
@@ -304,6 +293,8 @@ export type ConfineOptions = {
    * approved line runs unconfined anyway.
    */
   credentialPaths?: readonly string[];
+  /** The line is a single plain run of a registered coding-tool CLI (first-time sign-in may create its home folder). */
+  registeredCli?: boolean;
   /** The line is an install of a named CLI the owner approved. */
   allowToolInstall?: boolean;
 };
@@ -321,6 +312,8 @@ export function sandboxProfile(
   const cache = join(dirname(temp), "C");
   const protectedRules = [
     ...PROTECTED_NAMES.map((name) => `(deny file-write* (regex #"/${regexEscape(name)}($|[/.])"))`),
+    `(deny file-write* (regex #"${APP_STATE_DASHED_PATTERN}"))`,
+    `(deny file-write* (regex #"${RUNTIME_INSTALL_PATTERN}"))`,
     `(deny file-write* (regex #"${SECRETS_DENY_PATTERN}"))`,
   ];
   // Inside a project folder the build tooling reads its own .env and the
@@ -333,6 +326,8 @@ export function sandboxProfile(
     : READ_DENIED_NAMES;
   const readRules = [
     ...readDenied.map((name) => `(deny file-read* (regex #"/${regexEscape(name)}($|[/.])"))`),
+    `(deny file-read* (regex #"${APP_STATE_DASHED_PATTERN}"))`,
+    `(deny file-read* (regex #"${RUNTIME_INSTALL_PATTERN}"))`,
     `(deny file-read* (regex #"${SECRETS_DENY_PATTERN}"))`,
     `(allow file-read* (regex #"${SECRETS_ALLOW_PATTERN}"))`,
     ...(tooling && unbounded && real !== null
@@ -358,7 +353,12 @@ export function sandboxProfile(
     // Last, so a planted hook stays refused even inside a store the rule
     // above just opened: `~/.codex` is readable to a codex line, but
     // `~/.codex/config.toml` is not writable by it.
-    ...plantedConfigRules(options.allowToolInstall === true),
+    // The home-folder create deny applies in Auto AND Full access, except for a
+    // single plain line that runs a registered coding-tool CLI (codex, claude,
+    // gemini, gh...): its first-time sign-in may make `~/.codex` and the like,
+    // and the planted files inside stay denied by the name rules. Any other line
+    // cannot plant `~/.gemini` by renaming a prepared directory.
+    ...plantedConfigRules(options.allowToolInstall === true, !(unbounded && options.registeredCli === true)),
   ].join("\n");
 }
 
@@ -371,4 +371,27 @@ export function confinedCommand(
   options: ConfineOptions = {},
 ): string[] {
   return [SANDBOX_EXEC, "-p", sandboxProfile(root, scope, unbounded, options), "/bin/sh", "-c", command];
+}
+
+/**
+ * The profile for a line the owner approved on a card: everything allowed
+ * (credential stores stay reachable, so an approved `gh auth login` or
+ * `codex login` still works) except writes to planted config and to the PATH
+ * directories. `allowToolInstall` lifts the PATH denies, as for `install_cli`.
+ */
+export function approvedLineProfile(options: { allowToolInstall?: boolean } = {}): string {
+  return ["(version 1)", "(allow default)", ...plantedConfigRules(options.allowToolInstall === true)].join("\n");
+}
+
+/**
+ * The argv for an approved line. Throws when there is no sandbox or the
+ * profile cannot be built: the caller refuses the line, it never runs bare.
+ */
+export function approvedCommand(
+  command: string,
+  options: { allowToolInstall?: boolean } = {},
+  available: () => boolean = sandboxAvailable,
+): string[] {
+  if (!available()) throw new Error("sandbox_unavailable");
+  return [SANDBOX_EXEC, "-p", approvedLineProfile(options), "/bin/sh", "-c", command];
 }

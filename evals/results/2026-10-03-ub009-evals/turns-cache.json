@@ -1,0 +1,53 @@
+{
+ "about": "UB-009 cache run: 12 short no-tool turns on one fresh Test Bot session (GLM 5.3 Flash). C01-C04 in Auto, permission flipped to Read only before C05, C09-C12 sent after local midnight.",
+ "turns": [
+  {
+   "id": "C01",
+   "text": "Cache check 1. Reply with only the number 1."
+  },
+  {
+   "id": "C02",
+   "text": "Cache check 2. Reply with only the number 2."
+  },
+  {
+   "id": "C03",
+   "text": "Cache check 3. Reply with only the number 3."
+  },
+  {
+   "id": "C04",
+   "text": "Cache check 4. Reply with only the number 4."
+  },
+  {
+   "id": "C05",
+   "text": "Cache check 5. Reply with only the number 5."
+  },
+  {
+   "id": "C06",
+   "text": "Cache check 6. Reply with only the number 6."
+  },
+  {
+   "id": "C07",
+   "text": "Cache check 7. Reply with only the number 7."
+  },
+  {
+   "id": "C08",
+   "text": "Cache check 8. Reply with only the number 8."
+  },
+  {
+   "id": "C09",
+   "text": "Cache check 9. Reply with only the number 9."
+  },
+  {
+   "id": "C10",
+   "text": "Cache check 10. Reply with only the number 10."
+  },
+  {
+   "id": "C11",
+   "text": "Cache check 11. Reply with only the number 11."
+  },
+  {
+   "id": "C12",
+   "text": "Cache check 12. Reply with only the number 12."
+  }
+ ]
+}

@@ -208,7 +208,7 @@ struct ChatDetailsPaneView: View {
 
 /// Clock icon, name, schedule subtitle. A paused routine reads muted so the
 /// list does not claim it is going to run.
-private struct RoutineRowView: View {
+struct RoutineRowView: View {
     let routine: Routine
     let onOpen: () -> Void
 
@@ -255,7 +255,7 @@ private struct RoutineRowView: View {
 /// One routine, or the create form when `routine` is nil. Edits to name and
 /// instruction commit on blur the way the settings pane's fields do; the
 /// toggle, the schedule rows and Delete commit immediately.
-private struct RoutineEditorView: View {
+struct RoutineEditorView: View {
     @EnvironmentObject private var model: AppModel
     let bot: ShellBot
     let routine: Routine?
@@ -377,10 +377,11 @@ private struct RoutineEditorView: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             NativeIconButton(systemImage: "chevron.right.2", size: 32, iconSize: 15) {
-                model.detailsOpen = false
+                // Also reached from the settings pane, which hosts this editor.
+                model.pane = .none
             }
-            .help("Collapse details")
-            .accessibilityLabel("Collapse details")
+            .help("Collapse pane")
+            .accessibilityLabel("Collapse pane")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

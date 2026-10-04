@@ -1,0 +1,83 @@
+{
+ "window": [
+  "2026-10-03T23:04:52Z",
+  "2026-10-03T23:10:44Z"
+ ],
+ "new_sessions": 8,
+ "all_first_requests_carry_bot_block": true,
+ "sessions": [
+  {
+   "session": "wrun_01M42070Y9PRQ9PNR80R9S0R3W",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:05:01.684Z",
+   "requests": 5,
+   "first_dump": "2026-10-03T23-05-01-915Z-8587db-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M4208B2NFAZ2N3V968W7THYA",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:05:44.831Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-05-45-057Z-39f944-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420AB0VT54XEDNWS8S78DMH",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:06:50.306Z",
+   "requests": 3,
+   "first_dump": "2026-10-03T23-06-50-521Z-d2d32c-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420BBFGG951W1DA7CR5J1GR",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:07:23.544Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-07-23-758Z-0ec009-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420CMAF2RWC4Y8YKZ5Y8B6K",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:08:05.367Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-08-05-593Z-28a2dc-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420DAS2Y8VWRZJKTB8KD6RX",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:08:28.358Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-08-28-580Z-88b0e9-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420F5VDMBCV0P0A3ARC4M48",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:09:28.854Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-09-29-053Z-279fba-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420GA0JX00WQMSHQZBTBCWR",
+   "mode": "defer",
+   "boundAt": "2026-10-03T23:10:05.887Z",
+   "requests": 4,
+   "first_dump": "2026-10-03T23-10-06-107Z-b249b7-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  }
+ ],
+ "refusal_lines": []
+}

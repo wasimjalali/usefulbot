@@ -1,22 +1,25 @@
-import { join } from "node:path";
 import { NextResponse } from "next/server";
 import { isGateError, requireOwner } from "../../../lib/desktop-gate";
 import { apiError, errorCode, rateLimited, readJson } from "../../../lib/api-guard";
 import { LimitStore } from "../../../../router/src/limits.ts";
 import {
+  applyLimitsUpdate,
   currentBudget,
+  currentRequestBudget,
+  DAILY_REQUEST_BUDGET_STEP,
   DAILY_TOKEN_BUDGET_STEP,
+  DEFAULT_DAILY_REQUEST_BUDGET,
   DEFAULT_DAILY_TOKEN_BUDGET,
   effectiveLimits,
-  MAX_DAILY_TOKEN_BUDGET,
+  MIN_DAILY_REQUEST_BUDGET,
   MIN_DAILY_TOKEN_BUDGET,
-  normalizeBudget,
   readLimitsStore,
   resetBudgetCache,
   writeLimitsStore,
 } from "../../../../shared/limits-store.ts";
 import { parseConnectionId } from "../../../../shared/provider-catalog.ts";
 import { readProviderStore } from "../../../../shared/providers.ts";
+import { routerDbPath } from "../../../../shared/stack.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -24,7 +27,7 @@ const WEEK_MS = 7 * DAY_MS;
 const DESKTOP_CALLER = "desktop";
 
 function usageDbPath(): string {
-  return process.env.UB_ROUTER_DB ?? join(process.env.HOME ?? "/tmp", ".useful-bot/router/usage.sqlite");
+  return routerDbPath();
 }
 
 // The pane polls every few seconds, so one store per process path: a fresh
@@ -55,7 +58,8 @@ function payload() {
   const today = store.summarize(DESKTOP_CALLER, Date.now(), DAY_MS);
   const week = store.summarize(DESKTOP_CALLER, Date.now(), WEEK_MS);
   const budget = currentBudget();
-  const limits = effectiveLimits("desktop", budget);
+  const requestBudget = currentRequestBudget();
+  const limits = effectiveLimits("desktop", budget, requestBudget);
   const providers = readProviderStore();
   return {
     ok: true,
@@ -86,8 +90,17 @@ function payload() {
       isDefault: budget === null,
       default: DEFAULT_DAILY_TOKEN_BUDGET,
       min: MIN_DAILY_TOKEN_BUDGET,
-      max: MAX_DAILY_TOKEN_BUDGET,
+      // No product ceiling: `null` max means only the safe integer bounds it.
+      max: null,
       step: DAILY_TOKEN_BUDGET_STEP,
+    },
+    requestBudget: {
+      requests: limits.dailyRequestBudget,
+      isDefault: requestBudget === null,
+      default: DEFAULT_DAILY_REQUEST_BUDGET,
+      min: MIN_DAILY_REQUEST_BUDGET,
+      max: null,
+      step: DAILY_REQUEST_BUDGET_STEP,
     },
   };
 }
@@ -99,7 +112,7 @@ export async function GET(request: Request) {
 }
 
 /**
- * Move the daily token budget. Desktop session, CSRF header and rate limit,
+ * Move the daily token budget, the daily request budget or both. Desktop session, CSRF header and rate limit,
  * the same gate every other state-changing route uses: this one decides how
  * much the owner can spend in a day.
  */
@@ -113,28 +126,21 @@ export async function PUT(request: Request) {
   if (rateLimited(`usage:${gate.session.callerId}`, 30)) {
     return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
   }
-  let body: { dailyTokenBudget?: unknown };
+  let body: unknown;
   try {
-    body = await readJson(request) as typeof body;
+    body = await readJson(request);
   } catch (err) {
     return apiError(err) ?? NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   }
   try {
-    // `null` restores the shipped default; anything else must be a budget the
-    // store accepts, so a fat-fingered 3,000,000,000 is refused rather than
-    // clamped into something the owner did not ask for.
-    let budget: number | null;
-    if (body.dailyTokenBudget === null) {
-      budget = null;
-    } else {
-      const normalized = normalizeBudget(body.dailyTokenBudget);
-      if (normalized === undefined) {
-        return NextResponse.json({ ok: false, error: "budget_range" }, { status: 400 });
-      }
-      budget = normalized;
+    // An absent field is left alone, `null` restores that budget's default, and
+    // anything else must pass its check: a fat-fingered value is refused with
+    // the rule it broke, never clamped into something the owner did not ask for.
+    const update = applyLimitsUpdate(readLimitsStore(), body, new Date().toISOString());
+    if (!update.ok) {
+      return NextResponse.json({ ok: false, error: update.error, message: update.message }, { status: 400 });
     }
-    const store = readLimitsStore();
-    writeLimitsStore({ ...store, dailyTokenBudget: budget, updatedAt: new Date().toISOString() });
+    writeLimitsStore(update.store);
     // The router caches the budget for a couple of seconds; this process holds
     // its own copy, so drop it now rather than answering with a stale number.
     resetBudgetCache();

@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { parseConnectionId, providerMode, type KeyHeader } from "./provider-catalog.ts";
 import { EFFORTS, isEffortId, mergeLiveModels, modelsFor, type EffortId, type ModelMeta, type ModelOption } from "./models.ts";
+import { statePath } from "./stack.ts";
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
 /** Context windows and modalities change with releases, not by the hour. */
@@ -25,7 +26,7 @@ type CacheFile = {
 
 export function modelsCachePath(root = process.env.UB_MODELS_CACHE_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/models-cache.json");
+  return statePath("models-cache.json");
 }
 
 function emptyCache(): CacheFile {

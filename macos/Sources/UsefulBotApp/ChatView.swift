@@ -224,6 +224,7 @@ struct ChatView: View {
     private func askColumn(_ bot: ShellBot) -> some View {
         let hasAsk = !model.approvals.isEmpty
             || !model.openQuestions.isEmpty
+            || !model.pendingRequests.isEmpty
             || !model.openProposals.isEmpty
             || model.approvalError != nil
         if hasAsk {
@@ -233,6 +234,14 @@ struct ChatView: View {
                 }
                 ForEach(model.openQuestions) { question in
                     questionAsk(question, bot: bot)
+                }
+                ForEach(model.pendingRequests) { request in
+                    WaitingCard(
+                        request: request,
+                        botName: bot.name,
+                        busy: model.busyRequests.contains(request.id)
+                    ) { option in model.answerRequest(request, option: option) }
+                    dismiss: { model.dismissRequest(request) }
                 }
                 if let store = model.store {
                     ForEach(model.openProposals) { proposal in
@@ -284,6 +293,11 @@ struct ChatView: View {
             // approval is the normal way this app works, and a yellow panel
             // over the composer reads as something having gone wrong.
             .foregroundStyle(Theme.C.inkMuted)
+            if let origin = item.originLabel(openBotId: model.selectedBotId, openSessionId: model.selectedBot?.sessionId) {
+                Text(origin)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.inkFaint)
+            }
             // The preview is what the owner is approving; a single truncated
             // line hides the end of a command or an instruction they are
             // agreeing to run.
@@ -544,6 +558,25 @@ struct ChatView: View {
         }
     }
 
+    /// A run is still out by what its card shows (working or quiet), not by
+    /// the parent's state alone: one nobody has heard from for hours is not.
+    private func cardIsLive(_ card: SubagentCardData) -> Bool {
+        model.liveCardIds.contains(card.id)
+    }
+
+    private func subagentCard(_ card: SubagentCardData, bot: ShellBot) -> some View {
+        SubagentGroupCard(
+            card: card,
+            chat: model.subagentCards,
+            bot: bot,
+            parentBusy: model.pending || model.backgroundWorking,
+            parked: !model.pendingRequests.isEmpty,
+            idleSince: model.parentIdleSince,
+            maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
+            store: model.subagentProgress
+        )
+    }
+
     private func transcript(_ bot: ShellBot) -> some View {
         let roster = model.store?.bots ?? []
         // What the rows are handed. A row is skipped while its inputs compare
@@ -560,6 +593,35 @@ struct ChatView: View {
         // newest turn, and older ones as the reader asks for them. The stack
         // stays eager on purpose (see `AppModel.transcriptWindow`).
         let window = model.transcriptWindow
+        // A bubble that follows a sub-agent card keeps the full gap: the card
+        // broke its turn's stack, and the tight stacking would sit it 8 pt under.
+        // A card sits under the block that draws its anchor row (a run of
+        // pictures draws several), and goes to the tail when none in the
+        // window does.
+        let cardsByBlock: [String: [SubagentCardData]] = model.subagentCards.reduce(into: [:]) { found, card in
+            guard let anchor = card.anchorRowId,
+                  let block = window.blocks.first(where: { $0.holds(rowId: anchor) }) else { return }
+            found[block.id, default: []].append(card)
+        }
+        // Only a card with no anchor, or whose anchor is nowhere in the chat,
+        // goes to the tail. One whose block is merely above the mounted window
+        // waits for "Show earlier" to mount it.
+        // A settled card with no row to follow is not drawn: at the tail it
+        // would sit under the newest message as if it were new.
+        let tailCards = model.subagentCards.filter { card in
+            if let anchor = card.anchorRowId, model.transcriptBlocks.contains(where: { $0.holds(rowId: anchor) }) {
+                return false
+            }
+            return cardIsLive(card)
+        }
+        // A card covers the sub-agent work only when it sits under its own
+        // reply and has a run still out. One parked at the tail does not, so
+        // a real working row is never hidden by it.
+        let hasActiveCard = cardsByBlock.values.flatMap { $0 }.contains { cardIsLive($0) }
+        var afterCard = Set<String>()
+        for (above, below) in zip(window.blocks, window.blocks.dropFirst()) where cardsByBlock[above.id] != nil {
+            afterCard.insert(below.id)
+        }
         return ScrollViewReader { proxy in
             ScrollView {
                     VStack(alignment: .leading, spacing: DesignTokens.Space.transcriptGap) {
@@ -579,6 +641,7 @@ struct ChatView: View {
                             ShowEarlierRow { model.showEarlierMessages() }
                         }
                         ForEach(window.blocks) { block in
+                          Group {
                             switch block {
                             case .dayDivider(_, let label):
                                 DayDividerRow(label: label)
@@ -605,6 +668,7 @@ struct ChatView: View {
                                     bots: rowRoster,
                                     recipients: recipients,
                                     maxBubbleWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
+                                    queued: model.queuedRowIds.contains(row.id),
                                     // The reply still being written parses
                                     // into one replaceable slot. Part of the
                                     // row's equality, so the turn finishing
@@ -618,6 +682,7 @@ struct ChatView: View {
                                 // Not the first mounted bubble: the one it
                                 // would stack under is behind the row.
                                 .padding(.top, model.continuationIds.contains(row.id) && row.id != window.startId
+                                    && !afterCard.contains(row.id)
                                     ? DesignTokens.Space.bubbleStackGap - DesignTokens.Space.transcriptGap
                                     : 0)
                                 // Only the newest reply measures itself, and
@@ -635,6 +700,19 @@ struct ChatView: View {
                                         }
                                     }
                                 }
+                                // eve held this message behind a request and
+                                // never replayed it.
+                                if model.droppedRowIds.contains(row.id) {
+                                    FailureRow(
+                                        text: "\(bot.name) never got this message",
+                                        retryable: !Attachments.namesEchoedFile(row.text) && !model.resentRowIds.contains(row.id),
+                                        enabled: !model.pending,
+                                        until: nil,
+                                        maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
+                                        buttonTitle: "Send again"
+                                    ) { model.resendDropped(rowId: row.id, text: row.text) }
+                                    .padding(.top, DesignTokens.Space.bubbleStackGap - DesignTokens.Space.transcriptGap)
+                                }
                             case .images(let rows):
                                 GeneratedImageRun(
                                     rows: rows,
@@ -647,6 +725,16 @@ struct ChatView: View {
                                     roster: roster
                                 )
                             }
+                            // The sub-agents a turn launched sit under its reply.
+                            ForEach(cardsByBlock[block.id] ?? []) { card in
+                                subagentCard(card, bot: bot)
+                            }
+                          }
+                        }
+                        // A card with no row to follow, or whose row is gone,
+                        // goes at the tail where the working row would be.
+                        ForEach(tailCards) { card in
+                            subagentCard(card, bot: bot)
                         }
                         // Up for the whole turn, under whichever bubble is
                         // newest, so the owner can see the bot is still going
@@ -655,14 +743,15 @@ struct ChatView: View {
                         // and a row that vanished pulled everything down by
                         // its height.
                         Group {
-                            if model.pending || model.backgroundWorking {
+                            if model.pending || model.backgroundWorking, !(model.activity.isSubagent && hasActiveCard) {
                                 WorkingRow(
                                     bot: bot,
                                     activity: model.activity,
                                     since: model.activitySince,
-                                    toolkits: model.connectorApps
+                                    toolkits: model.connectorApps,
+                                    runningModel: model.runningModelNote(for: bot.id)
                                 )
-                            } else if let since = model.runningTaskSince {
+                            } else if let since = model.runningTaskSince, !hasActiveCard {
                                 // The turn that started a sub-agent is over,
                                 // and the sub-agent is still at it.
                                 WorkingRow(bot: bot, activity: .subagent(finished: false), since: since, toolkits: [])
@@ -1140,6 +1229,7 @@ private struct FailureRow: View {
     /// A router cool-down's end: the row counts down to it and holds Retry.
     let until: Date?
     let maxWidth: CGFloat
+    var buttonTitle = "Retry"
     let retry: () -> Void
 
     /// A row without the button says what happened, not to press Retry.
@@ -1186,7 +1276,7 @@ private struct FailureRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if retryable {
-                    NativeButton("Retry", kind: .secondary, small: true, enabled: canRetry, action: retry)
+                    NativeButton(buttonTitle, kind: .secondary, small: true, enabled: canRetry, action: retry)
                         .accessibilityIdentifier("failure-retry")
                 }
             }
@@ -1494,6 +1584,8 @@ struct TranscriptRowView: View, Equatable {
     var bots: [ShellBot] = []
     var recipients: [String] = []
     var maxBubbleWidth: CGFloat = 612
+    /// eve is holding this owner message until a waiting card is answered.
+    var queued = false
     /// The bubble of a turn still running: its markdown is parsed into a
     /// transient slot instead of the shared cache, one entry per delta.
     var streaming = false
@@ -1611,6 +1703,7 @@ struct TranscriptRowView: View, Equatable {
                     }
                 }
             }
+            if queued { QueuedTag() }
         }
     }
 
@@ -1733,6 +1826,9 @@ private struct WorkingRow: View {
     let since: Date
     /// The connected apps, for the logo and name of a connector step.
     let toolkits: [ConnectorToolkit]
+    /// The model this turn is still on when the owner has picked another
+    /// since it started. Nil when they match.
+    var runningModel: String?
 
     /// The avatar's box, which is also the slot the transcript reserves.
     static let height: CGFloat = 24
@@ -1749,7 +1845,8 @@ private struct WorkingRow: View {
 
     var body: some View {
         let connector = connector
-        let label = connector?.label ?? activity.label
+        let step = connector?.label ?? activity.label
+        let label = runningModel.map { "\(step) · \($0)" } ?? step
         // Sits where the reply will, so the text does not jump sideways
         // when the first token lands.
         HStack(alignment: .center, spacing: 10) {
@@ -2277,20 +2374,20 @@ struct StarterPrompt: Identifiable {
             prompt: "Find what's taking up the most space on my Mac. List the biggest folders and files with their sizes. Don't delete anything."
         ),
         StarterPrompt(
-            label: "Rename my screenshots by what's in them",
-            prompt: "Look at the screenshots on my Desktop and rename each one to describe what's in it. Show me the new names before you rename anything."
+            label: "Rename my screenshots by date",
+            prompt: "List the screenshots on my Desktop and rename each one to the date and time it was taken. Show me the new names before you rename anything."
         ),
         StarterPrompt(
-            label: "Pull my invoice totals into a spreadsheet",
-            prompt: "Read the PDF invoices in a folder I pick and put the vendor, date and total of each into a spreadsheet."
+            label: "Save a folder's file list as a spreadsheet",
+            prompt: "List the files in a folder I pick, with their sizes and dates, and save them as a CSV file I can open in Numbers."
         ),
         StarterPrompt(
             label: "Research a topic and save a report",
             prompt: "Research a topic I'll name, then save a short report with sources as a document on my Desktop."
         ),
         StarterPrompt(
-            label: "Create a bot that keeps Downloads tidy",
-            prompt: "Create a bot that keeps my Downloads folder tidy: it sorts new files into folders by type and tells me what it moved."
+            label: "Create a bot that plans a Downloads tidy-up",
+            prompt: "Create a bot that looks through my Downloads folder, tells me what is in there and proposes a tidy-up plan I can approve before anything moves."
         ),
         StarterPrompt(
             label: "Create a copywriter bot for my brand",

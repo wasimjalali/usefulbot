@@ -221,17 +221,35 @@ start_web() {
 }
 
 # Runtime-down banner: web stays up but its eve probe (:4321) must fail, so
-# kill the whole eve chain (service.mjs supervisor exits with its child —
-# kill supervisor + eve.js + listener). Same env-capture dance as web.
+# kill the daily eve chain. Scoped to the listener on the daily eve port and
+# its own ancestors up to the `service.mjs eve` supervisor, so a dev stack's
+# eve (another port, another supervisor) is never touched. Same env-capture
+# dance as web.
 EVE_ENV=""
 stop_eve() {
-  local sup pid
-  sup=$(pgrep -f "service.mjs eve" | head -1)
-  [ -n "$sup" ] && EVE_ENV=$(ps eww -p "$sup" | tr ' ' '\n' | grep '^UB_' | tr '\n' ' ')
+  local sup="" pid chain="" p hops=0
   pid=$(lsof -ti tcp:4321 -sTCP:LISTEN | head -1)
-  [ -n "$sup" ] && kill "$sup" 2>/dev/null || true
-  pkill -f "eve.js dev" 2>/dev/null || true
-  [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  p="$pid"
+  while [ -n "$p" ] && [ "$p" != "1" ] && [ "$hops" -lt 6 ]; do
+    chain="$chain $p"
+    if ps -o command= -p "$p" 2>/dev/null | grep -q "service.mjs eve"; then
+      sup="$p"
+      break
+    fi
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+    hops=$((hops + 1))
+  done
+  if [ -n "$sup" ]; then
+    EVE_ENV=$(ps eww -p "$sup" | tr ' ' '\n' | grep '^UB_' | tr '\n' ' ')
+    # Supervisor first so it cannot restart what is killed next.
+    kill "$sup" 2>/dev/null || true
+    for p in $chain; do
+      [ "$p" != "$sup" ] && kill "$p" 2>/dev/null || true
+    done
+  else
+    # No supervisor above the listener: stop the listener itself and nothing else.
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  fi
   for _ in $(seq 1 20); do
     lsof -ti tcp:4321 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5

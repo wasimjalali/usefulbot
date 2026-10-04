@@ -17,10 +17,13 @@ import { deliverFirstBrief, fanOut, syncSessionWorkspace } from "../../../lib/ag
 import { startConnectAuthorize } from "../../../../shared/connect-flow.ts";
 import { startConnectionConfirm } from "../../../../shared/connection-flow.ts";
 import { deleteRoutinesForBot } from "../../../../shared/routines-store.ts";
-import { applyShellAction, isGrantableRootPath, staleSessionIds, type ShellAction, type ShellStore } from "../../../../shared/shell-store.ts";
+import { unbindBot } from "../../../../shared/session-bindings.ts";
+import { applyShellAction, DESCRIPTION_MAX, isGrantableRootPath, profileCardIsCurrent, proposerMayConfirm, staleSessionIds, type ShellAction, type ShellStore } from "../../../../shared/shell-store.ts";
 import { readShell, updateShell } from "../../../../shared/shell-io.ts";
-import { removeSessionGrant } from "../../../../shared/workspace-store.ts";
+import { readProviderStore } from "../../../../shared/providers.ts";
+import { readSessionGrant, removeSessionGrant } from "../../../../shared/workspace-store.ts";
 import { groupMembers, speakersFrom } from "../../../../shared/threads.ts";
+import { webOrigin } from "../../../../shared/stack.ts";
 
 export async function GET(request: Request) {
   const gate = await requireOwner(request);
@@ -121,6 +124,13 @@ function detachBot(botId: string): string | null {
   } catch (err) {
     errors.push(`transcript:${errorCode(err, "detach_failed")}`);
   }
+  // The deleted bot's session bindings go with it: the only way a row leaves
+  // the identity store.
+  try {
+    unbindBot(botId);
+  } catch (err) {
+    errors.push(`sessions:${errorCode(err, "detach_failed")}`);
+  }
   return errors.length > 0 ? errors.join(",") : null;
 }
 
@@ -132,13 +142,13 @@ function detachBot(botId: string): string | null {
  */
 function connectCallbackUrl(profile: string): string {
   const tailnet = profile === "phone" ? runtimeConfig()?.tailnet : null;
-  const base = tailnet?.httpsOrigin || process.env.UB_WEB_BASE_URL || "http://127.0.0.1:4320";
+  const base = tailnet?.httpsOrigin || webOrigin();
   return new URL("/api/connectors/callback", base).toString();
 }
 
 function serverCallbackUrl(profile: string): string {
   const tailnet = profile === "phone" ? runtimeConfig()?.tailnet : null;
-  const base = tailnet?.httpsOrigin || process.env.UB_WEB_BASE_URL || "http://127.0.0.1:4320";
+  const base = tailnet?.httpsOrigin || webOrigin();
   return new URL("/api/connections/callback", base).toString();
 }
 
@@ -165,13 +175,15 @@ function proposalMatchesAction(proposal: Proposal, action: ShellAction | undefin
     case "createGroup":
       return action.type === "createGroup"
         && sameName(action.name, proposal.name)
-        && sameSet(action.memberIds, proposal.memberIds);
+        && sameSet(action.memberIds, proposal.memberIds)
+        && (action.description ?? "") === proposal.description;
     case "updateBotProfile":
       return action.type === "updateBot"
         && action.botId === proposal.botId
         && (action.patch?.name ?? "") === proposal.patch.name
         && (action.patch?.label ?? "") === proposal.patch.title
-        && (action.patch?.description ?? "") === proposal.patch.description
+        // An absent description means "unchanged" on both sides.
+        && action.patch?.description === proposal.patch.description
         && (action.patch?.avatarShape ?? null) === proposal.patch.avatarShape
         && (action.patch?.avatarColor ?? null) === proposal.patch.avatarColor;
     case "fanout":
@@ -363,6 +375,24 @@ export async function PUT(request: Request) {
         if (!proposalMatchesAction(existing, body.action)) {
           return NextResponse.json({ ok: false, error: "proposal_mismatch" }, { status: 400 });
         }
+        // A profile card is bound to the exact text it showed and to the
+        // revision of the profile it was raised against. A profile that moved
+        // on since is a stale card: confirming it would overwrite newer text.
+        if (existing.kind === "updateBotProfile") {
+          const target = current.bots.find((bot) => bot.id === existing.botId);
+          if (!profileCardIsCurrent(target, existing.baseRevision)) {
+            return NextResponse.json({ ok: false, error: "proposal_stale" }, { status: 409 });
+          }
+        }
+        // The bot that raised the card must still be allowed to: a bot that
+        // lost the orchestrator role, or was deleted, cannot have its card
+        // applied after the fact.
+        if (
+          (existing.kind === "createBot" || existing.kind === "createGroup" || existing.kind === "updateBotProfile")
+          && !proposerMayConfirm(current, existing)
+        ) {
+          return NextResponse.json({ ok: false, error: "proposal_stale" }, { status: 409 });
+        }
       }
       claimed = claimProposal(body.proposalId, status);
       if (!claimed) {
@@ -381,8 +411,21 @@ export async function PUT(request: Request) {
     // The roster commit is what assigns a new bot its id, and the brief below
     // has to reach that exact bot.
     let createdBotId: string | undefined;
+    const profileCard = claimed?.kind === "updateBotProfile" && claimed.status === "confirmed" ? claimed : null;
+    const proposedCard = claimed
+      && claimed.status === "confirmed"
+      && (claimed.kind === "createBot" || claimed.kind === "createGroup" || claimed.kind === "updateBotProfile")
+      ? claimed
+      : null;
     const next = action
       ? updateShell((shell) => {
+        // The revision is checked again under the roster lock: the pre-check
+        // above read an earlier snapshot.
+        if (proposedCard && !proposerMayConfirm(shell, proposedCard)) throw new Error("proposal_stale");
+        if (profileCard) {
+          const target = shell.bots.find((bot) => bot.id === profileCard.botId);
+          if (!profileCardIsCurrent(target, profileCard.baseRevision)) throw new Error("proposal_stale");
+        }
         const applied = applyShellAction(shell, action);
         createdBotId = applied.createdId;
         return applied.store;
@@ -392,6 +435,15 @@ export async function PUT(request: Request) {
     // runs when a turn starts, so without this a detach leaves the capability
     // live for the rest of an in-flight turn and for any approval card still
     // open — the owner's decision has to take effect when they make it.
+    // The selection the running turn was stamped with, read before the
+    // revoke below can delete the grant: a permission or folder change must
+    // not move an in-flight turn's model (see syncSessionWorkspace).
+    const priorSelection = (action?.type === "setPermission" || action?.type === "setWorkspace")
+      ? (() => {
+        const sessionId = next.bots.find((item) => item.id === action.botId)?.sessionId;
+        return sessionId ? readSessionGrant(sessionId)?.selection : undefined;
+      })()
+      : undefined;
     revokeGrantsFor(action, current, next);
     // A permission or folder change takes effect now, not at the next turn:
     // the tools re-read the grant before spending a card, so a card raised
@@ -400,7 +452,18 @@ export async function PUT(request: Request) {
       const bot = next.bots.find((item) => item.id === action.botId);
       if (bot?.sessionId) {
         try {
-          syncSessionWorkspace(bot.sessionId, bot);
+          // Providers store first, then the roster, the order the turn
+          // freeze uses: a per-bot pick pins this bot before it moves the
+          // default, so a store read first never pairs with an older roster.
+          const store = readProviderStore();
+          const fresh = readShell().bots.find((item) => item.id === bot.id);
+          if (!fresh) {
+            // Deleted in the gap: revoke rather than stamp the stale bot
+            // (as syncSessionWorkspaceFresh does).
+            removeSessionGrant(bot.sessionId);
+          } else {
+            syncSessionWorkspace(bot.sessionId, fresh, store, { keptSelection: priorSelection });
+          }
         } catch {
           // The roster action stood but the grant still says the old
           // permission, and a card already open re-reads that grant before
@@ -466,6 +529,11 @@ export async function PUT(request: Request) {
     if (claimed) {
       try { reopenProposal(claimed.id); } catch { /* best effort */ }
     }
-    return NextResponse.json({ ok: false, error: errorCode(err) }, { status: 400 });
+    const code = errorCode(err);
+    // The client keeps the owner's draft and shows the cap.
+    if (code === "shell_description_too_long") {
+      return NextResponse.json({ ok: false, error: code, max: DESCRIPTION_MAX }, { status: 400 });
+    }
+    return NextResponse.json({ ok: false, error: code }, { status: 400 });
   }
 }

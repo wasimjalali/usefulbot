@@ -3,8 +3,13 @@ import test from "node:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { currentWindowTokens } from "../agent/lib/model-window.ts";
-import { POLICY_WINDOW_TOKENS } from "../shared/policy.ts";
+import { windowTokensFor } from "../agent/lib/model-window.ts";
+import { UNKNOWN_WINDOW_TOKENS } from "../shared/policy.ts";
+import { lastPick } from "../shared/session-selection.ts";
+import { readProviderStore } from "../shared/providers.ts";
+
+// The window of whatever the store's last pick is: the lookup a turn does for its own frozen selection.
+const currentWindowTokens = () => windowTokensFor(lastPick(readProviderStore()));
 
 function withStores(fn: () => void, options: { model: string; cacheRows?: unknown[] }): void {
   const dir = mkdtempSync(join(tmpdir(), "ub-window-"));
@@ -59,8 +64,8 @@ test("the agent reports the selected model's window from the catalog", () => {
   withStores(() => assert.equal(currentWindowTokens(), 202_752), { model: "glm-5", cacheRows: rows });
 });
 
-test("the window falls back to the policy value when the catalog cannot say", () => {
-  withStores(() => assert.equal(currentWindowTokens(), POLICY_WINDOW_TOKENS), { model: "mystery-1", cacheRows: rows });
+test("the window falls back to the small unknown value when the catalog cannot say", () => {
+  withStores(() => assert.equal(currentWindowTokens(), UNKNOWN_WINDOW_TOKENS), { model: "mystery-1", cacheRows: rows });
   // No cache at all: the built-in list has no window on it either.
-  withStores(() => assert.equal(currentWindowTokens(), POLICY_WINDOW_TOKENS), { model: "glm-5.3-flash" });
+  withStores(() => assert.equal(currentWindowTokens(), UNKNOWN_WINDOW_TOKENS), { model: "glm-5.3-flash" });
 });

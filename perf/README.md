@@ -3,13 +3,37 @@
 Fails a change that makes chats slower to open than `budgets.json` allows. It runs on this Mac,
 on the build under review, before merge.
 
+It measures the **dev app** ("Useful Bot Dev", bundle id `ai.useful.bot.dev`), which has its own
+state (`~/.useful-bot-dev-app`), ports (4419 router, 4420 web, 4421 eve), Keychain items and
+logs (`~/Library/Logs/UsefulBotDev`). The daily app and its services are never quit, launched,
+signalled or measured, and the run refuses any other bundle id. Quitting the daily app first is
+not needed, but its CPU counts as other work while it is busy. The installed daily app should be
+a release build (one with a runtime payload): `build:dev-app` refuses when `/Applications/Useful
+Bot.app` has none, since that app runs this checkout and the dev build would swap its web build
+underneath it.
+
 ```sh
-npm run build:app          # the candidate, plus a fresh production web build
-pkill -f 'scripts/service.mjs web'; nohup /usr/local/bin/node scripts/service.mjs web \
-  >> ~/Library/Logs/UsefulBot/service-web.log 2>&1 &   # serve that build (the preflight checks)
+npm run build:dev-app      # the candidate: it carries its own runtime (services + production web build)
+# Open the dev app once. It copies that runtime to ~/Library/Application Support/Useful Bot Dev/app,
+# stops the dev services still running the previous copy and starts new ones from it (the preflight
+# checks the installed copy's stamp matches the app's). Wait for its window, then quit it.
+open -g "macos/dist/Useful Bot Dev.app"
 npm run perf:check         # about 20 minutes
 perf/run.sh check --quick  # fewer runs, to try the rig; never a merge gate
 ```
+
+Never `pkill -f 'scripts/service.mjs web'`: that name matches the daily app's web service too.
+
+**The dev fixtures are built and locked** (2026-10-01, `perf/fixtures.dev.lock.json`, see
+`fixtures.json` `_devBuild`). If that lock is ever missing, `npm run perf:check` and
+`perf/run.sh baseline` stop at once with `missing perf/fixtures.dev.lock.json` (exit 1) rather than
+measure against nothing. The old `perf/fixtures.lock.json` belongs to the daily stack and is never
+used. To rebuild them: open the dev app, connect a model provider in its first-run screen (the dev
+stack has its own Keychain items, so the daily provider does not carry over), create Perf Long
+Tools and set it to Full access by hand, then run `perf/run.sh fixtures` (real model turns: it costs
+provider usage and time) and `perf/run.sh lock` (see [Fixtures](#fixtures)). The limits in
+`budgets.json` were set from daily-app runs (2026-09-26), so the first dev run is also their first
+check against the dev app.
 
 Exit codes: 0 pass, 1 breach or failed launch, 2 preflight refused, 3 inconclusive (other work
 used over 250% CPU (about 3 of 8 cores) at some launch; the record still lists any breaches). Only 0 is a pass. The
@@ -24,9 +48,9 @@ launch too, and one sample above the limit makes the whole record INCONCLUSIVE. 
 `replay_first_event`, `replay_done` and `publish_done` marks (harness only); each sample records
 them as `*_ms` after the select.
 
-The run quits Useful Bot, launches the candidate (`macos/dist`) about 20 times in the
-background, and reopens the installed app at the end. Keep the screen unlocked. It never
-takes the pointer or focus.
+The run quits Useful Bot Dev, launches the candidate (`macos/dist/Useful Bot Dev.app`) about 20
+times in the background, and reopens the installed dev app (`~/Applications`) at the end if it was
+running. Keep the screen unlocked. It never takes the pointer or focus.
 
 ## Cases
 
@@ -48,7 +72,7 @@ Each sample has three numbers, in ms:
 A case fails when its median or worst run is over budget. It also fails when any sample
 landed by timeout instead of settling, took a different path than the case is about (the
 `sources` list), was still changing when the next step began, or ran on a fixture that no
-longer matches `fixtures.lock.json`.
+longer matches `fixtures.dev.lock.json`.
 
 ## How it measures
 
@@ -70,7 +94,12 @@ behind these choices is `evals/results/2026-09-26-perf-guard-design-consult.md`.
 ## Fixtures
 
 Four bots, built once by `perf/run.sh fixtures` from the scripted turns in `fixtures.json`,
-then frozen:
+then frozen. They live in the dev state (`~/.useful-bot-dev-app/shell.json`), not the daily one:
+open the dev app, connect a model provider in its first-run screen, set Perf Long Tools to
+Full access, then run `perf/run.sh fixtures` and `perf/run.sh lock`. The lock is
+`perf/fixtures.dev.lock.json` (session ids differ per state, so the daily lock does not apply
+and `check` stops until the dev lock exists). The fixtures send real model turns, so building
+them costs provider usage and time (Perf Long Replies took hours).
 
 - **Perf Short A** and **Perf Short B**: three one-line turns each.
 - **Perf Long Tools**: 16 turns of a dozen shell calls each, which makes a replay-heavy
@@ -80,7 +109,7 @@ then frozen:
 
 `fixtures.json` notes how each one was actually built, including what went wrong.
 
-`perf/run.sh lock` records each fixture's session and event count in `fixtures.lock.json`.
+`perf/run.sh lock` records each fixture's session and event count in `fixtures.dev.lock.json`.
 Never send to these bots by hand. If a fixture has to change, rebuild it, re-lock, re-baseline
 and say so in the PR.
 

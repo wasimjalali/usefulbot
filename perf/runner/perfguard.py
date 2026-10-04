@@ -4,13 +4,16 @@
     perfguard.py check     [--app PATH] [--quick]   measure every case, compare to budgets.json
     perfguard.py baseline  [--app PATH]             measure, then propose budgets from the numbers
     perfguard.py fixtures  [--app PATH]             build the frozen fixture chats, then lock them
-    perfguard.py lock      [--app PATH]             re-read the fixtures and write fixtures.lock.json
+    perfguard.py lock      [--app PATH]             re-read the fixtures and write the lock file (config.json fixtureLock)
 
 The app does the driving: launched with `-UsefulBotPerfRun <scenario.json>`
 it runs the scenario's steps and writes timed marks (CLOCK_UPTIME_RAW ns).
 `perfrec` records the window at 60 fps and scores how much the chat column
 changed on each frame, on the same clock. This script launches, records,
 lines the two up and judges. See perf/README.md for the method and its limits.
+
+It drives the dev app ("Useful Bot Dev", its own state and ports) only, and
+refuses any other bundle. The daily app is never quit, launched or measured.
 """
 import argparse
 import datetime
@@ -20,6 +23,7 @@ import os
 import plistlib
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -70,6 +74,14 @@ class App:
         with open(info, "rb") as f:
             plist = plistlib.load(f)
         self.bundle_id = plist["CFBundleIdentifier"]
+        # The run quits, launches and kills by this bundle id and executable
+        # name. It drives the dev app on the dev stack and nothing else: the
+        # daily app and its services are the owner's and are never touched.
+        if self.bundle_id == "ai.useful.bot" or self.bundle_id != CONFIG["bundleId"]:
+            sys.exit(f"{self.path} is {self.bundle_id}; the perf run only drives {CONFIG['bundleId']} "
+                     f"(build it with npm run build:dev-app)")
+        if plist["CFBundleExecutable"] != CONFIG["executable"]:
+            sys.exit(f"{self.path} runs {plist['CFBundleExecutable']}, not {CONFIG['executable']}")
         self.exe = os.path.join(self.path, "Contents/MacOS", plist["CFBundleExecutable"])
         with open(self.exe, "rb") as f:
             self.exe_sha = hashlib.sha256(f.read()).hexdigest()
@@ -121,7 +133,7 @@ def owner_selection():
     early leaves a fixture open, and every later run then "restored" the
     fixture. The last non-fixture selection is remembered across runs.
     """
-    path = os.path.join(PERF, ".runs", "owner-selection.json")
+    path = os.path.join(ROOT, CONFIG["ownerSelectionFile"])
     state = shell_state()
     names = {b["id"]: b["name"] for b in state["bots"]}
     current = state.get("selectedBotId")
@@ -234,13 +246,32 @@ def preflight(app):
     if cpu > CONFIG["maxExternalCpu"]:
         problems.append(f"the machine is busy ({cpu:.0f}% CPU in other work, limit {CONFIG['maxExternalCpu']}%: "
                         f"{'; '.join(top)}): it would be timed too")
-    # The web service serves its production build only while the sources still
-    # hash to what it was built from, and only a process started after that
-    # build serves it. Anything else is `next dev`, which is several times slower.
-    fresh = run([CONFIG["node"], "--input-type=module", "-e",
-                 "import('./scripts/web-mode.mjs').then(m => console.log(m.webLaunch(process.cwd()).mode))"], cwd=ROOT).stdout.strip()
-    stamp = os.path.join(ROOT, CONFIG["webBuildStamp"])
-    pids = run(["pgrep", "-f", CONFIG["webServiceProcess"]]).stdout.split()
+    # The dev app runs its services from a copy of the runtime it carries, under
+    # its own Application Support folder, never from this checkout. That copy
+    # serves the production web build, and only a process started after the copy
+    # does. A copy that is not the one in the app under test (the app was built
+    # but not opened since) is the previous build's code.
+    install = os.path.expanduser(CONFIG["devInstallRoot"])
+    stamp = os.path.join(install, ".ub-runtime-version")
+    def read_stamp(path):
+        try:
+            return open(path).read().strip()
+        except OSError:
+            return None
+    carried = read_stamp(os.path.join(app.path, "Contents/Resources/runtime/.ub-runtime-version"))
+    installed = read_stamp(stamp)
+    facts["runtimeStamp"] = installed
+    if carried is None:
+        problems.append(f"the app carries no runtime ({CONFIG['buildHint']})")
+    elif installed != carried:
+        problems.append(f"the dev services run runtime {installed or 'none'}, the app carries {carried} ({CONFIG['buildHint']})")
+    fresh = "unknown"
+    if installed is not None:
+        fresh = run([CONFIG["node"], "--input-type=module", "-e",
+                     "import('./scripts/web-mode.mjs').then(m => console.log(m.webLaunch(process.argv[1]).mode))", install], cwd=ROOT).stdout.strip()
+    # Found by the dev web port, never by process name: a name match would
+    # also find the daily app's web service.
+    pids = run(["lsof", "-nP", "-t", f"-iTCP:{CONFIG['webPort']}", "-sTCP:LISTEN"]).stdout.split()
     started_after = False
     if pids and os.path.exists(stamp):
         lstart = run(["ps", "-o", "lstart=", "-p", pids[0]]).stdout.strip()
@@ -293,7 +324,38 @@ class Launch:
     def execute(self, timeout_s=900, record=True):
         self.app.quit_all()
         time.sleep(1.0)
-        self.t_launch = self.app.launch(self.scenario_path)
+        failure = None
+        # Whatever ends this launch (done, quit, error, Ctrl-C, SIGTERM), the finally quits
+        # the app it started, so two Useful Bot Dev never share one state folder.
+        try:
+            self.t_launch = self.app.launch(self.scenario_path)
+            return self._run(timeout_s, record)
+        except BaseException as err:
+            failure = err
+            raise
+        finally:
+            # A handler defers SIGTERM/SIGHUP while quitting, not a signal mask: a blocked mask
+            # is inherited by the osascript children quit_all execs, a Python handler is not.
+            # A signal that arrives is re-delivered once the quit is done.
+            seen = []
+            saved = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGHUP)}
+            for s in saved:
+                signal.signal(s, lambda signum, _frame: seen.append(signum))
+            quit_failed = True
+            try:
+                self.app.quit_all()
+                quit_failed = False
+            except SystemExit:
+                if failure is not None:
+                    print(f"{self.name}: {failure!r}, and then the app would not quit", file=sys.stderr)
+                raise
+            finally:
+                for s, h in saved.items():
+                    signal.signal(s, h)
+                if seen and not quit_failed:
+                    signal.raise_signal(seen[0])
+
+    def _run(self, timeout_s, record):
         pid = None
         for _ in range(300):
             pid = self.app.pid_of_this_copy()
@@ -311,11 +373,19 @@ class Launch:
                  "--fps", str(CONFIG["fps"]), "--scale", str(CONFIG["scale"]),
                  "--crop", f"{crop['left']},{crop['top']},{crop['right']},{crop['bottom']}"],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            line = rec.stdout.readline()
-            if not line.startswith("recording"):
+            # A failure or signal before the main try below must not leave the recorder running.
+            try:
+                line = rec.stdout.readline()
+                if not line.startswith("recording"):
+                    raise RuntimeError(f"{self.name}: recorder failed: {line}{rec.stderr.read()}")
+                self.window = line.split()[1:]
+            except BaseException:
                 rec.kill()
-                raise RuntimeError(f"{self.name}: recorder failed: {line}{rec.stderr.read()}")
-            self.window = line.split()[1:]
+                try:
+                    rec.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise
         deadline = time.time() + timeout_s
         end = None
         # Other work is sampled every ~2 s while the launch runs: a burst in
@@ -359,8 +429,6 @@ class Launch:
             raise RuntimeError(f"{self.name}: the app aborted the scenario: {end.get('why')}")
         if end["ev"] == "exited":
             raise RuntimeError(f"{self.name}: the app exited before the scenario ended")
-        if end["ev"] == "done":
-            self.app.quit_all()
         return self
 
     def marks(self):
@@ -764,7 +832,7 @@ def write_record(outdir):
 
 def cmd_check(args):
     budgets = load_json(os.path.join(PERF, "budgets.json"))
-    lock = load_json(os.path.join(PERF, "fixtures.lock.json"))
+    lock = load_json(os.path.join(ROOT, CONFIG["fixtureLock"]))
     app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, args.quick)
     breaches = judge(summary, budgets) + fixture_check(samples, lock)
     report(args, "check", app, facts, outdir, stamp, samples, summary, failures, done, seconds, breaches)
@@ -773,7 +841,7 @@ def cmd_check(args):
 
 
 def cmd_baseline(args):
-    lock = load_json(os.path.join(PERF, "fixtures.lock.json"))
+    lock = load_json(os.path.join(ROOT, CONFIG["fixtureLock"]))
     app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, False)
     problems = fixture_check(samples, lock) + [f"{c}: {p}" for c, g in summary.items() for p in g["problems"]]
     dest = report(args, "baseline", app, facts, outdir, stamp, samples, summary, failures, done, seconds, problems)
@@ -856,7 +924,7 @@ def cmd_lock(args):
             bot = ids[m["bot"]]
             lock["bots"][bot["name"]] = {"sessionId": bot.get("sessionId"), "events": m.get("events"),
                                          "rows": m.get("rows"), "blocks": m.get("blocks")}
-    write_json(os.path.join(PERF, "fixtures.lock.json"), lock)
+    write_json(os.path.join(ROOT, CONFIG["fixtureLock"]), lock)
     print(json.dumps(lock, indent=2))
 
 
@@ -872,6 +940,10 @@ def main():
             p.add_argument("--resume", nargs=2, metavar=("KEY", "TURN"),
                            help="send one fixture's turns from TURN on, into its existing chat")
     args = ap.parse_args()
+    # SIGTERM and SIGHUP end Python without running except or finally blocks; as
+    # SystemExit they run the same cleanup as Ctrl-C (quit the app, reopen the installed one).
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda signum, frame: sys.exit(128 + signum))
     {"check": cmd_check, "baseline": cmd_baseline, "fixtures": cmd_fixtures, "lock": cmd_lock}[args.cmd](args)
 
 

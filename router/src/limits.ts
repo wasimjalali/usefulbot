@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { RouterError } from "./errors.ts";
 import { SEARCH_LIMITS } from "../../shared/policy.ts";
-import { currentBudget, effectiveLimits } from "../../shared/limits-store.ts";
+import { currentBudget, currentRequestBudget, effectiveLimits } from "../../shared/limits-store.ts";
 import type { AuthedCaller } from "./auth.ts";
 
 export interface UsageRow {
@@ -207,7 +207,7 @@ export class LimitStore {
     // Read at enforce time, not at import: the owner can move the daily budget
     // from the settings pane and the next turn must respect it without a
     // router restart.
-    const effective = effectiveLimits(caller.profile, currentBudget());
+    const effective = effectiveLimits(caller.profile, currentBudget(), currentRequestBudget());
     const limits = effective.caller;
     const aggregate = effective.aggregate;
     const minuteAgo = now - 60_000;

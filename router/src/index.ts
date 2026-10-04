@@ -3,20 +3,23 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { BODY_LIMIT_BYTES, COMPLETION_BODY_LIMIT_BYTES, MAX_ACTIVE_IMAGE, MAX_ACTIVE_SEARCH, MAX_MESSAGE_COUNT, MAX_TOOL_SCHEMAS, MAX_TOOL_SCHEMA_BYTES, POLICY_NODE_MAJOR, ROUTER_HOST, ROUTER_PORT } from "../../shared/policy.ts";
+import { BODY_LIMIT_BYTES, COMPLETION_BODY_LIMIT_BYTES, MAX_ACTIVE_IMAGE, MAX_ACTIVE_SEARCH, MAX_MESSAGE_COUNT, MAX_TOOL_SCHEMAS, MAX_TOOL_SCHEMA_BYTES, POLICY_NODE_MAJOR, ROUTER_HOST } from "../../shared/policy.ts";
+import { enforceStack, routerDbPath, routerPort, stackName } from "../../shared/stack.ts";
 import { IMAGE_DATA_URL, MAX_IMAGE_DATA_URL_CHARS, MAX_IMAGE_PARTS } from "../../shared/attachments.ts";
 import { AuthTable } from "./auth.ts";
-import { AliasCircuit } from "./circuit.ts";
+import { AliasCircuit, circuitKey } from "./circuit.ts";
+import { SELECTION_HEADER, parseSelectionHeader, type ModelSelection } from "../../shared/session-selection.ts";
 import { ConcurrencyGate } from "./concurrency.ts";
 import { RouterError, errorBody } from "./errors.ts";
 import { LimitStore, estimateInputUnits } from "./limits.ts";
 import { entryFor, loadRegistry } from "./registry.ts";
 import { search } from "./search.ts";
-import { completeUpstream } from "./upstreams/opencode.ts";
+import { completeUpstream, resolveFor } from "./upstreams/opencode.ts";
 import { generateImage, IMAGE_USAGE_TOKENS } from "./upstreams/images.ts";
 import { readCapped } from "./read-capped.ts";
-import { usageFromPayload, usageFromSseBlock } from "../../shared/usage-parse.ts";
+import { usageFromPayload, usageFromSseBlock, type ObservedUsage } from "../../shared/usage-parse.ts";
 import { settleCompletion, settleStreamBlock } from "./tool-finish.ts";
+import { requestSignal } from "./request-signal.ts";
 import { createThinkStream, flushThinkStream, noteInlineThink, splitThinkBlock, splitThinkCompletion } from "./inline-think.ts";
 
 const NODE_MAJOR = Number(process.versions.node.split(".")[0]);
@@ -49,6 +52,11 @@ function send(res: ServerResponse, status: number, body: unknown, extra: Record<
 
 const UPSTREAM_BODY_LIMIT_BYTES = 8 * 1024 * 1024;
 const REQUEST_TOTAL_MS = 180_000;
+// A streaming call is held to REQUEST_TOTAL_MS only until its headers arrive.
+// After that the idle timers govern, so a long report that keeps producing is
+// not cut at 3 minutes (it was, at exactly 180 s, while tokens still flowed).
+// This backstop only ends a stream that never stops.
+const STREAM_TOTAL_MS = 15 * 60_000;
 const FIRST_EVENT_MS = 60_000;
 const IDLE_EVENT_MS = 45_000;
 const MAX_EVENT_BYTES = 256 * 1024;
@@ -172,6 +180,14 @@ function timeoutError(headersSent: boolean): RouterError {
     message: "upstream_timeout",
     retryable: false,
   });
+}
+
+type UsageOutcome = "ok" | "refused" | "timeout" | "error" | "aborted";
+
+/** How a dispatched call that threw ended, for its upstream_usage line. */
+function usageOutcomeOf(error: unknown): UsageOutcome {
+  if (error instanceof RouterError) return error.code === "upstream_timeout" ? "timeout" : "refused";
+  return "error";
 }
 
 function assertHost(req: IncomingMessage, port: number): void {
@@ -484,10 +500,10 @@ function validateImageGeneration(body: unknown): {
 }
 
 export function startRouter(options?: { port?: number; configPath?: string; lockPath?: string; dbPath?: string }) {
-  const port = options?.port ?? Number(process.env.UB_ROUTER_PORT || ROUTER_PORT);
+  const port = options?.port ?? routerPort();
   const configPath = options?.configPath ?? process.env.UB_ROUTER_CONFIG;
   const lockPath = options?.lockPath ?? join(process.cwd(), "package-lock.json");
-  const dbPath = options?.dbPath ?? process.env.UB_ROUTER_DB ?? join(process.env.HOME ?? "/tmp", ".useful-bot/router/usage.sqlite");
+  const dbPath = options?.dbPath ?? routerDbPath();
   if (!configPath) {
     throw new Error("UB_ROUTER_CONFIG is required");
   }
@@ -509,7 +525,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
       }
       const url = new URL(req.url, `http://${ROUTER_HOST}`);
       if (req.method === "GET" && url.pathname === "/health/live") {
-        send(res, 200, { ok: true });
+        send(res, 200, { ok: true, stack: stackName() });
         return;
       }
       assertHost(req, (server.address() as { port: number }).port);
@@ -528,7 +544,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
         if (caller.profile !== "ops") {
           throw new RouterError({ status: 403, type: "permission_error", code: "capability_forbidden", message: "capability_forbidden" });
         }
-        send(res, 200, { ok: true, registryVersion: 1, upstream: process.env.UB_OPENCODE_GO_KEY ? "unknown" : "limited" });
+        send(res, 200, { ok: true, stack: stackName(), registryVersion: 1, upstream: process.env.UB_OPENCODE_GO_KEY ? "unknown" : "limited" });
         return;
       }
       const caller = auth.authenticate(req.headers.authorization ?? null);
@@ -582,8 +598,35 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
         const parsed = validateCompletion(body);
         const alias = auth.assertAlias(caller, parsed.model);
         const entry = entryFor(registry, alias);
-        circuit.assertClosed(entry.alias);
+        // The upstream is resolved first so the circuit can be keyed by it: a
+        // rate limit or refusal on one model must not stop the others.
+        let selection: ModelSelection | null = null;
+        if (entry.alias === "workhorse") {
+          const rawSelection = req.headers[SELECTION_HEADER];
+          try {
+            selection = parseSelectionHeader(typeof rawSelection === "string" ? rawSelection : null);
+          } catch {
+            // The header is the app's own; a malformed one is a bug to surface, not to ignore.
+            throw validationError("invalid_request", "selection_header");
+          }
+        }
+        const resolved = resolveFor(entry.alias, selection);
+        const circuitId = circuitKey(entry.alias, resolved.connection.id, resolved.modelId);
+        circuit.assertClosed(circuitId);
         const release = concurrency.acquire(ConcurrencyGate.key(caller.callerId, sessionId));
+        // One upstream_usage line per DISPATCHED call, written from the finally
+        // below so a refusal, a timeout, a body failure and a client disconnect
+        // are counted too, not only the exchanges that finished. Source for the
+        // cache and latency evals: ids, counts and the outcome, never prompt
+        // text or keys. A return that no branch marks "ok" is a disconnect.
+        let dispatched = false;
+        let dispatchedAt = 0;
+        let usageOutcome: UsageOutcome = "aborted";
+        let usageUpstream: { providerId: string; connectionId: string; model: string; timing: { startedAt: number; firstByteAt: number | null } } | null = null;
+        // The last usage the upstream reported; null when it reported none. Held
+        // in an object because record() assigns it from a closure, which would
+        // otherwise let control flow narrow a bare `let` to never in the finally.
+        const observed: { usage: ObservedUsage | null } = { usage: null };
         try {
           limits.rememberRequest(stepId, caller.callerId, Date.now());
           const reservationId = limits.reserve({
@@ -600,7 +643,10 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
               res.destroy();
             }
           });
-          const signal = AbortSignal.any([AbortSignal.timeout(REQUEST_TOTAL_MS), controller.signal]);
+          const guard = parsed.stream
+            ? requestSignal(controller, { headerMs: REQUEST_TOTAL_MS, totalMs: STREAM_TOTAL_MS })
+            : null;
+          const signal = guard?.signal ?? AbortSignal.any([AbortSignal.timeout(REQUEST_TOTAL_MS), controller.signal]);
           let upstream: Awaited<ReturnType<typeof completeUpstream>>;
           try {
             upstream = await completeUpstream({
@@ -609,10 +655,40 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
               sessionId,
               callerId: caller.callerId,
               signal,
+              resolved,
+              // Set only when a request really leaves, so a refresh that fails
+              // before any send (an expired credential) logs nothing.
+              onDispatch: () => {
+                dispatched = true;
+                dispatchedAt = Date.now();
+              },
+              onRefusedAttempt: (attempt) => {
+                // The refused request has its own line below; clearing the flag
+                // keeps the finally from logging it again if the refresh fails
+                // and no retry goes out. A retry sets it again via onDispatch.
+                dispatched = false;
+                log({
+                  request_id: requestId,
+                  event: "upstream_usage",
+                  outcome: "refused",
+                  providerId: resolved.providerId,
+                  connectionId: resolved.connection.id,
+                  modelId: resolved.modelId,
+                  sessionId,
+                  inputTokens: null,
+                  cachedInputTokens: null,
+                  cacheWriteTokens: null,
+                  outputTokens: null,
+                  ttfbMs: attempt.firstByteAt === null ? null : attempt.firstByteAt - attempt.startedAt,
+                  totalMs: attempt.endedAt - attempt.startedAt,
+                });
+              },
             });
+            guard?.headersArrived();
           } catch (error) {
+            guard?.dispose();
             if (error instanceof RouterError) {
-              circuit.recordFailure(entry.alias, error);
+              circuit.recordFailure(circuitId, error);
               throw error;
             }
             // A header-phase abort is not a RouterError: a client disconnect
@@ -622,7 +698,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             if (kind === "client") return;
             if (kind === "idle" || kind === "total") {
               const timeout = timeoutError(false);
-              circuit.recordFailure(entry.alias, timeout);
+              circuit.recordFailure(circuitId, timeout);
               throw timeout;
             }
             throw error;
@@ -641,8 +717,10 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             log({ request_id: requestId, event: "upstream_fallback", alias: entry.alias, provider: upstream.providerId });
           }
           void turnId;
-          const record = (usage: { inputTokens: number; outputTokens: number } | null) => {
+          usageUpstream = upstream;
+          const record = (usage: ObservedUsage | null) => {
             if (!usage || upstream.response.status >= 400) return;
+            observed.usage = usage;
             const reconciled = limits.reconcile(
               reservationId,
               usage,
@@ -665,7 +743,8 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             if (!upstream.response.body) {
               writeHeaders();
               res.end();
-              circuit.recordSuccess(entry.alias);
+              usageOutcome = "ok";
+              circuit.recordSuccess(circuitId);
               return;
             }
             const reader = upstream.response.body.getReader();
@@ -746,7 +825,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             } catch (error) {
               // Mid-stream protocol and timeout failures feed the circuit the
               // way header-phase ones do, so three in a minute open the alias.
-              if (error instanceof RouterError) circuit.recordFailure(entry.alias, error);
+              if (error instanceof RouterError) circuit.recordFailure(circuitId, error);
               throw error;
             } finally {
               clearTimeout(idleTimer);
@@ -767,7 +846,8 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             if (held) tail += `${held}\n\n`;
             if (tail) res.end(tail);
             else res.end();
-            circuit.recordSuccess(entry.alias);
+            usageOutcome = "ok";
+            circuit.recordSuccess(circuitId);
             return;
           }
           const firstByteTimer = setTimeout(() => controller.abort(new Error("idle_timeout")), FIRST_EVENT_MS);
@@ -781,10 +861,10 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             // feed the circuit before they propagate.
             if (kind === "idle" || kind === "total") {
               const timeout = timeoutError(false);
-              circuit.recordFailure(entry.alias, timeout);
+              circuit.recordFailure(circuitId, timeout);
               throw timeout;
             }
-            if (error instanceof RouterError) circuit.recordFailure(entry.alias, error);
+            if (error instanceof RouterError) circuit.recordFailure(circuitId, error);
             throw error;
           } finally {
             clearTimeout(firstByteTimer);
@@ -798,10 +878,33 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
           settleCompletion(json);
           if (splitThinkCompletion(json)) learnInlineThink(requestId, upstream.providerId, upstream.model);
           send(res, upstream.response.status, json, outHeaders);
-          if (upstream.response.status < 500) circuit.recordSuccess(entry.alias);
+          usageOutcome = "ok";
+          if (upstream.response.status < 500) circuit.recordSuccess(circuitId);
           return;
+        } catch (error) {
+          usageOutcome = usageOutcomeOf(error);
+          throw error;
         } finally {
           release();
+          if (dispatched) {
+            const firstByteAt = usageUpstream ? usageUpstream.timing.firstByteAt : null;
+            const startedAt = usageUpstream ? usageUpstream.timing.startedAt : dispatchedAt;
+            log({
+              request_id: requestId,
+              event: "upstream_usage",
+              outcome: usageOutcome,
+              providerId: usageUpstream ? usageUpstream.providerId : resolved.providerId,
+              connectionId: usageUpstream ? usageUpstream.connectionId : resolved.connection.id,
+              modelId: usageUpstream ? usageUpstream.model : resolved.modelId,
+              sessionId,
+              inputTokens: observed.usage ? observed.usage.inputTokens : null,
+              cachedInputTokens: observed.usage ? observed.usage.cachedInputTokens ?? null : null,
+              cacheWriteTokens: observed.usage ? observed.usage.cacheWriteTokens ?? null : null,
+              outputTokens: observed.usage ? observed.usage.outputTokens : null,
+              ttfbMs: firstByteAt === null ? null : firstByteAt - startedAt,
+              totalMs: Date.now() - startedAt,
+            });
+          }
         }
       }
       if (req.method === "POST" && url.pathname === "/v1/images/generations") {
@@ -937,5 +1040,6 @@ function isEntryPoint(): boolean {
 }
 
 if (isEntryPoint()) {
+  enforceStack("router");
   startRouter();
 }

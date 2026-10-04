@@ -53,5 +53,6 @@
       "Write a long reference guide on exponential backoff with jitter, about 1,500 words, with three markdown tables, two code blocks of 40 lines each (TypeScript and Swift), headings for each section and a closing checklist. Do not use any tools."
     ],
     "note": "Built on 2026-09-26 on DeepSeek V4.1 Flash (High). Each turn took longer than the last, about 35 s x turn number (33 s for turn 1, 433 s for turn 11), so the chat stops at 12 answers plus one 1,500-word answer as the newest turn, not the 30 first planned. Turn 9 hit the harness's old 5-minute cap and finished on the server."
-  }
+  },
+  "_devBuild": "Dev-stack fixtures (perf/fixtures.dev.lock.json) built 2026-10-01 in Useful Bot Dev on OpenCode Go, GLM 5.3 Flash (Low), with all 16 Long Tools turns at Full access from the start (189 bash calls ran, none needed approval). The whole build took about 40 minutes. Event counts are lower than the daily lock (Long Tools 1,276 vs 3,445, Long Replies 9,172 vs 14,407) because this model streams less reasoning; Long Replies' rows and blocks match the daily lock (26/27); Long Tools has one fewer (34/35 vs 35/36), likely because the daily build's turn 2 had denied approval cards (not verified row by row)."
 }

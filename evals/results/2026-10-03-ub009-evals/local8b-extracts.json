@@ -1,0 +1,48 @@
+{
+ "eve_compaction_lines": [
+  {
+   "event": "compaction.requested",
+   "sessionId": "wrun_01M41S87RCQJQJ45QXK9ZXSR1E",
+   "turnId": "turn_22",
+   "connectionId": "lmstudio:local",
+   "modelId": "qwen3-8b",
+   "windowTokens": 32768,
+   "usageInputTokens": 26835.5,
+   "reason": "threshold",
+   "thresholdPercent": 0.75,
+   "thresholdTokens": 24576
+  },
+  {
+   "event": "compaction.completed",
+   "sessionId": "wrun_01M41S87RCQJQJ45QXK9ZXSR1E",
+   "turnId": "turn_22",
+   "connectionId": "lmstudio:local",
+   "modelId": "qwen3-8b",
+   "windowTokens": 32768,
+   "usageInputTokens": null,
+   "reason": "threshold",
+   "thresholdPercent": 0.75,
+   "thresholdTokens": 24576
+  }
+ ],
+ "router_usage_reporting_by_provider": {
+  "opencode-go": {
+   "reported": 389,
+   "null": 21
+  },
+  "lmstudio": {
+   "reported": 1,
+   "null": 35
+  }
+ },
+ "post_edit_request": {
+  "dump": "2026-10-03T21-33-46-914Z-0b7c04-openai-chat-qwen3-8b.json",
+  "system_MANGO": 1,
+  "system_PINEAPPLE": 0
+ },
+ "last_pre_edit_request": {
+  "dump": "2026-10-03T21-31-52-949Z-b92c69-openai-chat-qwen3-8b.json",
+  "system_MANGO": 0,
+  "system_PINEAPPLE": 1
+ }
+}

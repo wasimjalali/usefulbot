@@ -234,6 +234,57 @@
       "family": "primary"
     },
     {
+      "path": "brand/avatars/amber-deep-256.png",
+      "bytes": 19084,
+      "sha256": "a6c1d833e7e0f902f665b5a5e8a0a9400c69071ca0b50a01420a2470e97c57fe",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "amber-deep"
+    },
+    {
+      "path": "brand/avatars/amber-deep.svg",
+      "bytes": 2745,
+      "sha256": "331fb393909eebfe3253ee73606f5449d3c3f8ec4043f4f861c9f7fd695bac15",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/amber-light-256.png",
+      "bytes": 19947,
+      "sha256": "bd23227db1089c9c3f8e7bb12dd24d07e8ee1a491799367a921aa508b26d7402",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "amber-light"
+    },
+    {
+      "path": "brand/avatars/amber-light.svg",
+      "bytes": 2745,
+      "sha256": "b94b95575af4c4933619a7aa1134e23d40e911c3f5ad19f6b9449056534fcfa7",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/amber-mid-256.png",
+      "bytes": 19575,
+      "sha256": "31999c8adbee5b1613091da549dcd1295614c8245f4d7a0eba996ed3955aa8d2",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "amber-mid"
+    },
+    {
+      "path": "brand/avatars/amber-mid.svg",
+      "bytes": 2745,
+      "sha256": "5b304c1b4d1d2000f81fd83a14c34744e6c46baf7cd4165ce5c818dfca6e7257",
+      "kind": "svg"
+    },
+    {
       "path": "brand/avatars/blue-256.png",
       "bytes": 19794,
       "sha256": "5a8313f057a49e4849547771f0e81c87f90109e7f469fbc62ca26b9a4d297395",
@@ -243,6 +294,57 @@
       "alpha": true,
       "family": "avatar",
       "avatarColor": "blue"
+    },
+    {
+      "path": "brand/avatars/blue-deep-256.png",
+      "bytes": 18885,
+      "sha256": "fe9c22f0d6ed4be1ac16c3d666f4518d3fe0b962597afa8acd7be3087b90889a",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "blue-deep"
+    },
+    {
+      "path": "brand/avatars/blue-deep.svg",
+      "bytes": 2745,
+      "sha256": "488913ce5d38b165c67fc107b3267a1829940954801620a949945333bfa52582",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/blue-light-256.png",
+      "bytes": 19930,
+      "sha256": "847c8b590bc483845dcd505ab81aa778a2f21adba70a6844dabe6d4ba2784a22",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "blue-light"
+    },
+    {
+      "path": "brand/avatars/blue-light.svg",
+      "bytes": 2745,
+      "sha256": "1eb3b4cf8e7016576a9d89b5cde2f25d725261139396ddc23b7bbabea6c500b9",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/blue-mid-256.png",
+      "bytes": 19574,
+      "sha256": "60c3dd84cf8fa56e0944010c44805dc8df1760088c0c57b2add08227ff7a37ff",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "blue-mid"
+    },
+    {
+      "path": "brand/avatars/blue-mid.svg",
+      "bytes": 2745,
+      "sha256": "38376e6eea7df32871c21d6ebb01a3d90541e4bbe12989df7a6f787353d9406c",
+      "kind": "svg"
     },
     {
       "path": "brand/avatars/blue.svg",
@@ -313,6 +415,57 @@
       "avatarColor": "green"
     },
     {
+      "path": "brand/avatars/green-deep-256.png",
+      "bytes": 18444,
+      "sha256": "f72a44be49c14c99381a4ab567d6f70edcf4ce2ddf3b578809455feb814ca077",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "green-deep"
+    },
+    {
+      "path": "brand/avatars/green-deep.svg",
+      "bytes": 2745,
+      "sha256": "617adb5b6a13da1b26bcdf4b94607037057b36fbefd719389982c58f399455d3",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/green-light-256.png",
+      "bytes": 19867,
+      "sha256": "f75e71bc496c7946467f000c0771a07da2eca111a1c180de676b3f479b2a69cc",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "green-light"
+    },
+    {
+      "path": "brand/avatars/green-light.svg",
+      "bytes": 2745,
+      "sha256": "e45d0d08a0be142f9ab4188f441f0751a5fc8598dd045a7b5dedc8513ca8dae7",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/green-mid-256.png",
+      "bytes": 19392,
+      "sha256": "9933cc3a3b652d90c36128e789ef63c6b19848afbf5494c42c0adeed3577add6",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "green-mid"
+    },
+    {
+      "path": "brand/avatars/green-mid.svg",
+      "bytes": 2745,
+      "sha256": "b7c1f613afc909cdad0f790cb9294e1d1574c6b696cd4e756928d4df6e7f0b00",
+      "kind": "svg"
+    },
+    {
       "path": "brand/avatars/green.svg",
       "bytes": 2745,
       "sha256": "75385c8951432aa68156e0eb41c22d1cfddfad0e0ae922591bb0745b478fd9fd",
@@ -336,6 +489,91 @@
       "kind": "svg"
     },
     {
+      "path": "brand/avatars/lilac-deep-256.png",
+      "bytes": 19324,
+      "sha256": "e12585b81c1f806d69f58048678f41f645526dd97a3dd27583e0f7b16013a1ad",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "lilac-deep"
+    },
+    {
+      "path": "brand/avatars/lilac-deep.svg",
+      "bytes": 2745,
+      "sha256": "bed3721a0c80e72fff2d2650968ac623b220f7bd184dad6cb272e9b95f16071a",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/lilac-light-256.png",
+      "bytes": 19930,
+      "sha256": "d89a07c036e9fcd7930d52eb3acc2a13f81687bca4603819e26248084598883c",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "lilac-light"
+    },
+    {
+      "path": "brand/avatars/lilac-light.svg",
+      "bytes": 2745,
+      "sha256": "f737a62ac1474860087df446ca2a349836a5bdabcbf0bd5793ada4a27dcbe623",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/lilac-mid-256.png",
+      "bytes": 19708,
+      "sha256": "bc8f4480f47b39c416e0fdc06914bc673d2ac0c13f29232e0aafdb7e8c5d7e9c",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "lilac-mid"
+    },
+    {
+      "path": "brand/avatars/lilac-mid.svg",
+      "bytes": 2745,
+      "sha256": "cea97017e372186d9a372dae7f4496b0c5d71bbd2d6a20f74d0ddb579d228a3d",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/neutral-deep-256.png",
+      "bytes": 19072,
+      "sha256": "e7ac2aab9ab91da29d3d1bd2a84c0fb88bda58f0be096e0955fc05a8263c84e3",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "neutral-deep"
+    },
+    {
+      "path": "brand/avatars/neutral-deep.svg",
+      "bytes": 2745,
+      "sha256": "1503bc9518611e9ebb93801c7996923d94d86876bdfe998e55ff238dff7d6f55",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/neutral-mid-256.png",
+      "bytes": 19225,
+      "sha256": "c5b7ba5cf316c3087392ff2ab5a410feee01135227f5846463eb340396aac0c7",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "neutral-mid"
+    },
+    {
+      "path": "brand/avatars/neutral-mid.svg",
+      "bytes": 2745,
+      "sha256": "3339c9be95e48d4386858d0ee8e6a927ae9a46b9b0e5c583fdcdee21ea6c71b7",
+      "kind": "svg"
+    },
+    {
       "path": "brand/avatars/orange-256.png",
       "bytes": 19555,
       "sha256": "5f7f722f9aa6a03b46eb8b29aceb5ea5eca83f91598bef067a70fbc03ec72034",
@@ -345,6 +583,57 @@
       "alpha": true,
       "family": "avatar",
       "avatarColor": "orange"
+    },
+    {
+      "path": "brand/avatars/orange-deep-256.png",
+      "bytes": 18763,
+      "sha256": "31f06475055babf3c74df73d90edf6453a29b2db83e1f9c0be25f1190ce166eb",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "orange-deep"
+    },
+    {
+      "path": "brand/avatars/orange-deep.svg",
+      "bytes": 2745,
+      "sha256": "bad50f60008935ab9d2fe9a94886b641cc9eb591ed549647a30454c7384ba231",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/orange-light-256.png",
+      "bytes": 19927,
+      "sha256": "b8cc32a9543c309a284cfc02d672dec6ce69e1674d768bdaf9ed6f348029387c",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "orange-light"
+    },
+    {
+      "path": "brand/avatars/orange-light.svg",
+      "bytes": 2745,
+      "sha256": "a1d753466d6d8e2d5fcc733c3ac7f1f81e4cb2b2a0febc2a639f3191f05a8eb3",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/orange-mid-256.png",
+      "bytes": 19429,
+      "sha256": "07c136382e7e8e21e9a12f84996863f525b2ed7a9afae6026484984d806f8ece",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "orange-mid"
+    },
+    {
+      "path": "brand/avatars/orange-mid.svg",
+      "bytes": 2745,
+      "sha256": "6081ecc810e175cded6aacffd59973b7a52bdc3893285f7f849e5345f1b7b7fb",
+      "kind": "svg"
     },
     {
       "path": "brand/avatars/orange.svg",
@@ -398,9 +687,111 @@
       "avatarColor": "red"
     },
     {
+      "path": "brand/avatars/red-deep-256.png",
+      "bytes": 18775,
+      "sha256": "a1ab07be32463b5f60772923fbe1ed574687933e0425f6e79d506416d2154c0f",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "red-deep"
+    },
+    {
+      "path": "brand/avatars/red-deep.svg",
+      "bytes": 2745,
+      "sha256": "e1d03c2489106ad6ccc28bee32cc3d168a4adea735e00e14342a68cf3bba55c4",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/red-light-256.png",
+      "bytes": 19842,
+      "sha256": "33ae6a3a4b6adfe40849461d269fb927cc68b18d19b3a7c43c038825f43e062a",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "red-light"
+    },
+    {
+      "path": "brand/avatars/red-light.svg",
+      "bytes": 2745,
+      "sha256": "78693be3d10f19fa4c4330ee157e571cee17c267c5f14792071d7eb1517ee7a5",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/red-mid-256.png",
+      "bytes": 19427,
+      "sha256": "83d22d327d6c5f2b722c4de2c3b65c99cb9ce1be0bdba8899a47c998b8be2341",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "red-mid"
+    },
+    {
+      "path": "brand/avatars/red-mid.svg",
+      "bytes": 2745,
+      "sha256": "dbc542cac987f7c606fe1e306bdea0c55270a117c53495151d7746ca2fb527de",
+      "kind": "svg"
+    },
+    {
       "path": "brand/avatars/red.svg",
       "bytes": 2745,
       "sha256": "d9fecabce563027993f373cd54a45b7132d98cbec2e423a812ef4e5a93a1b3f8",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/sky-deep-256.png",
+      "bytes": 18782,
+      "sha256": "d1720b4b68bf99a444543767728b6e0740685932fab2d903a51c26520ab5ff85",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "sky-deep"
+    },
+    {
+      "path": "brand/avatars/sky-deep.svg",
+      "bytes": 2745,
+      "sha256": "aee7ce45b3dfbaa1b0044d4789d680be8842c0cf4f46d3b86d0a10a5754b5d80",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/sky-light-256.png",
+      "bytes": 19909,
+      "sha256": "538892b4957715e3669fd7f3df90d259fc41eb7b6640e653d01a971db2df885f",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "sky-light"
+    },
+    {
+      "path": "brand/avatars/sky-light.svg",
+      "bytes": 2745,
+      "sha256": "b560a91fe755a27ed45aabd67e33a8898e7bbde1301421fd5cbd27104b14dab7",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/sky-mid-256.png",
+      "bytes": 19528,
+      "sha256": "f6fb548233a0f50b4232e0047e8cec7c4e41909784547e006b8dc19435a314bd",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "sky-mid"
+    },
+    {
+      "path": "brand/avatars/sky-mid.svg",
+      "bytes": 2745,
+      "sha256": "2e50c22cb594c158560236ebd9d97f4fd4b4b6199871a756474122b3882f1321",
       "kind": "svg"
     },
     {
@@ -415,9 +806,111 @@
       "avatarColor": "teal"
     },
     {
+      "path": "brand/avatars/teal-deep-256.png",
+      "bytes": 18462,
+      "sha256": "341bc715842e14962be4b741ea73953465e0c461313d9027018a153cf841d5cf",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "teal-deep"
+    },
+    {
+      "path": "brand/avatars/teal-deep.svg",
+      "bytes": 2745,
+      "sha256": "534b109e022da70ba817e5a5a19a44efa79c5c68e92c1c75b41f4057578a6fe5",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/teal-light-256.png",
+      "bytes": 19865,
+      "sha256": "58a006f01ad67149078187fd0d31ee3642d6a15278094da5ec737033191d130b",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "teal-light"
+    },
+    {
+      "path": "brand/avatars/teal-light.svg",
+      "bytes": 2745,
+      "sha256": "ae46f46b38986b10d2de97faacb8527afda0aa4bc5bed5e7c3f365962085643d",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/teal-mid-256.png",
+      "bytes": 19468,
+      "sha256": "4ba80eb94f68f4bd6c91590caa681adc33480fb475142d61142752b5c1438eb4",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "teal-mid"
+    },
+    {
+      "path": "brand/avatars/teal-mid.svg",
+      "bytes": 2745,
+      "sha256": "20036ceaac6b8a85af53d61c857614fe1453722429fa3ec642b564d8982d81f4",
+      "kind": "svg"
+    },
+    {
       "path": "brand/avatars/teal.svg",
       "bytes": 2745,
       "sha256": "3c842a1f532721a984bc46fa09250f2b77418f4da995e11ad23b02c8bd1ec421",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/yellow-deep-256.png",
+      "bytes": 18669,
+      "sha256": "084dd33bbaf7ab1b80935a1209e92c521039bb4ca4afe9c07fec571744ace323",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "yellow-deep"
+    },
+    {
+      "path": "brand/avatars/yellow-deep.svg",
+      "bytes": 2745,
+      "sha256": "b4e05f31af57a03d7a28846e72cda7860fa3b17f0decc9d1321f3adf0dd26d93",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/yellow-light-256.png",
+      "bytes": 19919,
+      "sha256": "97160f4dd638d8adee7c21044097c76b58b8f650a386fe9cac88c526fd3c8165",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "yellow-light"
+    },
+    {
+      "path": "brand/avatars/yellow-light.svg",
+      "bytes": 2745,
+      "sha256": "a2f01d1da3f6f152945fe6ec1afda3971ec6ebaa04bc58809c929cb0b461c09d",
+      "kind": "svg"
+    },
+    {
+      "path": "brand/avatars/yellow-mid-256.png",
+      "bytes": 19449,
+      "sha256": "f51b11cd9a2c25ecd8e89d558cc3ccf43adfad25ad8dce5eb79b4b6b0a9500d5",
+      "kind": "png",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "family": "avatar",
+      "avatarColor": "yellow-mid"
+    },
+    {
+      "path": "brand/avatars/yellow-mid.svg",
+      "bytes": 2745,
+      "sha256": "a4c4f881ac27102290a75d0d15a42ac046be1b34a68b1a26c54fc3d885caac70",
       "kind": "svg"
     },
     {
@@ -900,7 +1393,7 @@
     {
       "path": "brand/source/provenance.json",
       "bytes": 1350,
-      "sha256": "7f4e67e30a0e10eea5e52f89b5d07f57e9fc7736a60426fa496549ea44416268",
+      "sha256": "71efd7c94f112b7eddb877713d2a1a40ce3d8ca172c5ebc56952f99101d34519",
       "kind": "provenance"
     },
     {

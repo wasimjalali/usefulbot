@@ -94,13 +94,13 @@ import Testing
     /// one changes what an old file means. This list failing is the reminder
     /// to bump `ChatSnapshot.formatVersion` and then update it.
     @Test func theStoredShapeIsPinnedToTheFormatVersion() {
-        #expect(ChatSnapshot.formatVersion == 4)
+        #expect(ChatSnapshot.formatVersion == 11)
         let stored = Mirror(reflecting: StreamProjection()).children.compactMap(\.label).sorted()
         #expect(stored == [
-            "activity", "continuationRowId", "currentTurnId", "discardedUserMessageId", "failed", "failure", "failureMarks", "firstSession",
+            "activeSession", "activity", "callBriefs", "callTurns", "childCalls", "childSessions", "compactionMarks", "continuationRowId", "currentTurnId", "discardedUserMessageId", "droppedMessageIds", "failed", "failure", "failureMarks", "firstSession", "groupAnchors", "heldOrder", "heldOrigins",
             "indexById", "journalBase", "journalSession", "journalTop", "liveFailureMarkId", "messages", "minted", "newestTurnStart",
-            "pending", "questions", "rowJournal", "runningTasks", "searchHits", "seen", "seenCursor", "seenOrder",
-            "settledTasks", "taskReplyRowIds", "tasksSession", "turn", "turnOrder", "turnStartedAt", "turns", "widgets",
+            "pending", "pendingRequests", "questions", "queuedMessageIds", "replayOpen", "replayTurn", "rowJournal", "runningTasks", "searchHits", "seen", "seenCursor", "seenOrder",
+            "settledTasks", "subagentRuns", "taskAgents", "taskReplyRowIds", "tasksSession", "turn", "turnOrder", "turnStartedAt", "turns", "widgets",
         ])
     }
 
@@ -111,15 +111,16 @@ import Testing
         func labels(_ value: Any) -> [String] {
             Mirror(reflecting: value).children.compactMap(\.label).sorted()
         }
-        #expect(ChatSnapshot.formatVersion == 4)
+        #expect(ChatSnapshot.formatVersion == 11)
         let turn = try #require(Mirror(reflecting: StreamProjection()).children.first { $0.label == "turn" }?.value)
         #expect(labels(turn) == [
             "assistantId", "carriedUserMessageId", "ended", "fromTask", "lastRowId", "openUserRows",
-            "producedWork", "replayingMessage", "sawMessage", "superseded", "taskReplyMarked",
+            "producedWork", "raisedRequest", "replayingMessage", "sawMessage", "sawStep", "superseded", "taskReplyMarked",
         ])
         #expect(labels(ChatMessage(id: "m", role: .user, text: "t")) == ["at", "id", "role", "text"])
         #expect(labels(SearchChip(title: "t", url: "u", snippet: "s")) == ["snippet", "title", "url"])
         #expect(labels(TurnFailure(code: "c", detail: "d")) == ["code", "detail"])
+        #expect(labels(CompactionMark(id: "c", anchorId: nil, at: nil)) == ["anchorId", "at", "id"])
         #expect(labels(FailureMark(id: "f", anchorId: nil, failure: TurnFailure(code: "c", detail: "d"), at: nil))
             == ["anchorId", "at", "failure", "id"])
         #expect(labels(LiveWidget(id: "w", connectionId: "c", toolName: "t", arguments: [:], callId: "k"))
@@ -127,6 +128,11 @@ import Testing
         #expect(labels(OwnerQuestion(id: "q", prompt: "p", options: [], allowFreeform: true))
             == ["allowFreeform", "id", "options", "prompt"])
         #expect(labels(OwnerQuestion.Option(id: "o", label: "l", detail: "d")) == ["detail", "id", "label"])
+        #expect(labels(SubagentRun(agentId: "a", taskId: "t", title: "x", groupId: "g"))
+            == ["agentId", "childCall", "childSessionId", "groupId", "result", "startedAt", "state", "taskId", "taskStartedAt", "title"])
+        #expect(labels(SubagentCallSite(sessionId: "s", index: 0)) == ["index", "sessionId"])
+        #expect(labels(PendingRequest(id: "r", kind: "k", prompt: "p", options: [])) == ["id", "kind", "options", "prompt"])
+        #expect(labels(PendingRequest.Option(id: "o", label: "l")) == ["id", "label", "style"])
         // An enum's payloads are its stored shape.
         let tool = try #require(Mirror(reflecting: TurnActivity.tool("bash", detail: "ls")).children.first?.value)
         #expect(Mirror(reflecting: tool).children.map { $0.label ?? "" } == [".0", "detail"])

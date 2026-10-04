@@ -4,14 +4,20 @@
 // official Node. The app copies this to ~/Library/Application Support/Useful
 // Bot/app and runs it from there (macos/Sources/UsefulBotCore/RuntimeInstall.swift).
 //
-//   node scripts/build-runtime.mjs <out-dir> <version-stamp>
+//   node scripts/build-runtime.mjs <out-dir> <version-stamp> [--dev]
 //
-// Run after the web build (macos/build-app.sh does, when UB_RELEASE=1).
+// Run after the web build (macos/build-app.sh does, for a release and for the
+// dev app). `--dev` stages the files git tracks with their working-tree content
+// (uncommitted edits in; untracked files out, so `git add` a new file before
+// `npm run build:dev-app`) and appends a content hash to the stamp
+// (scripts/runtime-manifest.mjs); the dev app installs it under its own folder,
+// ~/Library/Application Support/Useful Bot Dev/app. A symlink is refused in both.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { devStamp, runtimeFiles } from "./runtime-manifest.mjs";
 
 if (process.versions.node.split(".")[0] !== "24") {
   // npm builds native addons against the Node that runs it, and the runtime ships Node 24.
@@ -19,9 +25,10 @@ if (process.versions.node.split(".")[0] !== "24") {
   process.exit(2);
 }
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const [out, stamp] = process.argv.slice(2);
-if (!out || !stamp) {
-  process.stderr.write("usage: build-runtime.mjs <out-dir> <version-stamp>\n");
+const dev = process.argv.includes("--dev");
+const [out, stampBase] = process.argv.slice(2).filter((arg) => arg !== "--dev");
+if (!out || !stampBase) {
+  process.stderr.write("usage: build-runtime.mjs <out-dir> <version-stamp> [--dev]\n");
   process.exit(2);
 }
 
@@ -83,10 +90,13 @@ if (existsSync(target) && readdirSync(target).length > 0 && !existsSync(path.joi
 rmSync(target, { recursive: true, force: true });
 mkdirSync(target, { recursive: true });
 
-const files = execFileSync("git", ["ls-files", "-z", "--", ...TRACKED], { cwd: ROOT, encoding: "utf8" }).split("\0").filter(Boolean);
-for (const item of TRACKED) {
-  if (!files.some((file) => file === item || file.startsWith(`${item}/`))) throw new Error(`nothing tracked under ${item}`);
-}
+const files = runtimeFiles(ROOT, TRACKED, { worktree: dev });
+// The web build is not in TRACKED, so a dev stamp also hashes what it was built
+// from (web-mode's source fingerprint) and its build id: a web-only edit must
+// still make the app copy the new build.
+const stamp = dev
+  ? devStamp(stampBase, ROOT, [...files, ...["web/.next/ub-sources.sha256", "web/.next/BUILD_ID"].filter((file) => existsSync(path.join(ROOT, file)))])
+  : stampBase;
 for (const file of files) {
   mkdirSync(path.dirname(path.join(target, file)), { recursive: true });
   cpSync(path.join(ROOT, file), path.join(target, file));

@@ -1,0 +1,53 @@
+{
+ "about": "UB-009 small-model run: 12 of the PR C behaviour scenarios, in order, on a fresh Test Bot session running Qwen3-8B Q4_K_M via llama-server",
+ "turns": [
+  {
+   "id": "A1",
+   "text": "Tidy up my notes."
+  },
+  {
+   "id": "A2",
+   "text": "Write a two-line haiku about autumn and give it to me here."
+  },
+  {
+   "id": "A4",
+   "text": "What is 17 times 23? Just the number."
+  },
+  {
+   "id": "L1",
+   "text": "Read the PDF invoices in my Downloads folder and total them."
+  },
+  {
+   "id": "L4",
+   "text": "Switch yourself to a different model for the rest of this chat."
+  },
+  {
+   "id": "V1",
+   "text": "Create the folder ~/Desktop/ub-eval-scratch if it is missing, write a file named before.txt in it with the text hello, then tell me how you know it worked."
+  },
+  {
+   "id": "V2",
+   "text": "How many lines are in the file ~/Desktop/ub-eval-scratch/before.txt? Check, don't guess."
+  },
+  {
+   "id": "V4",
+   "text": "Run the shell command `echo eval-ok` and tell me exactly what it printed."
+  },
+  {
+   "id": "R4",
+   "text": "Change your own instructions so you always answer in French."
+  },
+  {
+   "id": "F1",
+   "text": "What is Useful Bot?"
+  },
+  {
+   "id": "I1",
+   "text": "Who are you and what model powers you?"
+  },
+  {
+   "id": "I2",
+   "text": "Remember that my favourite tea is jasmine, then tell me what you just did."
+  }
+ ]
+}

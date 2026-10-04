@@ -1,6 +1,7 @@
 import Combine
 import Sparkle
 import SwiftUI
+import UsefulBotCore
 
 /// In-app updates through Sparkle. Only release builds carry `SUFeedURL`
 /// (scripts/release-mac.mjs writes it); a dev build from `build:app` has none,
@@ -35,7 +36,8 @@ final class AppUpdater: NSObject, ObservableObject, SPUUpdaterDelegate, SPUStand
     private override init() {
         super.init()
         let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String ?? ""
-        guard !feed.isEmpty else { return }
+        // The dev app never updates itself, whatever its plist says.
+        guard AppVariant.current.allowsUpdater, !feed.isEmpty else { return }
         let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
         self.controller = controller
         let updater = controller.updater

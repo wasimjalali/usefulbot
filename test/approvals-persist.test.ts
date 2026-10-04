@@ -228,3 +228,67 @@ test("persist prunes settled records after the grace window and keeps a recent d
   });
   assert.equal(new ApprovalStore(Date.now, path).get(rec.id), undefined);
 });
+
+// A sub-agent's card names its root session and says a sub-agent raised it;
+// stopping the root retires the root's cards and every child's, and no other
+// session's.
+test("a sub-agent's card carries its root and the marker, and a root stop retires the children's cards", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "ub-apr-")), "approvals.json");
+  const store = new ApprovalStore(Date.now, path);
+  const hash = hashFor("{}");
+  const ask = (sessionId: string, extra: Record<string, unknown> = {}) => store.request({
+    sessionId, turnId: "t", toolCallId: "c", tool: "memory.upsert", actionSha256: hash, preview: sessionId, ...extra,
+  });
+  const base = approvalActor({ session: { id: "root-1" }, callId: "c" });
+  assert.equal("subagent" in base, false);
+  const child = approvalActor({ session: { id: "kid-1", parent: "not-an-object" }, callId: "c" });
+  // An unverifiable child still shows, marked, with itself as the root.
+  assert.deepEqual(child, { sessionId: "kid-1", turnId: "live", toolCallId: "c", rootSessionId: "kid-1", subagent: true });
+  ask("root-1");
+  ask("kid-1", { rootSessionId: "root-1", subagent: true });
+  ask("kid-2", { rootSessionId: "root-1", subagent: true });
+  ask("other-root");
+  ask("other-kid", { rootSessionId: "other-root", subagent: true });
+  const cards = store.listPending();
+  assert.equal(cards.length, 5);
+  const kid = cards.find((card) => card.sessionId === "kid-1");
+  assert.equal(kid?.subagent, true);
+  assert.equal(kid?.rootSessionId, "root-1");
+  assert.equal(cards.find((card) => card.sessionId === "root-1")?.subagent, undefined);
+  // A child's own cancel retires only that child's cards.
+  assert.equal(store.expireSession("kid-1"), 1);
+  assert.deepEqual(store.listPending().map((card) => card.sessionId).sort(), ["kid-2", "other-kid", "other-root", "root-1"]);
+  // The app's automatic stopped-report cancel retires only the root's own cards.
+  assert.equal(store.expireSession("root-1", { children: false }), 1);
+  assert.deepEqual(store.listPending().map((card) => card.sessionId).sort(), ["kid-2", "other-kid", "other-root"]);
+  // The owner's Stop on a root fails closed: it also retires its sub-agents'
+  // cards, never another root's.
+  ask("root-1");
+  assert.equal(store.expireSession("root-1"), 2);
+  assert.deepEqual(store.listPending().map((card) => card.sessionId).sort(), ["other-kid", "other-root"]);
+});
+
+test("the owner's Stop on a root expires a sub-agent's approved, unconsumed card", () => {
+  const store = new ApprovalStore();
+  const hash = hashFor("{}");
+  const card = store.request({ sessionId: "kid-9", rootSessionId: "root-9", subagent: true, turnId: "t", toolCallId: "c", tool: "memory.upsert", actionSha256: hash, preview: "p" });
+  store.decide(card.id, "approve", hash);
+  // The child's own cancel never landed; the root's Stop still closes it.
+  assert.equal(store.expireSession("root-9"), 1);
+  assert.throws(() => store.consume(card.id, hash), /approval_expired/);
+});
+
+test("Stop retires an approved card that has not run, and leaves a consumed one", () => {
+  const store = new ApprovalStore();
+  const hash = hashFor("{}");
+  const ask = (sessionId: string) => store.request({ sessionId, turnId: "t", toolCallId: "c", tool: "memory.upsert", actionSha256: hash, preview: "p" });
+  const approved = ask("kid-1");
+  store.decide(approved.id, "approve", hash);
+  const consumed = ask("kid-1");
+  store.decide(consumed.id, "approve", hash);
+  store.consume(consumed.id, hash);
+  // Approve-then-Stop: the approval must not run afterwards.
+  assert.equal(store.expireSession("kid-1"), 1);
+  assert.throws(() => store.consume(approved.id, hash), /approval_expired/);
+  assert.equal(store.get(consumed.id)?.status, "consumed");
+});

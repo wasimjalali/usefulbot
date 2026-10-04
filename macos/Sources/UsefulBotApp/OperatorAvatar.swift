@@ -18,7 +18,7 @@ final class OperatorAvatarStore: ObservableObject {
 
     private let fileURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("Useful Bot", isDirectory: true)
+        return AppVariant.current.appSupportDirectory(support: base)
             .appendingPathComponent("profile-avatar.png")
     }()
 

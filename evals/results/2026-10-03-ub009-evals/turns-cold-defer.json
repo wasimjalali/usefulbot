@@ -1,0 +1,55 @@
+{
+ "about": "UB-009 cold start, stamp mode defer: each turn opens a new Test Bot session (the previous turn cleared the chat), replies, then clears so the next turn is a new session",
+ "turns": [
+  {
+   "id": "D01",
+   "approve": true,
+   "text": "Cold start defer 1. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D02",
+   "approve": true,
+   "text": "Cold start defer 2. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D03",
+   "approve": true,
+   "text": "Cold start defer 3. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D04",
+   "approve": true,
+   "text": "Cold start defer 4. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D05",
+   "approve": true,
+   "text": "Cold start defer 5. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D06",
+   "approve": true,
+   "text": "Cold start defer 6. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D07",
+   "approve": true,
+   "text": "Cold start defer 7. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D08",
+   "approve": true,
+   "text": "Cold start defer 8. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D09",
+   "approve": true,
+   "text": "Cold start defer 9. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "D10",
+   "approve": true,
+   "text": "Cold start defer 10. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  }
+ ]
+}

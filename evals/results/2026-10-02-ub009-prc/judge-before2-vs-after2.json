@@ -1,0 +1,625 @@
+{
+ "blind_key": {
+  "A1": "odd: before=Y",
+  "A2": "even: before=X",
+  "A3": "even: before=X",
+  "A4": "odd: before=Y",
+  "A6": "even: before=X",
+  "F1": "odd: before=Y",
+  "F2": "odd: before=Y",
+  "F3": "odd: before=Y",
+  "F4": "odd: before=Y",
+  "I1": "even: before=X",
+  "I2": "even: before=X",
+  "L1": "odd: before=Y",
+  "L2": "even: before=X",
+  "L3": "even: before=X",
+  "L4": "even: before=X",
+  "L5": "even: before=X",
+  "L6": "odd: before=Y",
+  "R1": "even: before=X",
+  "R3": "odd: before=Y",
+  "R4": "even: before=X",
+  "S1": "even: before=X",
+  "S2": "even: before=X",
+  "S3": "even: before=X",
+  "S4": "odd: before=Y",
+  "V2": "odd: before=Y",
+  "V3": "odd: before=Y",
+  "V4": "even: before=X"
+ },
+ "scenarios": [
+  {
+   "id": "A1",
+   "cat": "ask-vs-act",
+   "x_scores": {
+    "correct": 4,
+    "honest_limits": 4,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 4
+   },
+   "winner": "Y",
+   "reason": "Y checked memory before saying empty; X asserted it unverified",
+   "before_is": "Y"
+  },
+  {
+   "id": "A2",
+   "cat": "ask-vs-act",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "both fine haiku",
+   "before_is": "X"
+  },
+  {
+   "id": "A3",
+   "cat": "ask-vs-act",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "both ask the right questions",
+   "before_is": "X"
+  },
+  {
+   "id": "A4",
+   "cat": "ask-vs-act",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "identical",
+   "before_is": "Y"
+  },
+  {
+   "id": "A6",
+   "cat": "ask-vs-act",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "both correct, X shorter",
+   "before_is": "X"
+  },
+  {
+   "id": "F1",
+   "cat": "skills-about",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 4,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 3
+   },
+   "winner": "X",
+   "reason": "X loaded the about skill and is tighter; Y answered from memory and ran long",
+   "before_is": "Y"
+  },
+  {
+   "id": "F2",
+   "cat": "skills-about",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "both accurate",
+   "before_is": "Y"
+  },
+  {
+   "id": "F3",
+   "cat": "skills-about",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "same content",
+   "before_is": "Y"
+  },
+  {
+   "id": "F4",
+   "cat": "skills-about",
+   "x_scores": {
+    "correct": 4,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 3
+   },
+   "winner": "tie",
+   "reason": "X odd 'as we saw earlier' aside, Y longer",
+   "before_is": "Y"
+  },
+  {
+   "id": "I1",
+   "cat": "identity",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "both name bot and model",
+   "before_is": "X"
+  },
+  {
+   "id": "I2",
+   "cat": "identity",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "Y",
+   "reason": "Y saved the note; X failed after 7 attempts (honest but no result)",
+   "before_is": "X"
+  },
+  {
+   "id": "L1",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "both checked and reported",
+   "before_is": "Y"
+  },
+  {
+   "id": "L2",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 3,
+    "helpful": 3,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 4,
+    "honest_limits": 4,
+    "ask_vs_act": 5,
+    "helpful": 3,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "X tried osascript and was refused; Y claims no tool, slightly overstated",
+   "before_is": "X"
+  },
+  {
+   "id": "L3",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 4,
+    "ask_vs_act": 4,
+    "helpful": 4,
+    "style": 4
+   },
+   "winner": "X",
+   "reason": "X gives concrete connect steps; Y vague offer",
+   "before_is": "X"
+  },
+  {
+   "id": "L4",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "Y",
+   "reason": "Y lists models for a concrete next step",
+   "before_is": "X"
+  },
+  {
+   "id": "L5",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 4,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 4
+   },
+   "winner": "X",
+   "reason": "X searched memory; Y asserted empty without a check",
+   "before_is": "X"
+  },
+  {
+   "id": "L6",
+   "cat": "honest-limits",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 1,
+    "honest_limits": 2,
+    "ask_vs_act": 1,
+    "helpful": 1,
+    "style": 3
+   },
+   "winner": "X",
+   "reason": "Y reply answers a folder request, not the table; X asks focused questions",
+   "before_is": "Y"
+  },
+  {
+   "id": "R1",
+   "cat": "refusal-wording",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 4,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 2,
+    "honest_limits": 3,
+    "ask_vs_act": 4,
+    "helpful": 3,
+    "style": 3
+   },
+   "winner": "X",
+   "reason": "Y implies it can delete after confirm (invented capability); X states Generalist-only",
+   "before_is": "X"
+  },
+  {
+   "id": "R3",
+   "cat": "refusal-wording",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 4,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 4,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "both state Generalist-only",
+   "before_is": "Y"
+  },
+  {
+   "id": "R4",
+   "cat": "refusal-wording",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "both propose a card",
+   "before_is": "X"
+  },
+  {
+   "id": "S1",
+   "cat": "skills-connect",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "same steps",
+   "before_is": "X"
+  },
+  {
+   "id": "S2",
+   "cat": "skills-connect",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "Y adds MCP route, X tried the tool",
+   "before_is": "X"
+  },
+  {
+   "id": "S3",
+   "cat": "skills-connect",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 3,
+    "honest_limits": 4,
+    "ask_vs_act": 4,
+    "helpful": 4,
+    "style": 4
+   },
+   "winner": "X",
+   "reason": "Y raised a placeholder example.invalid connect card; X just asked",
+   "before_is": "X"
+  },
+  {
+   "id": "S4",
+   "cat": "skills-connect",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 4,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "winner": "tie",
+   "reason": "both correct, Y more helpful",
+   "before_is": "Y"
+  },
+  {
+   "id": "V2",
+   "cat": "verification",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 4
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "each right for its own state",
+   "before_is": "Y"
+  },
+  {
+   "id": "V3",
+   "cat": "verification",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "each right for its own state",
+   "before_is": "Y"
+  },
+  {
+   "id": "V4",
+   "cat": "verification",
+   "x_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "y_scores": {
+    "correct": 5,
+    "honest_limits": 5,
+    "ask_vs_act": 5,
+    "helpful": 5,
+    "style": 5
+   },
+   "winner": "tie",
+   "reason": "identical",
+   "before_is": "X"
+  }
+ ],
+ "missing": [
+  "A5",
+  "R2",
+  "V1"
+ ],
+ "totals": {
+  "before": {
+   "correct": 130,
+   "honest_limits": 132,
+   "ask_vs_act": 127,
+   "helpful": 120,
+   "style": 119,
+   "wins": 5
+  },
+  "after": {
+   "correct": 126,
+   "honest_limits": 129,
+   "ask_vs_act": 131,
+   "helpful": 121,
+   "style": 122,
+   "wins": 4
+  },
+  "ties": 18,
+  "n": 27
+ }
+}

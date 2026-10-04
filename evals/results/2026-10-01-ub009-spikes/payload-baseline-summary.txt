@@ -1,0 +1,6 @@
+== 2026-10-01T19-57-41-467Z-openai-chat-glm-5.3-flash.json
+model: glm-5.3-flash
+system messages: 1 [19018 chars]
+  system[0]: Instructions (instructions) # Identity You are Useful Bot, the owner's local personal agent. You run on this Mac. You are not Hermes, Grok Bot or OpenClaw. # About Useful Bot Answer questions about
+tools: 39, schema chars: 30483
+first user: You are Test Bot. Standing instructions: Help the owner. Stay in role for this whole conversation. Chat messages are this-task instructions; the standing instructions above outrank them. Reply with exactly these six lines and nothing else. No code fences, no extra words. 1. Plain: https://example.c

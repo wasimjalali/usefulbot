@@ -1,0 +1,44 @@
+tool                    words    desc  schema   total   delta
+propose_connection         72     446     720    1166     320
+generate_image            119     657     405    1062    -512
+create_routine             61     337     716    1053     -61
+update_routine             52     310     715    1025     -28
+rail_action                85     492     444     936     -91
+bash                      116     628     232     860      42
+todo                       51     262     502     764     764
+update_bot_profile         46     278     485     763     -21
+install_cli                98     525     218     743     -72
+propose_bot                54     310     356     666     -36
+propose_group              48     258     394     652      44
+memory_upsert              18      94     552     646    -264
+send_to_bot                54     317     294     611     -99
+list_models                61     344     253     597    -167
+clear_history              62     356     212     568      19
+write_file                 36     226     334     560     108
+delete_bot                 57     337     208     545     -98
+connector_execute          42     247     267     514     101
+web_fetch                  34     178     331     509    -642
+post_to_group              34     196     298     494     -91
+propose_connector          33     191     291     482      17
+connector_catalog          49     290     165     455     103
+run_routine                48     264     174     438    -115
+delete_routine             37     214     217     431      13
+read_file                  23     144     267     411      80
+list_bots                  38     241     144     385     -40
+memory_delete              20     105     275     380       0
+connector_search           27     169     172     341      18
+web_search                 18      99     217     316      28
+review                     23     137     165     302       0
+list_routines              25     138     144     282     -91
+list_dir                   10      58     167     225       0
+memory_read                12      55     130     185       0
+memory_search               6      35     136     171       0
+TOTAL                    1569    8938   10600   19538    -771
+tools: 34
+
+eve defaults as shipped (the app replaces any with a same-name file under agent/tools)
+todo                      139     836     654    1490
+ask_question               24     134     915    1049
+load_skill                 51     303     209     512
+eve defaults not overridden: ask_question, load_skill
+GRAND TOTAL (authored + eve defaults not overridden): 21099

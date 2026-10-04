@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { foldPath } from "../../shared/fold-path.ts";
 import { accessSync, constants, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -212,27 +213,43 @@ export type CliStatus = {
  * themselves signed out when run unattended, and work on an approval card,
  * which runs unconfined because the owner read the line.
  */
-export function credentialPathsFor(command: string, path = ownerPath()): string[] {
+/**
+ * The name of the program a single plain line runs, when it is the CLI the
+ * owner has on PATH (not a relative or look-alike path); otherwise null.
+ */
+function loneCliName(command: string, path: string): string | null {
   const head = loneCommandHead(command);
-  if (!head) return [];
+  if (!head) return null;
   // A relative program (`./codex`) is not the CLI on PATH, whatever it is
   // called, and resolving it would depend on a cwd this cannot verify.
-  if (head.includes("/") && !head.startsWith("/")) return [];
+  if (head.includes("/") && !head.startsWith("/")) return null;
   const name = head.slice(head.lastIndexOf("/") + 1);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return [];
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return null;
   // The program has to be one the owner really has, or any word at all would
   // name a directory to open.
   const resolved = resolveBin(name, path);
-  if (!resolved) return [];
+  if (!resolved) return null;
   if (head.startsWith("/")) {
     // An absolute path only inherits the credentials if it IS the binary the
     // bare name resolves to. `/tmp/evil/codex` is not codex.
     try {
-      if (realpathSync(head) !== realpathSync(resolved)) return [];
+      if (realpathSync(head) !== realpathSync(resolved)) return null;
     } catch {
-      return [];
+      return null;
     }
   }
+  return name;
+}
+
+/** A single plain line that runs one of the registered coding-tool CLIs (codex, claude, gemini, gh, ...). */
+export function isRegisteredCliLine(command: string, path = ownerPath()): boolean {
+  const name = loneCliName(command, path);
+  return name !== null && findCli(name) !== null;
+}
+
+export function credentialPathsFor(command: string, path = ownerPath()): string[] {
+  const name = loneCliName(command, path);
+  if (name === null) return [];
   const home = realpathSync(homedir());
   // The registry ADDS to what the name implies rather than replacing it: gh
   // needs both its own directory and the keyring, and a row that quietly
@@ -293,7 +310,7 @@ function derivedStores(name: string): string[] {
   // whole of it: `config` would open `~/.config`, every tool's settings
   // inside it, and `local` would open `~/.local`, the PATH directory
   // included. These are containers, never one tool's own state.
-  if (RESERVED_DERIVED_NAMES.has(name.toLowerCase())) return [];
+  if (RESERVED_DERIVED_NAMES.has(foldPath(name))) return [];
   const candidates = [
     `.${name}`,
     join(".config", name),
@@ -315,7 +332,7 @@ const RESERVED_DERIVED_NAMES = new Set([
  * covering everything above it as well as the name itself.
  */
 function holdsProtectedStore(relative: string): boolean {
-  const lowered = relative.toLowerCase();
+  const lowered = foldPath(relative);
   return NEVER_DERIVED.some((name) => name.startsWith(`${lowered}/`));
 }
 
@@ -325,7 +342,7 @@ function holdsProtectedStore(relative: string): boolean {
  * rules are written, so `.config/fish` is caught as well as `.ssh`.
  */
 function namesProtectedStore(relative: string): boolean {
-  const lowered = relative.toLowerCase();
+  const lowered = foldPath(relative);
   return NEVER_DERIVED.some((name) => {
     if (lowered === name || lowered.startsWith(`${name}/`) || lowered.endsWith(`/${name}`) || lowered.includes(`/${name}/`)) {
       return true;
@@ -352,7 +369,7 @@ function namesProtectedStore(relative: string): boolean {
  * profile closes this door at the same time.
  */
 const NEVER_DERIVED = [
-  ...PROTECTED_NAMES.map((name) => name.toLowerCase()),
+  ...PROTECTED_NAMES.map((name) => foldPath(name)),
   // The word the profile matches with a pattern rather than a name.
   "secrets",
   // Not credential stores, but never a CLI's own state either.

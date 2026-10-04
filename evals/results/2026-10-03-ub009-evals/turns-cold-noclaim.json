@@ -1,0 +1,17 @@
+{
+ "about": "UB-009 cold start, noclaim: the owner token carries no bot claim, so the create must be refused before eve",
+ "turns": [
+  {
+   "id": "N01",
+   "text": "Cold start noclaim 1. Reply with the single word ready."
+  },
+  {
+   "id": "N02",
+   "text": "Cold start noclaim 2. Reply with the single word ready."
+  },
+  {
+   "id": "N03",
+   "text": "Cold start noclaim 3. Reply with the single word ready."
+  }
+ ]
+}

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readAgentStore } from "../../shared/agent-store.ts";
 import { readImage, writeImage } from "../../shared/images-store.ts";
 import { findMedia, readMediaBytes, saveImage, sniffImage } from "../../shared/media-store.ts";
-import { ROUTER_HOST, ROUTER_PORT } from "../../shared/policy.ts";
+import { routerOrigin } from "../../shared/stack.ts";
 import { peekShell } from "../../shared/shell-io.ts";
 import { ApiError } from "./api-guard.ts";
 
@@ -63,7 +63,7 @@ async function redraw(id: string): Promise<{ path: string }> {
   type Generated = { data?: Array<{ b64_json?: unknown; mime?: unknown }>; model?: unknown; provider?: unknown } | null;
   let json: Generated;
   try {
-    const res = await fetch(`http://${ROUTER_HOST}:${ROUTER_PORT}/v1/images/generations`, {
+    const res = await fetch(`${routerOrigin()}/v1/images/generations`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,

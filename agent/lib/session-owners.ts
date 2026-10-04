@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { statePath } from "../../shared/stack.ts";
 
 export class SessionOwners {
   private readonly db: DatabaseSync;
@@ -26,5 +27,5 @@ export class SessionOwners {
 }
 
 export function defaultOwnerPath(): string {
-  return join(process.env.UB_STATE_ROOT ?? join(process.env.HOME ?? "/tmp", ".useful-bot"), "policy.sqlite");
+  return statePath("policy.sqlite");
 }

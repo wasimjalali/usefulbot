@@ -1,8 +1,9 @@
 import { resolve, relative, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import { lstatSync, realpathSync } from "node:fs";
-import { FORBIDDEN_PATH_SUBSTRINGS } from "../../shared/policy.ts";
-import { FORBIDDEN_CHILD_SEGMENTS, isGrantableRootPath } from "../../shared/shell-store.ts";
+import { FORBIDDEN_PATH_SUBSTRINGS, foldPath } from "../../shared/policy.ts";
+import { isForbiddenChildSegment, isGrantableRootPath } from "../../shared/shell-store.ts";
+import { isRuntimeInstallPath } from "../../shared/stack.ts";
 import {
   readSessionGrant,
   type SessionGrant,
@@ -128,19 +129,23 @@ export function resolveWorkspacePath(inputPath: string, root: string = workspace
   // owner picked (or configured) by name, so a project that happens to live in
   // a path containing one of these words stays reachable; anything inside it
   // — a `.env`, a `.git/config`, a `secrets/` directory — is still refused.
-  const loweredRel = rel.toLowerCase();
+  const loweredRel = foldPath(rel);
   for (const part of FORBIDDEN_PATH_SUBSTRINGS) {
-    if (loweredRel.includes(part.toLowerCase())) {
+    if (loweredRel.includes(foldPath(part))) {
       throw new Error("path_forbidden");
     }
   }
   // Exact segment names, so a credential store is refused without `.docker`
   // also refusing the `.dockerignore` next to it.
   for (const segment of loweredRel.split(/[/\\]/)) {
-    if (segment && FORBIDDEN_CHILD_SEGMENTS.has(segment)) {
+    if (segment && isForbiddenChildSegment(segment)) {
       throw new Error("path_forbidden");
     }
   }
+  // The runtime install folders (service code, eve transcripts) are three
+  // segments long, so they are matched on the whole resolved path. That also
+  // covers a root granted above them, or one inside them.
+  if (isRuntimeInstallPath(resolved)) throw new Error("path_forbidden");
   assertNoSymlinkComponents(root, rel);
   return resolved;
 }

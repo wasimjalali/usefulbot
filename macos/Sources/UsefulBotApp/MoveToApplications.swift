@@ -3,12 +3,13 @@ import UsefulBotCore
 
 /// Offers to move a release build into Applications when it was opened from
 /// the DMG, Downloads or anywhere else. Runs before the first window, so no
-/// service has started from the copy that is about to go away. Dev builds
-/// (no runtime payload) never ask. The decisions are in `AppPlacement`.
+/// service has started from the copy that is about to go away. The dev build
+/// carries a runtime payload too, so the gate is the variant, not the payload:
+/// it never asks. The decisions are in `AppPlacement`.
 @MainActor
 enum MoveToApplications {
     static func offerIfNeeded() {
-        guard RuntimeInstall.bundledRuntime() != nil else { return }
+        guard AppVariant.current.allowsMoveToApplications, RuntimeInstall.bundledRuntime() != nil else { return }
         removeStaleStaging()
         let defaults = UserDefaults.standard
         let bundle = Bundle.main.bundleURL

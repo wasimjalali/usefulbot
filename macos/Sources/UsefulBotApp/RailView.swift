@@ -721,7 +721,9 @@ extension AppModel {
     /// The uppercase line under a bot's name: what it is doing while it works,
     /// "REPLY READY" when an answer is waiting, else the given fallback.
     func railSubtitle(_ bot: ShellBot, fallback: String) -> String? {
+        if waitingBotIds.contains(bot.id) { return "WAITING ON YOU" }
         if isWorking(bot.id) {
+            if subagentsOnly(bot.id) { return "SUB-AGENTS WORKING" }
             return (railActivity(bot.id) ?? .thinking).label.uppercased()
         }
         if replyReady.contains(bot.id) { return "REPLY READY" }

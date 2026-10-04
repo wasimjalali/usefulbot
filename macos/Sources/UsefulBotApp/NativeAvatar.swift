@@ -75,13 +75,13 @@ struct UsefulBotLogoView: View {
     var body: some View {
         HStack(spacing: 8) {
             BrandAvatarView(size: 32)
-            Text("Useful Bot")
+            Text(AppVariant.current.displayName)
                 .font(Theme.font(14, .semibold))
                 .tracking(-0.03 * 14)
                 .foregroundStyle(Theme.C.ink)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Useful Bot")
+        .accessibilityLabel(AppVariant.current.displayName)
     }
 }
 

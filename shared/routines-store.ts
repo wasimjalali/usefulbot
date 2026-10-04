@@ -11,8 +11,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
 
 /**
  * Routines: recurring instructions one bot runs on a schedule. Both the Next
@@ -115,7 +115,7 @@ export type RoutinePatch = {
 
 export function routinesStorePath(): string {
   if (process.env.UB_ROUTINES_PATH) return process.env.UB_ROUTINES_PATH;
-  return join(homedir(), ".useful-bot", "routines.json");
+  return statePath("routines.json");
 }
 
 export function newRoutineId(): string {

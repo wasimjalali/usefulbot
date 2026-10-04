@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { ComposioLike, ComposioSessionLike } from "./composio.ts";
+import { statePath } from "./stack.ts";
 
 /**
  * Composio's toolkit catalogue, about a thousand rows, cached on disk for a
@@ -46,7 +47,7 @@ const building = new Map<string, Promise<void>>();
 
 export function cataloguePath(root = process.env.UB_CATALOGUE_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/composio-catalogue.json");
+  return statePath("composio-catalogue.json");
 }
 
 function load(path: string): { fetchedAt: number; items: CatalogueItem[] } | null {

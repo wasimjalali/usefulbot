@@ -65,6 +65,23 @@ import Testing
         #expect(clean["avatarShape"] == nil)
     }
 
+    @Test func profileConfirmSendsNoDescriptionWhenTheCardHasNone() throws {
+        let rename = try JSONDecoder().decode(Proposal.self, from: Data("""
+        {"id":"p5","kind":"updateBotProfile","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+         "botId":"b1","patch":{"name":"Analyst","title":"Lead"}}
+        """.utf8))
+        let patch = try #require(ProposalActions.confirm(rename)?["patch"] as? [String: Any])
+        #expect(patch["name"] as? String == "Analyst")
+        #expect(patch["description"] == nil)
+
+        let withText = try JSONDecoder().decode(Proposal.self, from: Data("""
+        {"id":"p6","kind":"updateBotProfile","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+         "botId":"b1","patch":{"name":"Scout","title":"Lead","description":"Exact text"}}
+        """.utf8))
+        let kept = try #require(ProposalActions.confirm(withText)?["patch"] as? [String: Any])
+        #expect(kept["description"] as? String == "Exact text")
+    }
+
     @Test func fanoutConfirmTargetsTheGroupWhenThereIsOne() throws {
         let proposal = try JSONDecoder().decode(Proposal.self, from: Data("""
         {"id":"p4","kind":"fanout","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",

@@ -30,6 +30,8 @@
 :root {
   --surface: #f8f8f8; --paper-deep: #f0f0f0; --paper-bright: #ffffff;
   --ink: #171717; --ink-muted: #5c5c5c; --border: #ebebeb; --rule: #e0e0e0;
+  /* The install box stays light on every section, so it has its own colors: .dark remaps --ink. */
+  --cmd-bg: #fafafa; --cmd-ink: #171717; --cmd-muted: #666666; --cmd-hover: #333333;
   --night: #111111; --night-raise: #1b1b1b; --night-line: #2c2c2c; --night-ink: #f2f2f2; --night-muted: #a0a0a0;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -62,7 +64,7 @@ img { max-width: 100%; }
 html:not([data-release="soon"]) .when-soon { display: none !important; }
 .btn-light:hover { background: #fff; box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.8); }
 .btn-light:focus-visible, .link-light:focus-visible { outline-color: var(--night-ink); }
-.cmd button:focus-visible { outline-color: var(--ink); outline-offset: 2px; }
+.cmd button:focus-visible { outline-color: var(--cmd-ink); outline-offset: 2px; }
 .link-light {
   display: inline-flex; min-height: 44px; align-items: center; gap: 8px;
   color: var(--night-ink); font-size: 15.5px; font-weight: 500; text-decoration: none;
@@ -116,13 +118,20 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
 .has-js [data-hero][data-visible="true"] .stage[data-rise] { transform: none; transition-duration: 700ms, 1000ms; }
 
 /* The one-line installer. */
-.cmd { display: flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 22px; padding: 6px 6px 6px 16px; border: 1px solid var(--surface); border-radius: 12px; background: var(--surface); }
-.cmd code { flex: 1; min-width: 0; overflow-x: auto; color: var(--ink); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; white-space: nowrap; scrollbar-width: none; }
+.cmd { display: flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 22px; padding: 6px 6px 6px 16px; border: 1px solid var(--cmd-bg); border-radius: 12px; background: var(--cmd-bg); }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; color: var(--cmd-ink); font-family: var(--font-mono); font-size: 13px; line-height: 1.5; white-space: nowrap; scrollbar-width: none; }
 .cmd code::-webkit-scrollbar { display: none; }
-.cmd code span { color: var(--ink-muted); user-select: none; }
-.cmd code::selection { background: var(--ink); color: var(--surface); }
-.cmd button { flex: none; min-width: 72px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--surface); background: var(--ink); font: 500 13px var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
-.cmd button:hover { background: #333333; }
+.cmd code span { color: var(--cmd-muted); user-select: none; }
+.cmd code::selection { background: var(--cmd-ink); color: var(--cmd-bg); }
+.cmd button { flex: none; min-width: 72px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: var(--cmd-bg); background: var(--cmd-ink); font: 500 13px var(--font-sans); cursor: pointer; transition: background-color 150ms var(--ease-out); }
+.cmd button:hover { background: var(--cmd-hover); }
+/* A command that overflows is keyboard-focusable; its ring follows the box, not the section. */
+.cmd code:focus-visible { outline-color: var(--cmd-ink); }
+/* The CTA's own `.cta p` would otherwise restyle these, so both blocks match the hero. */
+.cta .cmd-head { color: var(--night-ink); font-size: 15px; line-height: inherit; max-width: none; }
+.cta .cmd-note { margin-top: 10px; color: #8a8a8a; font-size: 13px; line-height: 1.5; max-width: none; }
+.hero-row .cmd-head { margin-top: 0; }
+.dark ::selection { background: #3a3a3a; color: #fafafa; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 html:not([data-release="soon"]) .hero-row > div { display: flex; flex-direction: column; }
 html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-top: 18px; }
@@ -130,12 +139,10 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
 .cmd-head + .cmd { margin-top: 10px; }
 .cta-layout > div { min-width: 0; }
 .cta-install { margin-top: 28px; }
-.cta .cta-install .cmd-note { margin-top: 10px; font-size: 13px; }
-.cta-install .cmd-head { margin-top: 0; }
-.btn-ghost { align-self: flex-start; margin-top: 16px; color: var(--night-ink); background: transparent; border-color: #3a3a3a; }
+.btn-ghost { margin-top: 16px; color: var(--night-ink); background: transparent; border-color: #3a3a3a; }
 .btn-ghost:hover { background: rgb(255 255 255 / 0.06); border-color: #5a5a5a; box-shadow: none; }
 .btn-ghost:focus-visible { outline-color: var(--night-ink); }
-.cmd-note { margin: 10px 0 0; color: #8a8a8a; font-size: 13px; line-height: 1.5; }
+.cmd-note { margin: 10px 0 0; color: #8a8a8a; font-size: 13px; line-height: 1.5; text-wrap: pretty; }
 
 /* Chapters */
 .chapters { padding: 120px 0 40px; }
@@ -175,7 +182,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
 .dark { --ink: #fafafa; --ink-muted: #a3a3a3; --border: #2e2e2e; --rule: #3a3a3a; color: var(--ink); background: #171717; }
 .cta { padding-block: 112px 96px; }
 .cta-mark { display: block; width: 64px; height: 64px; margin-bottom: 56px; border-radius: 16px; }
-.cta-layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 80px; align-items: end; }
+.cta-layout { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 80px; align-items: start; }
 .cta h2 { max-width: 13ch; margin: 0; font-size: clamp(38px, 5.4vw, 76px); font-weight: 500; line-height: 0.98; letter-spacing: -0.045em; text-wrap: balance; }
 .cta p { max-width: 42ch; margin: 0; color: var(--ink-muted); font-size: 16.5px; line-height: 1.6; }
 .cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 26px; margin-top: 32px; }
@@ -229,6 +236,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
   .spec-wrap { padding: 40px 0 72px; }
   .cta { padding-block: 64px 56px; }
   .cta-mark { width: 48px; height: 48px; margin-bottom: 36px; border-radius: 12px; }
+  .btn-ghost { width: 100%; justify-content: center; }
   .cta-row { flex-direction: column; align-items: stretch; gap: 16px; }
   .footer { padding-block: 36px 32px; }
   .footer-nav { grid-template-columns: 1fr 1fr; }
@@ -385,6 +393,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
                   <code id="install-cmd-2"><span>$ </span>curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/install.sh | sh</code>
                   <button type="button" data-copy="install-cmd-2" aria-label="Copy the install command">Copy</button>
                 </div>
+                <p class="cmd-note">Paste it in Terminal. macOS 14+ · Apple silicon · Updates arrive in the app</p>
                 <a class="btn btn-ghost" href="https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg">Download for Mac</a>
                 <p class="cmd-note">The DMG needs a one-time OK in System Settings &rsaquo; Privacy &amp; Security &rsaquo; Open Anyway.</p>
               </div>

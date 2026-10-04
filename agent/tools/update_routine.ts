@@ -2,7 +2,18 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission, settle } from "../lib/permission.ts";
+import {
+  callerOf,
+  inAppGate,
+  mayActOn,
+  mayStillActOn,
+  notAvailable,
+  READ_ONLY_BLOCKED,
+  SELF_ONLY_HINT,
+  sessionPermission,
+  settle,
+} from "../lib/permission.ts";
+import { readShell } from "../../shared/shell-io.ts";
 import {
   isValidTimeZone,
   parseSchedules,
@@ -28,7 +39,7 @@ const schedule = z.object({
 
 export default defineTool({
   description:
-    "Edit one routine: rename it, change what it does, change when it runs, or pause and resume it with active. Every edit applies at once in Auto and Full access and is refused in Read only. Passing schedules replaces the whole list, so send every schedule the routine should keep. Call listRoutines first for the id and the current schedule.",
+    "Edit one routine, only when the owner asks: rename it, change its instruction or schedule, or pause and resume with active. Applies at once in Auto and Full access, refused in Read only. `schedules` replaces the whole list: send every schedule to keep. Call list_routines first for the id and current schedule.",
   inputSchema: z.object({
     routineId: z.string().min(1).max(120),
     name: z.string().min(1).max(80).optional(),
@@ -39,10 +50,14 @@ export default defineTool({
     timezone: z.string().max(80).optional(),
   }),
   async execute(input, ctx) {
+    const who = await callerOf(readShell(), ctx);
+    if (!who.ok) return who.result;
     const existing = readRoutine(input.routineId);
     if (!existing) {
-      return { status: "not_found", error: `no routine with id ${input.routineId}`, hint: "Call listRoutines." };
+      return { status: "not_found", error: `no routine with id ${input.routineId}`, hint: "Call list_routines." };
     }
+    // A routine resolves to its owner: a plain bot edits only its own.
+    if (!mayActOn(who.caller, existing.botId)) return notAvailable(SELF_ONLY_HINT);
     if (input.timezone !== undefined && !isValidTimeZone(input.timezone)) {
       return { status: "invalid", error: `${input.timezone} is not an IANA timezone` };
     }
@@ -93,7 +108,10 @@ export default defineTool({
     if (gate === "refuse") return READ_ONLY_BLOCKED;
     const rewrite = typeof patch.instruction === "string" && patch.instruction.trim() !== existing.instruction;
     const resume = patch.active === true && !existing.active;
-    if (!rewrite && !resume) return apply();
+    if (!rewrite && !resume) {
+      if (!mayStillActOn(who.caller.id, existing.botId)) return notAvailable(SELF_ONLY_HINT);
+      return apply();
+    }
 
     const reasons = [
       rewrite ? `running: ${clipPreview(String(patch.instruction))}` : "",
@@ -120,6 +138,7 @@ export default defineTool({
     return executeIfApproved(store, record.id, hash, () => {
       // The approval belongs to the revision on the card; a routine edited in
       // the meantime is not silently overwritten.
+      if (!mayStillActOn(who.caller.id, existing.botId)) return notAvailable(SELF_ONLY_HINT);
       const current = readRoutine(existing.id);
       if (!current) return { status: "not_found", error: `no routine with id ${existing.id}` };
       if (current.updatedAt !== existing.updatedAt) throw new Error("routine_changed");

@@ -9,6 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { statePath } from "./stack.ts";
 
 /**
  * MCP App widget payloads. The HTML bundle is too large for the transcript
@@ -29,7 +30,7 @@ const ID = /^[a-zA-Z0-9_-]{8,80}$/;
 
 export function widgetsDir(root = process.env.UB_WIDGETS_DIR): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/widgets");
+  return statePath("widgets");
 }
 
 function pathFor(id: string, dir = widgetsDir()): string {

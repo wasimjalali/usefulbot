@@ -1,9 +1,8 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { defineSandbox } from "eve/sandbox";
 import { justbash } from "eve/sandbox/just-bash";
 import { selectSandbox } from "../../shared/sandbox.ts";
 import { loadRuntimeConfig } from "../../shared/runtime.ts";
+import { routerConfigPath } from "../../shared/stack.ts";
 
 // The pin in the owner's runtime config is the source of truth, and the path
 // is resolved the way the router does it: UB_ROUTER_CONFIG, else
@@ -11,9 +10,7 @@ import { loadRuntimeConfig } from "../../shared/runtime.ts";
 // sniffing behaviour below.
 let pin: string | null = null;
 try {
-  pin = loadRuntimeConfig(
-    process.env.UB_ROUTER_CONFIG ?? join(homedir(), ".useful-bot/config.json"),
-  ).sandbox.backend;
+  pin = loadRuntimeConfig(routerConfigPath()).sandbox.backend;
 } catch {
   // No readable config: fall back to sniffing, as before.
 }
