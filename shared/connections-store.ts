@@ -315,6 +315,15 @@ function freeConnectionId(store: ConnectionsStore, base: string): string {
   throw new Error("connections_id");
 }
 
+/** Drop one row. True when there was one. */
+export function removeConnection(id: string, path = connectionsPath()): boolean {
+  return updateConnectionsStore((store) => {
+    const before = store.connections.length;
+    store.connections = store.connections.filter((item) => item.id !== id);
+    return store.connections.length < before;
+  }, path);
+}
+
 /**
  * Insert Excalidraw when the file has no row for that id or URL. Safe to
  * call on every setup; never overwrites an owner-edited row.

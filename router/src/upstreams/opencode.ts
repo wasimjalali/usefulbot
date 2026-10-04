@@ -65,6 +65,14 @@ export function upstreamConfigError(error: unknown): RouterError {
 
 const CLIENT_CONTROLLED_KEYS = new Set(["reasoning_effort", "service_tier"]);
 
+/**
+ * Local servers (LM Studio, Custom) only put usage in a stream's last chunk
+ * when asked. A Custom endpoint may reject the field, so a refusal is
+ * remembered per connection and model (memory only) and later calls skip it.
+ */
+const USAGE_OPTION_PROVIDERS = new Set(["lmstudio", "custom"]);
+const refusesStreamUsage = new Set<string>();
+
 const IMAGE_OMITTED = "[Attached image omitted: the selected model cannot see images.]";
 
 /**
@@ -253,7 +261,23 @@ export async function completeUpstream(input: {
       : {}),
     max_tokens: typeof payload.max_tokens === "number" ? Math.min(payload.max_tokens, outputCap) : outputCap,
   });
+  const usageKey = `${resolved.connection.id}:${model}`;
+  let askUsage = resolved.protocol === "openai-chat"
+    && USAGE_OPTION_PROVIDERS.has(resolved.providerId)
+    && payload.stream === true
+    && !refusesStreamUsage.has(usageKey);
+  let dropUsage = refusesStreamUsage.has(usageKey);
+  const bodyToSend = (): Record<string, unknown> => {
+    if (askUsage) {
+      const existing = forwarded.stream_options;
+      return { ...forwarded, stream_options: { ...(existing && typeof existing === "object" ? existing : {}), include_usage: true } };
+    }
+    if (!dropUsage) return forwarded;
+    const { stream_options: _dropped, ...rest } = forwarded;
+    return rest;
+  };
   const dispatch = (): Promise<Response> => {
+    const sendBody = bodyToSend();
     const auth = tokenFor(resolved.providerId, credential);
     const headers: Record<string, string> = {
       "content-type": "application/json",
@@ -276,7 +300,7 @@ export async function completeUpstream(input: {
         baseUrl: resolved.baseUrl,
         model,
         chatgpt: resolved.providerId === "openai",
-        body: forwarded,
+        body: sendBody,
         headers,
         signal: input.signal,
       });
@@ -285,7 +309,7 @@ export async function completeUpstream(input: {
       return postMessages({
         baseUrl: resolved.baseUrl,
         model,
-        body: forwarded,
+        body: sendBody,
         headers,
         signal: input.signal,
         // Top-level cache_control is Anthropic's own documented feature.
@@ -293,7 +317,7 @@ export async function completeUpstream(input: {
         fetchImpl,
       });
     }
-    return postChatCompletions({ baseUrl: resolved.baseUrl, body: forwarded, headers, signal: input.signal, fetchImpl });
+    return postChatCompletions({ baseUrl: resolved.baseUrl, body: sendBody, headers, signal: input.signal, fetchImpl });
   };
   let response = await dispatch();
   const answeredAt = Date.now();
@@ -313,6 +337,24 @@ export async function completeUpstream(input: {
       throw authFailed();
     }
     response = await dispatch();
+  }
+  // A server that rejects stream_options (400, or 422 from strict schema
+  // servers): log that attempt, ask without it once. It is remembered only
+  // when the retry works, so an unrelated 400 that echoes the field can't
+  // switch usage off for the rest of the process.
+  if (askUsage && (response.status === 400 || response.status === 422)) {
+    const text = await readPrefix(response.clone(), REFUSAL_BODY_BYTES);
+    if (text.includes("stream_options")) {
+      const refusedAt = Date.now();
+      input.onRefusedAttempt?.({ startedAt: timing.startedAt, firstByteAt: timing.firstByteAt ?? refusedAt, endedAt: refusedAt });
+      askUsage = false;
+      dropUsage = true;
+      try {
+        await response.body?.cancel();
+      } catch { /* the retry carries on regardless */ }
+      response = await dispatch();
+      if (response.status >= 200 && response.status < 300) refusesStreamUsage.add(usageKey);
+    }
   }
   if (response.status >= 200 && response.status < 300) {
     clearConnectionError(resolved.connection.id);

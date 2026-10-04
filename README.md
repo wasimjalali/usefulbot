@@ -188,7 +188,10 @@ Connectors let a bot act in the owner's apps (Gmail, Google Calendar, Slack,
 Notion, GitHub, Linear and the rest of Composio's catalogue). Open Connectors
 from the pill at the foot of the rail, paste a Composio API key once, then Add
 an app: the hosted sign-in opens in the browser and the app moves to Added when
-Composio reports the account active. Disconnect (in the Added menu) revokes it.
+Composio reports the account active. Added holds every connection, apps and MCP or
+OpenAPI servers alike, each with its logo and real state; clicking one opens its
+page inside the dialog with its tools and Disconnect (servers also get Refresh and
+Reconnect).
 
 Composio runs the OAuth app for most apps, and an app that takes an API key
 asks for it on the hosted page. A few dozen apps (TikTok, X, Spotify) have no
@@ -238,6 +241,17 @@ screen over the window (Done or Escape returns), and Open in Excalidraw
 exports it to excalidraw.com in the browser. The app's own tool calls go
 through `POST /api/connections/widget/[id]/call`, limited to tools the server
 marks for its app.
+
+An OAuth server is signed in with discovery, dynamic client registration, PKCE
+and an RFC 8707 resource indicator, sent exactly as the server's metadata names
+it. The connection counts as ready only once MCP initialize and tools/list
+succeeded; otherwise its card fails with a reason and Connectors shows the
+state (Needs sign-in, Sign-in expired, Can't reach server, Tools unreadable,
+Couldn't list tools). `GET /api/connections` lists them (no secrets),
+`POST` refreshes or reauthorizes one, `DELETE` removes it. `find_tools` names a
+server it couldn't search instead of finding nothing. Some vendors (Tella, as of
+2026-10-04) accept tokens only from their partner apps; their row stays at Needs
+sign-in.
 
 No MCP server's tools are mounted for every turn. An OpenAPI connection is,
 because eve owns spec parsing and there is no other way to reach one. Every

@@ -9,8 +9,30 @@ struct AppLogo: View {
     let name: String
     let url: String?
     var size: CGFloat = 28
+    /// A logo the server already holds as bytes; wins over `url`, and an unreadable one falls back to the monogram.
+    var data: Data? = nil
 
     @State private var image: NSImage?
+    /// The key of the bytes `image` was decoded from, so the task skips a decode already done in init.
+    @State private var decodedKey: String?
+
+    init(name: String, url: String?, size: CGFloat = 28, data: Data? = nil) {
+        self.name = name
+        self.url = url
+        self.size = size
+        self.data = data
+        // Built here, not in the task, so a tile that has the bytes never shows the monogram first.
+        _image = State(initialValue: data.flatMap { NSImage(data: $0) })
+        _decodedKey = State(initialValue: data.map(Self.dataKey))
+    }
+
+    private static func dataKey(_ data: Data) -> String {
+        let head = data.prefix(16).map { String($0, radix: 16) }.joined()
+        let tail = data.suffix(16).map { String($0, radix: 16) }.joined()
+        // A cheap checksum of every 64th byte, so same-size icons that share both ends still differ.
+        let sampled = stride(from: 0, to: data.count, by: 64).reduce(UInt32(0)) { ($0 &* 31) &+ UInt32(data[data.startIndex + $1]) }
+        return "\(data.count):\(head):\(tail):\(sampled)"
+    }
 
     var body: some View {
         Group {
@@ -25,8 +47,17 @@ struct AppLogo: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous))
         .accessibilityHidden(true)
-        .task(id: url) {
-            image = await LogoCache.shared.image(for: url)
+        // Keyed on the byte count and a short prefix: hashing the whole icon on every body pass is wasted work.
+        .task(id: "\(url ?? "")|\(data.map(Self.dataKey) ?? "")") {
+            if let data {
+                let key = Self.dataKey(data)
+                if decodedKey != key {
+                    image = NSImage(data: data)
+                    decodedKey = key
+                }
+            } else {
+                image = await LogoCache.shared.image(for: url)
+            }
         }
     }
 

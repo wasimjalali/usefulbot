@@ -62,8 +62,8 @@ public enum BackendError: Error, LocalizedError, Equatable {
             return "The server refused the request (\(code))."
         case .http(let status):
             // A status code is not an answer. The ones a send can actually
-            // meet get said in words; the rest keep the number, which is at
-            // least something to search for.
+            // meet get said in words, and the rest say it plainly too: a bare
+            // number told the owner nothing they could act on.
             switch status {
             case 409:
                 // Busy session, a replayed request and a stale revision all
@@ -77,8 +77,14 @@ public enum BackendError: Error, LocalizedError, Equatable {
                 return "The router refused this: either too many requests just now, or the daily token limit is used up."
             case 502, 503, 504:
                 return "The local server could not complete this request."
+            case 401:
+                return "The local server rejected the device token."
+            case 403:
+                return "The local server refused it."
+            case 400:
+                return "The local server couldn't accept it."
             default:
-                return "The local server answered with status \(status)."
+                return "The local server couldn't take it right now."
             }
         case .decoding:
             return "The local server sent data this app could not read."
@@ -197,6 +203,7 @@ private struct ProvidersResponse: Decodable {
 }
 private struct ProvidersErrorResponse: Decodable { let error: String?; let message: String? }
 private struct ApprovalsResponse: Decodable { let approvals: [ApprovalItem] }
+private struct ConnectionRefreshAnswer: Decodable { let connection: DirectConnection }
 private struct ConnectorAuthorizeResponse: Decodable {
     let ok: Bool?
     let redirectUrl: String?
@@ -1043,6 +1050,24 @@ public actor BackendClient {
         return decoded
     }
 
+    /// The tools one connected app offers, for the detail view.
+    public func connectorTools(toolkit: String) async throws -> [DirectConnectionTool] {
+        let (data, response) = try await perform { client, _ in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/connectors/tools"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [URLQueryItem(name: "toolkit", value: toolkit)]
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(ConnectorToolsPayload.self, from: data) else {
+            throw BackendError.decoding
+        }
+        return decoded.tools
+    }
+
     /// Stores the Composio key on the Mac. Pass nil to remove it.
     public func setConnectorsKey(_ key: String?) async throws {
         try await connectorsWrite(method: "PUT", body: ["apiKey": key ?? NSNull()])
@@ -1114,6 +1139,47 @@ public actor BackendClient {
             throw Self.failure(status: http.statusCode, code: decoded?.error, fallback: "connectors_failed", typed: BackendError.provider)
         }
         return data
+    }
+
+    // MARK: - Direct connections
+
+    /// The direct MCP and OpenAPI connections, with their state and tools.
+    public func directConnections() async throws -> [DirectConnection] {
+        let (data, response) = try await perform { client, _ in
+            URLRequest(url: client.base.appendingPathComponent("api/connections"))
+        }
+        try Self.expectOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(DirectConnectionsPayload.self, from: data) else {
+            throw BackendError.decoding
+        }
+        return decoded.connections
+    }
+
+    /// Re-lists one connection's tools and answers with its new row.
+    public func refreshDirectConnection(id: String) async throws -> DirectConnection {
+        let data = try await connectorsWrite(
+            path: "api/connections", method: "POST", body: ["id": id, "action": "refresh"]
+        )
+        guard let decoded = try? JSONDecoder().decode(ConnectionRefreshAnswer.self, from: data) else {
+            throw BackendError.decoding
+        }
+        return decoded.connection
+    }
+
+    /// Starts a fresh sign-in for one OAuth connection.
+    public func reauthorizeDirectConnection(id: String) async throws -> ConnectionReauthorize {
+        let data = try await connectorsWrite(
+            path: "api/connections", method: "POST", body: ["id": id, "action": "reauthorize"]
+        )
+        guard let decoded = try? JSONDecoder().decode(ConnectionReauthorize.self, from: data),
+              !decoded.authorizeUrl.isEmpty else {
+            throw BackendError.decoding
+        }
+        return decoded
+    }
+
+    public func removeDirectConnection(id: String) async throws {
+        _ = try await connectorsWrite(path: "api/connections", method: "DELETE", body: ["id": id])
     }
 
     /// Observed token traffic for the settings Usage tab.

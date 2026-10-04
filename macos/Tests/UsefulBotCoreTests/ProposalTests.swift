@@ -112,7 +112,7 @@ import Testing
 
     @Test func decodesAConnectAppProposalInEveryPhase() throws {
         let cases: [(String, Proposal.ConnectPhase)] = [
-            ("proposed", .proposed), ("waiting", .waiting), ("connected", .connected), ("expired", .expired), ("bogus", .proposed),
+            ("proposed", .proposed), ("waiting", .waiting), ("connected", .connected), ("expired", .expired), ("bogus", .unknown),
         ]
         for (raw, expected) in cases {
             let proposal = try decode("""
@@ -144,6 +144,54 @@ import Testing
         let action = try #require(ProposalActions.confirm(proposal))
         #expect(action["type"] as? String == "connectServer")
         #expect(action["connectionId"] as? String == "excalidraw")
+    }
+
+    @Test func aFailedServerCardIsFailedWithItsReasonNotProposed() throws {
+        let reasons: [(String, Proposal.ConnectFailure, String)] = [
+            ("auth_failed", .authFailed, "Signed in, but the server refused access."),
+            ("expired", .expired, "The sign-in expired."),
+            ("unreachable", .unreachable, "Couldn't reach the server."),
+            ("malformed", .malformed, "The server's tools couldn't be read."),
+            ("discovery_failed", .discoveryFailed, "Couldn't list the server's tools."),
+        ]
+        for (raw, reason, line) in reasons {
+            let proposal = try decode("""
+            {"id":"p8","kind":"connectServer","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+             "connectionId":"tella","name":"Tella","urlHost":"api.tella.com","authKind":"oauth",
+             "phase":"failed","reason":"\(raw)"}
+            """)
+            #expect(proposal.phase == .failed)
+            #expect(proposal.reason == reason)
+            #expect(proposal.isOpen())
+            #expect(Proposal.ConnectFailure.line(for: proposal.reason) == line)
+            // Try again is the normal confirm action.
+            let action = try #require(ProposalActions.confirm(proposal))
+            #expect(action["type"] as? String == "connectServer")
+        }
+    }
+
+    @Test func aFailedCardWithAnUnknownReasonStillFails() throws {
+        let proposal = try decode("""
+        {"id":"p9","kind":"connectServer","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+         "connectionId":"tella","phase":"failed","reason":"from_the_future"}
+        """)
+        #expect(proposal.phase == .failed)
+        #expect(proposal.reason == nil)
+        #expect(Proposal.ConnectFailure.line(for: proposal.reason) == "The connection failed.")
+    }
+
+    @Test func connectedToolsLine() throws {
+        func line(_ phase: String, _ count: String) throws -> String? {
+            try decode("""
+            {"id":"p10","kind":"connectServer","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+             "connectionId":"x","phase":"\(phase)","toolCount":\(count)}
+            """).connectedToolsLine
+        }
+        #expect(try line("connected", "0") == "Connected, no tools")
+        #expect(try line("connected", "1") == "1 tool")
+        #expect(try line("connected", "5") == "5 tools")
+        #expect(try line("connected", "null") == nil)
+        #expect(try line("failed", "0") == nil)
     }
 
     @Test func serverRedirectsFailClosedWithoutAStoredHost() {
@@ -182,5 +230,35 @@ import Testing
             kind: .connectApp,
             expectedHost: nil
         ))
+    }
+
+    @Test func aTappedConnectCardKeepsItsBusyMarkForTenSecondsAfterItsRequestReturnsInAnyPhase() throws {
+        let tap = Date(timeIntervalSince1970: 1_000)
+        func card(_ phase: String, waitingSince: String? = nil) throws -> Proposal {
+            let since = waitingSince.map { "\"\($0)\"" } ?? "null"
+            return try decode("""
+            {"id":"c1","kind":"connectServer","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
+             "phase":"\(phase)","waitingSince":\(since),"name":"Tella","url":"https://api.tella.com/mcp"}
+            """)
+        }
+        // Left in proposed after a refused redirect: buttons come back after 10 s.
+        let proposed = try card("proposed")
+        #expect(proposed.busyMarkHolds(tapPhase: .proposed, tapWaitingSince: nil, requestFinishedAt: tap, now: tap.addingTimeInterval(5)))
+        #expect(!proposed.busyMarkHolds(tapPhase: .proposed, tapWaitingSince: nil, requestFinishedAt: tap, now: tap.addingTimeInterval(10)))
+        // Waiting and failed cards are settled as soon as they move on, or after 10 s.
+        let waiting = try card("waiting", waitingSince: "2026-10-04T10:00:00.000Z")
+        #expect(waiting.busyMarkHolds(tapPhase: .waiting, tapWaitingSince: "2026-10-04T10:00:00.000Z", requestFinishedAt: tap, now: tap.addingTimeInterval(5)))
+        #expect(!waiting.busyMarkHolds(tapPhase: .waiting, tapWaitingSince: "2026-10-04T09:00:00.000Z", requestFinishedAt: tap, now: tap.addingTimeInterval(5)))
+        #expect(!waiting.busyMarkHolds(tapPhase: .failed, tapWaitingSince: "2026-10-04T10:00:00.000Z", requestFinishedAt: tap, now: tap.addingTimeInterval(5)))
+        #expect(!waiting.busyMarkHolds(tapPhase: .waiting, tapWaitingSince: "2026-10-04T10:00:00.000Z", requestFinishedAt: tap, now: tap.addingTimeInterval(11)))
+        // A request that has not returned yet keeps the mark however long it takes:
+        // the cap runs from when the request finished, not from the tap.
+        #expect(proposed.busyMarkHolds(tapPhase: .proposed, tapWaitingSince: nil, requestFinishedAt: nil, now: tap.addingTimeInterval(60)))
+        #expect(waiting.busyMarkHolds(tapPhase: .waiting, tapWaitingSince: "2026-10-04T10:00:00.000Z", requestFinishedAt: nil, now: tap.addingTimeInterval(60)))
+        // A card that is not a connect card has no tap record to cap it.
+        let other = try decode("""
+        {"id":"p9","kind":"createBot","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z","name":"Old"}
+        """)
+        #expect(other.busyMarkHolds(tapPhase: .proposed, tapWaitingSince: nil, requestFinishedAt: tap, now: tap.addingTimeInterval(60)))
     }
 }

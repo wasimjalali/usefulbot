@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 
 /**
  * SSRF-facing URL rules for owner-approved MCP and OpenAPI servers, and for
@@ -135,30 +136,96 @@ export function assertPublicHttpsUrl(raw: string): string {
   return href;
 }
 
-type LookupFn = (hostname: string) => Promise<string>;
+/** What a lookup answers: one address, or every address the name has. */
+type LookupFn = (hostname: string) => Promise<string | string[]>;
 let injectedLookup: LookupFn | null = null;
 
 export function setConnectionLookup(next: LookupFn | null): void {
   injectedLookup = next;
 }
 
+/** The eight 16-bit groups of an IPv6 address, or null when it is not one. */
+function v6Groups(address: string): number[] | null {
+  let text = address.split("%")[0];
+  // A dotted v4 tail (`::ffff:10.0.0.4`) is two groups.
+  const tail = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text)?.[1];
+  if (tail) {
+    const m = V4.exec(tail);
+    const bytes = m ? m.slice(1).map(octet) : [];
+    if (bytes.length !== 4 || bytes.some((byte) => byte === null)) return null;
+    const [a, b, c, d] = bytes as number[];
+    text = `${text.slice(0, text.length - tail.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const rest = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = 8 - head.length - rest.length;
+  if (halves.length === 2 ? fill < 1 : fill !== 0) return null;
+  const parts = [...head, ...Array(halves.length === 2 ? fill : 0).fill("0"), ...rest];
+  const groups = parts.map((part) => (/^[0-9a-f]{1,4}$/i.test(part) ? parseInt(part, 16) : NaN));
+  return groups.length === 8 && groups.every((group) => Number.isInteger(group)) ? groups : null;
+}
+
+function v4OfGroups(high: number, low: number): string {
+  return `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+}
+
+/**
+ * Whether an address a name resolved to is one this app must not call: the v4
+ * ranges `isBlockedV4` knows plus loopback, and for v6 the unspecified,
+ * loopback, link-local, site-local, unique-local and multicast ranges and any
+ * v6 form that carries a v4 address (mapped, compatible, NAT64, 6to4), judged
+ * by the v4 inside. An address that is not an address is refused.
+ */
+function isBlockedAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) return address === "127.0.0.1" || isBlockedV4(address);
+  if (family !== 6) return true;
+  const g = v6Groups(address);
+  if (!g) return true;
+  const inner = (high: number, low: number) => isBlockedAddress(v4OfGroups(high, low));
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return inner(g[6], g[7]);
+  // ::, ::1 and the deprecated v4-compatible ::a.b.c.d, which is all of ::/96.
+  if (g.slice(0, 6).every((x) => x === 0)) return true;
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return inner(g[6], g[7]);
+  if (g[0] === 0x2002) return inner(g[1], g[2]);
+  if ((g[0] & 0xffc0) === 0xfe80) return true; // link-local
+  if ((g[0] & 0xffc0) === 0xfec0) return true; // site-local
+  if ((g[0] & 0xfe00) === 0xfc00) return true; // unique-local
+  if ((g[0] & 0xff00) === 0xff00) return true; // multicast
+  return false;
+}
+
 /**
  * Resolve the host and refuse private, link-local, metadata and loopback
  * answers. Call this before every network fetch of a public URL.
+ *
+ * Every answer in both families is judged, and one that is private refuses
+ * the host: a name with a public address and a private one beside it is how a
+ * rebinding or split-horizon record gets past a check of the first answer.
+ *
+ * Not closed: the fetch that follows resolves the name again, so a record that
+ * changes between this check and that connection is not caught. Closing it
+ * means connecting to the address checked here (a dispatcher whose lookup
+ * returns only it). `undici` is not a dependency of this repo, only of eve
+ * (8.x) and a few packages (7.x), and every fetch site would have to carry the
+ * dispatcher, so the window stays until that is wired.
  */
 export async function assertResolvedPublic(raw: string): Promise<string> {
   const href = assertConnectionUrl(raw);
   const host = new URL(href).hostname.toLowerCase();
   if (host === "127.0.0.1") return href;
-  let address: string;
+  let answers: string[];
   try {
-    address = injectedLookup
+    const found = injectedLookup
       ? await injectedLookup(host)
-      : (await lookup(host, { family: 4 })).address;
+      : (await lookup(host, { all: true })).map((item) => item.address);
+    answers = Array.isArray(found) ? found : [found];
   } catch {
     throw new ConnectionUrlError("url_resolve");
   }
-  if (address.includes(":")) throw new ConnectionUrlError("url_host");
-  if (address === "127.0.0.1" || isBlockedV4(address)) throw new ConnectionUrlError("url_resolved");
+  if (answers.length === 0) throw new ConnectionUrlError("url_resolve");
+  if (answers.some(isBlockedAddress)) throw new ConnectionUrlError("url_resolved");
   return href;
 }

@@ -52,6 +52,9 @@ function primitive(type: string): z.ZodTypeAny | null {
 
 function convert(node: unknown, depth: number): z.ZodTypeAny | null {
   if (depth > MAX_DEPTH) return null;
+  // A boolean is a schema: `true` accepts anything, `false` accepts nothing.
+  if (node === true) return z.unknown();
+  if (node === false) return z.never();
   const rec = asRecord(node);
   if (!rec) return null;
 

@@ -1,20 +1,25 @@
 import { defineDynamic, defineTool } from "eve/tools";
 import { z } from "zod";
-import { connectionHeaders } from "../../shared/connection-auth.ts";
+import { connectionHeaders, OAuthExpiredError } from "../../shared/connection-auth.ts";
 import {
   activateSessionTools,
   mountedDescription,
   mountedToolName,
+  nextStamp,
   readConnectionToolsStore,
 } from "../../shared/connection-tools-store.ts";
 import {
+  findConnectionTools,
+  markConnectionAuthFailed,
+  markConnectionExpired,
   onDemandConnections,
-  searchConnectionTools,
+  refreshBeforeMount,
   selectMountedTools,
+  splitMountedName,
 } from "../../shared/connection-tools.ts";
 import { findConnectionById } from "../../shared/connections-store.ts";
 import { toolInputSchema } from "../../shared/json-schema-zod.ts";
-import { callMcpTool } from "../../shared/mcp-http.ts";
+import { callMcpTool, McpError } from "../../shared/mcp-http.ts";
 import { MAX_SESSION_TOOLS } from "../../shared/policy.ts";
 import { wrapUntrusted } from "../../shared/untrusted.ts";
 import { mcpToolGate, mcpToolRisk } from "../lib/connector-risk.ts";
@@ -77,9 +82,25 @@ export default defineDynamic({
             markOutside(toolCtx);
             const id = toolCtx.session?.id ?? "";
             if (!id) return { status: "blocked", error: "no_session" };
-            const hits = await searchConnectionTools(input.query, MAX_HITS);
+            const { hits, unavailable } = await findConnectionTools(input.query, MAX_HITS);
+            // Said per server, so "found nothing" is never what a sign-in that
+            // ran out or a server that is down looks like. What the healthy
+            // servers had still comes back below.
+            const down = unavailable.length
+              ? {
+                unavailable: unavailable.map((item) => ({ server: item.server, state: item.state, hint: item.hint })),
+              }
+              : {};
             if (hits.length === 0) {
-              return { status: "ok", found: 0, tools: [], note: "No connected server has a tool like that." };
+              return {
+                status: "ok",
+                found: 0,
+                tools: [],
+                ...down,
+                note: unavailable.length
+                  ? "No tool found, and some connected servers could not be searched."
+                  : "No connected server has a tool like that.",
+              };
             }
             const outcome = activateSessionTools(
               id,
@@ -96,6 +117,7 @@ export default defineDynamic({
             return {
               status: "ok",
               found: hits.length,
+              ...down,
               // Named so the model can call them by name on its next step.
               tools: hits
                 .filter((hit) => !outcome.refused.includes(hit.name))
@@ -126,9 +148,21 @@ export default defineDynamic({
       // activation was for the listing then, and a server that republished
       // fatter schemas since would otherwise walk the mounted set past the
       // router's byte wall with no call from the model at all.
-      const picks = selectMountedTools(store?.sessions[sessionId]?.tools ?? [], {
-        connection: findConnectionById,
-        indexed: (connectionId, tool) => store?.index[connectionId]?.tools.find((item) => item.name === tool),
+      //
+      // And the index is looked at again first for a connection this process
+      // has not listed yet: what was saved may be from before a restart, and a
+      // resumed bot would otherwise keep calling tools the server has dropped.
+      const saved = store?.sessions[sessionId]?.tools ?? [];
+      const blocked = saved.length > 0
+        ? await refreshBeforeMount(
+          saved.map((name) => splitMountedName(name)?.connectionId).filter((id): id is string => id !== undefined),
+        )
+        : new Set<string>();
+      // Read again: the check above may have rewritten it.
+      const fresh = saved.length > 0 ? readConnectionToolsStore() : store;
+      const picks = selectMountedTools(saved, {
+        connection: (connectionId) => (blocked.has(connectionId) ? null : findConnectionById(connectionId)),
+        indexed: (connectionId, tool) => fresh?.index[connectionId]?.tools.find((item) => item.name === tool),
       });
       for (const { split, entry, indexed } of picks) {
         const { schema } = toolInputSchema(indexed.inputSchema);
@@ -223,6 +257,10 @@ export default defineDynamic({
               return { status: "blocked", error: "tool_not_allowed", connection: connectionId };
             }
             let headers: Record<string, string> = {};
+            // Stamped as the call begins: a refusal that comes back after the
+            // owner reconnected is about the old credential, and the store
+            // keeps the newer answer.
+            const callStamp = nextStamp();
             try {
               headers = await connectionHeaders(current);
               const raw = await callMcpTool(url, toolName, args, headers);
@@ -239,6 +277,41 @@ export default defineDynamic({
                 result: wrapUntrusted(`connection:${connectionId}/${toolName}`, text),
               };
             } catch (err) {
+              // The server refused the credential (revoked, rotated, or a
+              // token that is still in date but no longer good): the owner's
+              // to renew too, and recorded the same way, so the tool is not
+              // offered again as working.
+              if (err instanceof McpError && err.kind === "auth") {
+                try {
+                  markConnectionAuthFailed(connectionId, err.status, callStamp);
+                } catch (writeErr) {
+                  console.warn(`[useful-bot] connection ${connectionId} refused credential could not be recorded: ${writeErr instanceof Error ? writeErr.message : "unknown"}`);
+                }
+                return {
+                  status: "blocked",
+                  error: "auth_failed",
+                  connection: connectionId,
+                  hint: `Ask the owner to reconnect ${connectionName.replace(/[\r\n]+/g, " ").trim()} in Connectors.`,
+                };
+              }
+              // A sign-in that ran out is the owner's to renew, and the bot
+              // can say so rather than relay an opaque failure.
+              if (err instanceof OAuthExpiredError) {
+                // Said where the Connectors page and the next search read it
+                // too, not only to this call: the tool is not offered again
+                // as working until the owner signs in.
+                try {
+                  markConnectionExpired(connectionId, callStamp);
+                } catch (writeErr) {
+                  console.warn(`[useful-bot] connection ${connectionId} expired sign-in could not be recorded: ${writeErr instanceof Error ? writeErr.message : "unknown"}`);
+                }
+                return {
+                  status: "blocked",
+                  error: "oauth_expired",
+                  connection: connectionId,
+                  hint: `Ask the owner to reconnect ${connectionName.replace(/[\r\n]+/g, " ").trim()} in Connectors.`,
+                };
+              }
               // The server's words, never the headers that reached it: a
               // server can echo the credential it was sent back in an error.
               let message = err instanceof Error ? err.message : "failed";

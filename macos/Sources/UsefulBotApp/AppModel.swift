@@ -140,6 +140,9 @@ final class AppModel: ObservableObject {
     /// Proposals waiting on the owner for the open thread.
     @Published private(set) var proposals: [Proposal] = []
     @Published private(set) var busyProposals: Set<String> = []
+    /// What a connect card looked like when its button was tapped, so busy
+    /// clears only once the card has moved on (or a short cap after the request returned).
+    private var proposalTapState: [String: (phase: Proposal.ConnectPhase, waitingSince: String?, requestFinishedAt: Date?)] = [:]
     @Published private(set) var operatorName = "Desktop owner"
     @Published private(set) var operatorInitials = "DO"
     /// The selected bot's own model chip. Never another bot's: every read and
@@ -283,6 +286,23 @@ final class AppModel: ObservableObject {
     /// The dialog's live search, so a poll started earlier reloads what is on screen.
     @Published var connectorSearch = ""
     private var connectorPoll: Task<Void, Never>?
+    /// Direct MCP and OpenAPI connections, shown above the catalogue.
+    @Published private(set) var directConnections: [DirectConnection] = []
+    @Published private(set) var directConnectionBusy: Set<String> = []
+    @Published var directConnectionsError: String?
+    private var directConnectionPoll: Task<Void, Never>?
+    /// Which poll owns `directConnectionPoll`, so a finished or cancelled task
+    /// never clears a newer one's handle.
+    private var directConnectionPollId = 0
+    /// True from the Connectors dialog's first load until it closes; a load
+    /// still in flight after that starts no poll.
+    private var directConnectionsOpen = false
+    private var directLoadSeq = 0
+    private var directLoadApplied = 0
+    private var quietLoadFailures = 0
+    /// True while the running directConnectionPoll is the sign-in one.
+    private var directConnectionPollIsSignIn = false
+    private static let directLoadFailedCopy = "Couldn't load servers."
     private static let connectorUpstreamError = "Composio did not answer. Try again in a moment."
     private static let connectorKeyRejected = "Composio rejected this key. Remove it and paste a fresh one from platform.composio.dev."
     private static let connectorLoadErrors: Set<String> = [
@@ -621,6 +641,26 @@ final class AppModel: ObservableObject {
     /// left. The composer was cleared when the turn was committed, so the text
     /// and its files wait here and go back when that chat is opened again.
     private var unsentDrafts: [String: (text: String, attachments: [Attachment])] = [:]
+    /// Messages the server refused before eve took the turn, per bot. Kept
+    /// here and on disk because eve never stored them: the failed bubble they
+    /// draw has to survive a reload, a chat switch and a relaunch.
+    private var unsentLists: [String: UnsentList] = [:]
+    private let unsentStore: UnsentStore = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return UnsentStore(directory: AppVariant.current.appSupportDirectory(support: base)
+            .appendingPathComponent("Unsent Messages", isDirectory: true))
+    }()
+    /// The optimistic rows of refused sends. The failed bubble replaces each
+    /// one, so the projection's copy stays out of the transcript.
+    private var refusedOptimisticIds = Set<String>()
+    /// The refused message each bot is resending right now, by bot. It stays
+    /// in the list and on disk until the server takes the turn; the transcript
+    /// just hides its bubble so the resend shows once.
+    private var retryingUnsent: [String: String] = [:]
+    /// The optimistic row of the resend in flight, per bot: hidden again when
+    /// the resend ends without delivery, so it never sits beside the restored
+    /// failed bubble.
+    private var retryingOptimisticIds: [String: String] = [:]
     private var started = false
     /// Rebuilding the transcript on every streamed event re-parses markdown
     /// for every row; the replay of a long session contains thousands of
@@ -1672,9 +1712,23 @@ final class AppModel: ObservableObject {
         // Open cards keep their busy mark, except a connect card the poll now
         // renders in Waiting: its Authorize or Reopen was applied, so the mark
         // has done its job.
-        let live = Set(proposals.filter { $0.isOpen() && !(($0.kind == .connectApp || $0.kind == .connectServer) && $0.phase == .waiting) }.map(\.id))
+        // A failed card is settled too: Try again was applied and the card is
+        // failed again, so both buttons must come back.
+        // A connect card's mark is capped at 10 s in any phase, counted from
+        // when its confirm request returned (a slow request keeps its mark
+        // until it does), and a waiting or failed one is settled sooner when
+        // it differs from what it was at tap time (another phase, or a newer
+        // waitingSince), so a busy mark can never stick (a card left proposed
+        // after a refused redirect included).
+        let live = Set(proposals.filter { card in
+            guard card.isOpen() else { return false }
+            guard card.kind == .connectApp || card.kind == .connectServer else { return true }
+            guard let tap = proposalTapState[card.id] else { return false }
+            return card.busyMarkHolds(tapPhase: tap.phase, tapWaitingSince: tap.waitingSince, requestFinishedAt: tap.requestFinishedAt)
+        }.map(\.id))
         let next = busyProposals.intersection(live)
         if next != busyProposals { busyProposals = next }
+        proposalTapState = proposalTapState.filter { next.contains($0.key) }
     }
 
     func refreshComposer() async {
@@ -1774,9 +1828,212 @@ final class AppModel: ObservableObject {
         return text
     }
 
+    // MARK: - Refused sends
+
+    private func unsentList(for botId: String) -> UnsentList {
+        if let held = unsentLists[botId] { return held }
+        let loaded = UnsentList(unsentStore.load(botId: botId))
+        unsentLists[botId] = loaded
+        return loaded
+    }
+
+    /// Writes the list to disk, then holds it in memory. A failed write keeps
+    /// the previous list and says so in the composer note; `force` is for a
+    /// removal the server already made true (a delivered Retry): it tries the
+    /// write once more, logs a second failure and holds the new list anyway,
+    /// so a delivered message never shows as unsent.
+    @discardableResult
+    private func setUnsent(_ list: UnsentList, botId: String, force: Bool = false) -> Bool {
+        var saved = true
+        do {
+            try unsentStore.save(list.items, botId: botId)
+        } catch {
+            NSLog("Useful Bot: could not save unsent messages: \(error.localizedDescription)")
+            saved = false
+            if force {
+                do {
+                    try unsentStore.save(list.items, botId: botId)
+                    saved = true
+                } catch {
+                    NSLog("Useful Bot: could not save unsent messages on the second try: \(error.localizedDescription)")
+                }
+            }
+        }
+        if saved || force {
+            unsentLists[botId] = list
+        } else {
+            recordSendError(botId, "Couldn't save the unsent message on this Mac.", resendable: false, survivesReload: true)
+        }
+        if selectedBotId == botId { rebuildTranscript() }
+        return saved || force
+    }
+
+    private func recordUnsent(_ message: UnsentMessage, botId: String, hiding optimisticId: String) -> Bool {
+        var list = unsentList(for: botId)
+        list.add(message)
+        guard setUnsent(list, botId: botId) else {
+            // The composer takes a selected bot's message back. Another bot's
+            // stays on its bubble in memory until the app quits, and its text
+            // also waits in `unsentDrafts`, so it is never silently lost.
+            if selectedBotId != botId {
+                unsentLists[botId] = list
+                refusedOptimisticIds.insert(optimisticId)
+            }
+            return false
+        }
+        refusedOptimisticIds.insert(optimisticId)
+        if selectedBotId == botId { rebuildTranscript() }
+        return true
+    }
+
+    /// A refused message resent from its bubble and refused again: the same
+    /// entry comes back with the new reason, never a second one.
+    /// Returns whether the new reason was saved.
+    private func refuseAgain(_ id: String, reason: String, botId: String, hiding optimisticId: String) -> Bool {
+        // Keyed on this attempt's own row: two Retries of the same message
+        // share its id, and a late answer to the older must not end the newer.
+        if retryingOptimisticIds[botId] == optimisticId {
+            retryingUnsent[botId] = nil
+            retryingOptimisticIds[botId] = nil
+        }
+        var list = unsentList(for: botId)
+        guard var item = list.item(id) else {
+            if selectedBotId == botId { rebuildTranscript() }
+            return true
+        }
+        item.reason = reason
+        list.replace(item)
+        refusedOptimisticIds.insert(optimisticId)
+        return setUnsent(list, botId: botId)
+    }
+
+    /// The server took a resent message: it is no longer unsent.
+    private func completeUnsentRetry(_ id: String, botId: String, attempt optimisticId: String) {
+        // A stopped resend can still land late: it only clears the retry
+        // state when that state is still its own attempt's, not a newer
+        // Retry's (two Retries of one message share its id, so the attempt's
+        // own optimistic row is the key).
+        if retryingOptimisticIds[botId] == optimisticId {
+            retryingUnsent[botId] = nil
+            retryingOptimisticIds[botId] = nil
+        }
+        var list = unsentList(for: botId)
+        list.remove(id)
+        setUnsent(list, botId: botId, force: true)
+    }
+
+    /// A resend that ended without the server taking the turn: the bubble is
+    /// the same item again.
+    private func endUnsentRetry(botId: String) {
+        guard retryingUnsent.removeValue(forKey: botId) != nil else { return }
+        if let optimisticId = retryingOptimisticIds.removeValue(forKey: botId) {
+            refusedOptimisticIds.insert(optimisticId)
+        }
+        if selectedBotId == botId { rebuildTranscript() }
+    }
+
+    /// New Chat and delete: the bot's refused messages go with its chat.
+    private func clearUnsent(botId: String) {
+        retryingUnsent[botId] = nil
+        retryingOptimisticIds[botId] = nil
+        unsentLists[botId] = UnsentList()
+        unsentStore.clear(botId: botId)
+    }
+
+    /// The open chat's refused messages, for the transcript. One being
+    /// resent is hidden: its resend is on screen as the optimistic row.
+    private var openUnsent: [UnsentMessage] {
+        guard let botId = selectedBotId else { return [] }
+        let hidden = retryingUnsent[botId]
+        return unsentList(for: botId).items.filter { $0.id != hidden }
+    }
+
+    /// Whether Edit may take the message into the composer right now.
+    var canEditUnsent: Bool {
+        UnsentMessage.canEdit(draft: draft, attachmentCount: attachments.count)
+    }
+
+    /// The held files with their bytes. Images are read back from the sent
+    /// image store; one that is gone stops the action with a note rather
+    /// than going out without it.
+    /// `skippingMissingFiles` is Edit: a file whose body was never saved is
+    /// left out and named in a note, since the owner can attach it again.
+    /// Retry cannot send without it, so it stops there.
+    private func heldFiles(of message: UnsentMessage, botId: String, skippingMissingFiles: Bool = false) -> [Attachment]? {
+        var out: [Attachment] = []
+        var missing: [String] = []
+        defer {
+            if !missing.isEmpty {
+                attachError = missing.count == 1
+                    ? "\(missing[0]) has to be attached again."
+                    : "\(missing.joined(separator: ", ")) have to be attached again."
+            }
+        }
+        for file in message.files {
+            switch UnsentMessage.heldState(of: file) {
+            case .ready:
+                out.append(file)
+            case .restoreImage:
+                guard let restored = SentImageStore.restored(file, botId: botId) else {
+                    attachError = "A picture from this message is no longer on this Mac."
+                    return nil
+                }
+                out.append(restored)
+            case .attachAgain:
+                missing.append(file.name)
+                if !skippingMissingFiles { return nil }
+            }
+        }
+        return out
+    }
+
+    /// Send a refused message again. It stays saved until the server takes
+    /// the turn; if that fails too, the same bubble comes back.
+    func retryUnsent(_ id: String) {
+        guard !pending, let botId = selectedBotId, let item = unsentList(for: botId).item(id),
+              let files = heldFiles(of: item, botId: botId) else { return }
+        send(item.message, retrying: false, keepsComposer: true, files: files, rawDraft: item.draft, retryingUnsentId: id)
+    }
+
+    /// Discard a refused message the owner no longer wants.
+    func dismissUnsent(_ id: String) {
+        guard let botId = selectedBotId, retryingUnsent[botId] != id else { return }
+        var list = unsentList(for: botId)
+        guard list.item(id) != nil else { return }
+        list.remove(id)
+        setUnsent(list, botId: botId)
+    }
+
+    /// Take a refused message back into the composer, which has to be empty.
+    func editUnsent(_ id: String) {
+        guard let botId = selectedBotId else { return }
+        var list = unsentList(for: botId)
+        guard let item = list.item(id), canEditUnsent,
+              let files = heldFiles(of: item, botId: botId, skippingMissingFiles: true),
+              list.edit(id, draft: draft, attachmentCount: attachments.count) != nil,
+              setUnsent(list, botId: botId) else { return }
+        draft = item.draft
+        draftWriteToken &+= 1
+        attachments = files
+        if let quote = item.quote, replyQuotes[botId] == nil {
+            replyQuotes[botId] = ReplyQuote(botId: quote.botId, text: quote.text, author: quote.author)
+        }
+    }
+
     /// `retrying` resends a message the composer does not hold, so it must not
     /// consume the draft or the files waiting there.
-    private func send(_ text: String, retrying: Bool, freshSession: Bool = false, keepsComposer: Bool = false) {
+    ///
+    /// `files` and `rawDraft` are for a refused message sent again from its
+    /// failed bubble: the composer holds neither, so they come with it.
+    private func send(
+        _ text: String,
+        retrying: Bool,
+        freshSession: Bool = false,
+        keepsComposer: Bool = false,
+        files: [Attachment] = [],
+        rawDraft: String? = nil,
+        retryingUnsentId: String? = nil
+    ) {
         // The draft is capped in the composer; never clip the formatted
         // message here or attachment bodies and their fences get severed.
         let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1812,6 +2069,7 @@ final class AppModel: ObservableObject {
         stickyThreadError = nil
         sendErrors[bot.id] = nil
         widgetSaveErrors[bot.id] = nil
+        if let retryingUnsentId { retryingUnsent[bot.id] = retryingUnsentId }
         sendGenerations[bot.id] = (sendGenerations[bot.id] ?? 0) + 1
         let generation = sendGenerations[bot.id] ?? 1
         let chatGen = chatGenerations[bot.id] ?? 0
@@ -1822,14 +2080,14 @@ final class AppModel: ObservableObject {
         // Only this chat's reply rides with this send; one started in
         // another chat stays there.
         let quoteSnapshot = leavesComposer ? replyQuotes[bot.id] : nil
-        let sentAttachments = leavesComposer ? attachments : []
+        let sentAttachments = leavesComposer ? attachments : files
         let sentAttachmentIds = Set(sentAttachments.map(\.id))
         // Pictures ride beside the text as file parts; the composed string
         // already names each one. eve echoes such a turn as the text plus one
         // `[file: ...]` line per image, and that echo is what the optimistic
         // row, the rail preview and the stream arming have to match.
         let images = sentAttachments.filter(\.isImage)
-        SentImageStore.keep(images, botId: bot.id)
+        let keptImages = SentImageStore.keep(images, botId: bot.id)
         let echo = Attachments.echoedMessage(message, images: images)
         // Appended to the projection that is already on screen, never a fresh
         // one built from the durable rows. The durable store holds only the
@@ -1840,10 +2098,15 @@ final class AppModel: ObservableObject {
         // turn finished and the replay put it all back.
         // A new turn owns its own outcome: whatever the last one did, this one
         // has not failed yet.
+        // The row a refused send's failed bubble would sit under: the newest
+        // one before this send, not another failed bubble.
+        let anchorId = transcript.last { !UnsentMessage.isUnsentRowId($0.id) }?.id
+        let optimisticId = "\(EveStream.optimisticUserPrefix)\(UUID().uuidString)"
+        if retryingUnsentId != nil { retryingOptimisticIds[bot.id] = optimisticId }
         projection.beginTurn()
         projection.apply(EveEvent(
             type: "message.received",
-            id: "\(EveStream.optimisticUserPrefix)\(UUID().uuidString)",
+            id: optimisticId,
             message: echo
         ), live: true)
         rebuildTranscript()
@@ -1962,6 +2225,7 @@ final class AppModel: ObservableObject {
                     )
                 }
                 delivered = true
+                if let retryId = retryingUnsentId { self.completeUnsentRetry(retryId, botId: bot.id, attempt: optimisticId) }
                 if createdSession, self.selectedBotId == bot.id {
                     // A session this send created holds nothing older than the
                     // send, so the follower can start at its first event. Asked
@@ -2074,34 +2338,61 @@ final class AppModel: ObservableObject {
                         resendable: false
                     )
                 } else {
-                    // The composer was cleared when the turn was committed, so
-                    // a send that never reached the server has to give the text
-                    // and its files back. Anything typed or attached since is
-                    // kept.
-                    if self.selectedBotId == bot.id {
-                        self.restoreUnsentDraft(draftSnapshot, sentAttachments: sentAttachments)
-                        // The quote went with the text; it comes back with it.
-                    } else if !draftSnapshot.isEmpty || !sentAttachments.isEmpty {
-                        // The owner is in another chat, so there is no composer
-                        // to put this back into yet. Hold it for their return.
-                        self.unsentDrafts[bot.id] = (draftSnapshot, sentAttachments)
+                    // The server never took the turn. The text does not go
+                    // back into the composer: it stays on a failed bubble in
+                    // the chat, with Retry and Edit, so a second message
+                    // cannot stack on it. A resend from the chat's own Retry
+                    // has its original message already, so only the note.
+                    let reason = UnsentMessage.reason(for: error)
+                    var kept = true
+                    // The failed bubble reads its pictures back from disk, so
+                    // their copies have to have landed before it is saved.
+                    await keptImages?.value
+                    // A New Chat or a newer send may have taken over while the
+                    // copies were written; this one must not touch the new state.
+                    guard self.sendStillCurrent(bot.id, generation: generation, chatGen: chatGen) else {
+                        self.finishSend(botId: bot.id, generation: generation)
+                        return
                     }
-                    // The quote went with the text; it comes back with it. It
-                    // names its chat, so it shows there whenever the owner is.
-                    if let quoteSnapshot, self.replyQuotes[bot.id] == nil,
-                       self.store?.bots.contains(where: { $0.id == bot.id }) == true {
-                        self.replyQuotes[bot.id] = quoteSnapshot
+                    if let retryId = retryingUnsentId {
+                        kept = self.refuseAgain(retryId, reason: reason, botId: bot.id, hiding: optimisticId)
+                    } else if !retrying {
+                        let draftBack = rawDraft ?? (leavesComposer ? draftSnapshot : message)
+                        kept = self.recordUnsent(
+                            UnsentMessage(
+                                id: UUID().uuidString,
+                                message: message,
+                                echo: echo,
+                                draft: draftBack,
+                                files: sentAttachments,
+                                reason: reason,
+                                at: Date(),
+                                anchorId: anchorId,
+                                quote: quoteSnapshot.map { UnsentQuote(botId: $0.botId, text: $0.text, author: $0.author) }
+                            ),
+                            botId: bot.id,
+                            hiding: optimisticId
+                        )
+                        // A refusal that cannot be saved must not lose the
+                        // text: it goes back in the composer, and the note
+                        // from the failed save stays.
+                        if !kept {
+                            if self.selectedBotId == bot.id {
+                                self.restoreUnsentDraft(draftBack, sentAttachments: sentAttachments)
+                            } else {
+                                self.unsentDrafts[bot.id] = (text: draftBack, attachments: sentAttachments)
+                            }
+                            if let quoteSnapshot, self.replyQuotes[bot.id] == nil { self.replyQuotes[bot.id] = quoteSnapshot }
+                        }
                     }
-                    // A connection that never opened has no description of
-                    // its own, and "Send failed." left the owner guessing
-                    // whether the message went anywhere.
-                    self.recordSendError(
-                        bot.id,
-                        (error is URLError ? nil : (error as? LocalizedError)?.errorDescription)
-                            ?? "Couldn't reach the local server. Your message is back in the composer.",
-                        resendable: false,
-                        survivesReload: true
-                    )
+                    if kept {
+                        self.recordSendError(
+                            bot.id,
+                            UnsentMessage.note(reason: reason),
+                            resendable: false,
+                            survivesReload: true
+                        )
+                    }
                 }
                 self.finishSend(botId: bot.id, generation: generation)
                 if case BackendError.sessionMoved = error {
@@ -2289,6 +2580,7 @@ final class AppModel: ObservableObject {
             notifySuppressed = false
             if sendBotId == id { sendBotId = nil }
             if activeSession?.botId == id { activeSession = nil }
+            endUnsentRetry(botId: id)
         }
         if botId == nil || botId == selectedBotId, pending { pending = false }
         if botId == nil || botId == selectedBotId { sendTask = nil }
@@ -2309,6 +2601,7 @@ final class AppModel: ObservableObject {
         guard generation == (sendGenerations[botId] ?? 0) else { return }
         sendTasks[botId] = nil
         inflightSessions[botId] = nil
+        endUnsentRetry(botId: botId)
         markWorking(botId, false)
         if sendBotId == botId { sendBotId = nil }
         if selectedBotId == botId {
@@ -2767,9 +3060,12 @@ final class AppModel: ObservableObject {
         if continuationRowId != projection.continuationRowId { continuationRowId = projection.continuationRowId }
         var rows = Transcript.merge(
             events: durableEvents,
-            messages: projection.messages,
+            messages: refusedOptimisticIds.isEmpty
+                ? projection.messages
+                : projection.messages.filter { !refusedOptimisticIds.contains($0.id) },
             failures: projection.failureMarks,
-            compactions: projection.compactionMarks
+            compactions: projection.compactionMarks,
+            unsent: openUnsent
         )
         publishFailureRetry()
         let seenWidgets = Set(rows.filter { $0.kind == .widget }.compactMap { $0.text })
@@ -3767,11 +4063,11 @@ final class AppModel: ObservableObject {
     private func openHostedSignIn(_ target: String) -> Bool {
         guard let url = URL(string: target), url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased(), host == "composio.dev" || host.hasSuffix(".composio.dev") else {
-            connectorsError = "Composio sent a sign-in link this app will not open."
+            connectorsError = "Composio sent a sign-in link this app won't open."
             return false
         }
         guard NSWorkspace.shared.open(url) else {
-            connectorsError = "The sign-in page could not be opened in the browser."
+            connectorsError = "The sign-in page couldn't be opened in the browser."
             return false
         }
         return true
@@ -3804,17 +4100,189 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func disconnectConnector(_ row: ConnectorToolkit, search: String) async {
-        guard let accountId = row.accountId else { return }
+    /// True when the disconnect call itself went through, whatever the reload after it did.
+    @discardableResult
+    func disconnectConnector(_ row: ConnectorToolkit, search: String) async -> Bool {
+        guard let accountId = row.accountId else { return false }
         connectorBusy = row.slug
         connectorsError = nil
         do {
             try await client.disconnectConnector(accountId: accountId)
-            await loadConnectors(search: search, quiet: true)
         } catch {
             connectorsError = "Could not disconnect \(row.name)."
+            connectorBusy = nil
+            return false
         }
+        // The disconnect went through; loadConnectors reports its own load failure.
+        await loadConnectors(search: search, quiet: true)
         connectorBusy = nil
+        return true
+    }
+
+    /// The tools of one connected app, or nil when they couldn't be loaded.
+    func connectorTools(_ row: ConnectorToolkit) async -> [DirectConnectionTool]? {
+        try? await client.connectorTools(toolkit: row.slug)
+    }
+
+    func loadDirectConnections(quiet: Bool = false, countsTowardCheckingFailure: Bool = false) async {
+        if !quiet { directConnectionsOpen = true }
+        directLoadSeq += 1
+        let seq = directLoadSeq
+        do {
+            let rows = try await client.directConnections()
+            // A newer load already landed: this answer is older, drop it.
+            guard seq > directLoadApplied else { return }
+            directLoadApplied = seq
+            directConnections = rows
+            quietLoadFailures = 0
+            if !quiet || directConnectionsError == Self.directLoadFailedCopy { directConnectionsError = nil }
+            if rows.contains(where: { $0.state.isChecking }) { startCheckingPoll() }
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
+        } catch {
+            if !quiet {
+                directConnectionsError = Self.directLoadFailedCopy
+            } else {
+                if countsTowardCheckingFailure {
+                    quietLoadFailures += 1
+                    if quietLoadFailures >= 3 { failCheckingPoll() }
+                }
+            }
+        }
+    }
+
+    /// Gives up on a poll that can't get an answer: the error and its Retry
+    /// replace an endless Checking.
+    private func failCheckingPoll() {
+        directConnectionsError = Self.directLoadFailedCopy
+        quietLoadFailures = 0
+        guard !directConnectionPollIsSignIn else { return }
+        directConnectionPollId += 1
+        directConnectionPoll?.cancel()
+        directConnectionPoll = nil
+    }
+
+    func refreshDirectConnection(_ row: DirectConnection) async {
+        guard !directConnectionBusy.contains(row.id) else { return }
+        directConnectionBusy.insert(row.id)
+        directConnectionsError = nil
+        do {
+            let updated = try await client.refreshDirectConnection(id: row.id)
+            if let index = directConnections.firstIndex(where: { $0.id == updated.id }) {
+                directConnections[index] = updated
+            }
+        } catch is CancellationError {
+        } catch {
+            directConnectionsError = "Couldn't refresh \(row.name)."
+        }
+        await loadDirectConnections(quiet: true)
+        directConnectionBusy.remove(row.id)
+    }
+
+    /// Opens the server's sign-in in the default browser, then polls the list
+    /// every 2 s for up to 2 minutes so the row updates when it finishes.
+    func reconnectDirectConnection(_ row: DirectConnection) async {
+        guard !directConnectionBusy.contains(row.id) else { return }
+        directConnectionBusy.insert(row.id)
+        directConnectionsError = nil
+        do {
+            let answer = try await client.reauthorizeDirectConnection(id: row.id)
+            // Only a sanity check on what the server sent (https, a public
+            // host, the host it named). The real gate is server-side: the
+            // server pins the sign-in server and refuses a changed one.
+            if Proposal.connectRedirectAllowed(answer.authorizeUrl, kind: .connectServer, expectedHost: answer.redirectHost),
+               let url = URL(string: answer.authorizeUrl) {
+                if NSWorkspace.shared.open(url) {
+                    // Closed while awaiting the server: the browser still
+                    // opened, but don't reopen the dialog or poll for it.
+                    if directConnectionsOpen { startDirectConnectionPoll() }
+                } else {
+                    directConnectionsError = "The sign-in page couldn't be opened in the browser."
+                }
+            } else {
+                directConnectionsError = "The server sent a sign-in link this app won't open."
+            }
+        } catch is CancellationError {
+        } catch {
+            var code: String?
+            if case BackendError.provider(let value) = error { code = value }
+            directConnectionsError = DirectConnection.reconnectFailureCopy(code: code, name: row.name)
+        }
+        await loadDirectConnections(quiet: true)
+        directConnectionBusy.remove(row.id)
+    }
+
+    func removeDirectConnection(_ row: DirectConnection) async {
+        guard row.canRemove, !directConnectionBusy.contains(row.id) else { return }
+        directConnectionBusy.insert(row.id)
+        directConnectionsError = nil
+        do {
+            try await client.removeDirectConnection(id: row.id)
+        } catch is CancellationError {
+        } catch {
+            directConnectionsError = "Couldn't disconnect \(row.name)."
+        }
+        await loadDirectConnections(quiet: true)
+        directConnectionBusy.remove(row.id)
+    }
+
+    private func startDirectConnectionPoll() {
+        stopDirectConnectionPoll()
+        directConnectionsOpen = true
+        directConnectionPollIsSignIn = true
+        let started = Date()
+        directConnectionPollId += 1
+        let id = directConnectionPollId
+        directConnectionPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                await self.loadDirectConnections(quiet: true, countsTowardCheckingFailure: true)
+                guard !Task.isCancelled else { return }
+                if Date().timeIntervalSince(started) > 120 {
+                    if self.directConnectionPollId == id { self.directConnectionPoll = nil }
+                    return
+                }
+            }
+        }
+    }
+
+    /// A row still being checked: list again every 2 s, up to 60 s, until none
+    /// is. A sign-in poll already running is left alone. If the cap passes
+    /// with a row still checking, the load error and Retry replace the
+    /// endless Checking.
+    private func startCheckingPoll() {
+        guard directConnectionsOpen, directConnectionPoll == nil else { return }
+        directConnectionPollIsSignIn = false
+        let started = Date()
+        directConnectionPollId += 1
+        let id = directConnectionPollId
+        directConnectionPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                await self.loadDirectConnections(quiet: true, countsTowardCheckingFailure: true)
+                guard !Task.isCancelled, self.directConnectionPollId == id else { return }
+                let checking = self.directConnections.contains(where: { $0.state.isChecking })
+                if !checking {
+                    self.directConnectionPoll = nil
+                    return
+                }
+                if Date().timeIntervalSince(started) > 60 {
+                    self.failCheckingPoll()
+                    return
+                }
+            }
+        }
+    }
+
+    func stopDirectConnectionPoll() {
+        directConnectionsOpen = false
+        directConnectionPollId += 1
+        directConnectionPoll?.cancel()
+        directConnectionPoll = nil
     }
 
     func stopConnectorPoll() {
@@ -4149,7 +4617,10 @@ final class AppModel: ObservableObject {
         }
         // Its pictures go only once the server has dropped the bot: a
         // refused delete leaves the chat, pictures and all.
-        perform(ShellActions.deleteBot(botId: botId)) { SentImageStore.forget(botId: botId) }
+        perform(ShellActions.deleteBot(botId: botId)) {
+            SentImageStore.forget(botId: botId)
+            self.clearUnsent(botId: botId)
+        }
     }
 
     /// New Bot from the rail: clear the thread server-side and start fresh.
@@ -4178,6 +4649,9 @@ final class AppModel: ObservableObject {
             // let the next poll re-sync.
             do {
                 let cleared = try await self.client.shellAction(ShellActions.clearThread(botId: id))
+                // The chat is cleared server-side: its refused messages go
+                // with it, and only now.
+                self.clearUnsent(botId: id)
                 guard generation == (self.chatGenerations[id] ?? 0) else { return }
                 self.forgetTurnIds(of: self.store?.bots.first { $0.id == id }?.sessionId)
                 self.applyStore(cleared)
@@ -4679,6 +5153,7 @@ final class AppModel: ObservableObject {
     func decideProposal(_ proposal: Proposal, confirmed: Bool, secret: String? = nil) {
         guard !busyProposals.contains(proposal.id) else { return }
         busyProposals.insert(proposal.id)
+        proposalTapState[proposal.id] = (proposal.phase, proposal.waitingSince, nil)
         enqueue { [weak self] in
             guard let self else { return }
             let epoch = self.storeEpoch
@@ -4699,6 +5174,8 @@ final class AppModel: ObservableObject {
                         proposalId: proposal.id,
                         proposalStatus: "confirmed"
                     )
+                    // The busy mark's 10 s cap runs from here, not from the tap.
+                    self.proposalTapState[proposal.id]?.requestFinishedAt = Date()
                     guard !Task.isCancelled, epoch == self.storeEpoch else {
                         self.busyProposals.remove(proposal.id)
                         return
@@ -4722,19 +5199,18 @@ final class AppModel: ObservableObject {
                             )
                             if allowed, let url = URL(string: raw) {
                                 if !NSWorkspace.shared.open(url) {
-                                    self.stickyThreadError = "The sign-in page could not be opened in the browser. Use Reopen."
+                                    self.stickyThreadError = "The sign-in page couldn't be opened in the browser. Use Reopen."
                                     self.threadError = self.stickyThreadError
                                 }
                             } else if result.redirectUrl != nil && !(raw.isEmpty) {
                                 self.stickyThreadError = proposal.kind == .connectApp
-                                    ? "Composio sent a sign-in link this app will not open."
-                                    : "The server sent a sign-in link this app will not open."
+                                    ? "Composio sent a sign-in link this app won't open."
+                                    : "The server sent a sign-in link this app won't open."
                                 self.threadError = self.stickyThreadError
                             }
                         }
-                        if proposal.phase == .waiting {
-                            self.busyProposals.remove(proposal.id)
-                        }
+                        // Busy stays until the card moves on from the phase it
+                        // had at tap time; pruneBusyProposals clears it.
                         self.startReload()
                         return
                     }
@@ -4827,7 +5303,7 @@ final class AppModel: ObservableObject {
                     anchor = row.id
                     awaitingReply = false
                 }
-            case .handoff, .note, .widget, .image, .page, .failure:
+            case .handoff, .note, .widget, .image, .page, .failure, .unsent:
                 continue
             }
         }

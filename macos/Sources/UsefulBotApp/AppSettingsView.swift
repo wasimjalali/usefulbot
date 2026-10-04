@@ -188,36 +188,35 @@ struct AppSettingsView: View {
     }
 
     private var main: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text(tab.label)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(Theme.C.ink)
-                    Spacer(minLength: 0)
-                }
-                .frame(minHeight: 32)
-                .padding(.bottom, 20)
-
-                switch tab {
-                case .general: generalPane
-                case .providers: providersPane
-                case .computer: computerPane
-                case .usage: usagePane
-                case .feedback: feedbackPane
-                case .about: aboutPane
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            // The title row stays put above the scroller: when it scrolled
+            // with the pane, a long pane slid under the close button.
+            HStack {
+                Text(tab.label)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Theme.C.ink)
+                Spacer(minLength: 0)
+                NativeIconButton(systemImage: "xmark", size: 32, iconSize: 15, action: onClose)
+                    .accessibilityLabel("Close settings")
             }
-            .padding(EdgeInsets(top: 20, leading: 32, bottom: 28, trailing: 28))
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .uvScroll()
-        // Outside the scroller, so the scroller's width never moves it.
-        .overlay(alignment: .topTrailing) {
-            NativeIconButton(systemImage: "xmark", size: 32, iconSize: 15, action: onClose)
-                .accessibilityLabel("Close settings")
-                .padding(.top, 20)
-                .padding(.trailing, 28)
+            .frame(minHeight: 32)
+            .padding(EdgeInsets(top: 20, leading: 32, bottom: 20, trailing: 28))
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    switch tab {
+                    case .general: generalPane
+                    case .providers: providersPane
+                    case .computer: computerPane
+                    case .usage: usagePane
+                    case .feedback: feedbackPane
+                    case .about: aboutPane
+                    }
+                }
+                .padding(EdgeInsets(top: 0, leading: 32, bottom: 28, trailing: 28))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .uvScroll()
         }
     }
 

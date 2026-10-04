@@ -15,6 +15,8 @@ import {
   executeConnectorTool,
   forgetConnected,
   countToolkitTools,
+  forgetToolLists,
+  listToolkitTools,
   listConnectorToolkits,
   searchConnectorTools,
   isKeyRejected,
@@ -751,4 +753,25 @@ test("countToolkitTools counts one toolkit's tools and returns null on failure",
   state.directTools = null as never;
   assert.equal(await countToolkitTools("gmail", path), null);
   assert.equal(await countToolkitTools("gmail", tmpPath(false)), null);
+});
+
+test("listToolkitTools lists a connected toolkit's tools, refuses an unconnected one and caches briefly", async () => {
+  const { state, factory } = stub({
+    toolkitItems: [GMAIL],
+    directTools: [
+      { slug: "GMAIL_FETCH_EMAILS", description: "Fetch\nemails", toolkit: { slug: "gmail" } },
+      { slug: "SLACK_POST", toolkit: { slug: "slack" } },
+    ],
+  });
+  setComposioFactory(factory);
+  forgetToolLists();
+  const path = tmpPath();
+  await assert.rejects(() => listToolkitTools("gmail", path), /not_connected/);
+  await assert.rejects(() => listToolkitTools("not a slug", path), /toolkit_invalid/);
+  updateConnectorsStore((store) => setConnectedToolkits(store, ["gmail"]), path);
+  assert.deepEqual(await listToolkitTools("gmail", path), [{ name: "GMAIL_FETCH_EMAILS", description: "Fetch emails" }]);
+  state.directTools = null as never;
+  assert.equal((await listToolkitTools("gmail", path)).length, 1, "served from the cache");
+  forgetToolLists();
+  await assert.rejects(() => listToolkitTools("gmail", path), /tools_unavailable/);
 });

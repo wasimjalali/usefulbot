@@ -32,6 +32,11 @@ import time
 import uuid
 
 PERF = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Scratch runs (scenarios, marks, frames) live outside the checkout. The app
+# under test reads its scenario file at launch, and a checkout under ~/Desktop
+# sends that read to a Desktop-folder privacy prompt that a windowless
+# background launch never shows, so the run hung with no window.
+RUNS = os.path.expanduser(os.environ.get("UB_PERF_RUNS") or "~/Library/Caches/UsefulBotPerf/runs")
 ROOT = os.path.dirname(PERF)
 
 
@@ -711,11 +716,11 @@ def measure(args, quick):
     owner = owner_selection()
     was_running = [p for p in app.running_pids()]
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    outdir = os.path.join(PERF, ".runs", stamp)
+    outdir = os.path.join(RUNS, stamp)
     os.makedirs(outdir, exist_ok=True)
     # A display that sleeps or locks mid-run stops rendering the window.
     subprocess.Popen(["caffeinate", "-diu", "-w", str(os.getpid())])
-    print(f"run {stamp}: {app.path}\n  frames and marks in {os.path.relpath(outdir, ROOT)}")
+    print(f"run {stamp}: {app.path}\n  frames and marks in {outdir}")
     ids = {b["id"]: b["name"] for b in shell_state()["bots"]}
     samples, failures, done, loads = [], [], [], []
     started = time.time()
@@ -787,7 +792,7 @@ def write_record(outdir):
     result = load_json(os.path.join(outdir, "report.json"))
     kind, stamp, facts, summary = result["kind"], result["stamp"], result["facts"], result["summary"]
     breaches, failures, seconds = result["breaches"], result["failures"], result["seconds"]
-    # The numbers, marks and sheets. Frames stay in perf/.runs (too big to commit).
+    # The numbers, marks and sheets. Frames stay in RUNS (too big to commit).
     # The time is in the name: two runs on one commit in one day must not share a folder.
     date = stamp[:10]
     sha = facts["gitSha"][:7]
@@ -880,7 +885,7 @@ def cmd_fixtures(args):
     spec = load_json(os.path.join(PERF, "fixtures.json"))
     names = bots_by_name()
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    outdir = os.path.join(PERF, ".runs", f"fixtures-{stamp}")
+    outdir = os.path.join(RUNS, f"fixtures-{stamp}")
     owner = owner_selection()
     for key, name in CONFIG["fixtures"].items():
         turns = spec[key]["turns"]
@@ -911,7 +916,7 @@ def cmd_lock(args):
     """Open each fixture once and record its session and event count."""
     app = App(args.app or CONFIG["app"])
     stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    outdir = os.path.join(PERF, ".runs", f"lock-{stamp}")
+    outdir = os.path.join(RUNS, f"lock-{stamp}")
     steps = []
     for key in ("longTools", "longReplies", "shortB", "shortA"):
         steps += [step("select", CONFIG["fixtures"][key], "lock"), step("pause", ms=6000)]

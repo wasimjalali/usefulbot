@@ -128,7 +128,7 @@ Copy in what you accept by hand. A budget only moves by a reviewed edit, never b
 
 Every run writes `evals/results/<date>-perf-<check|baseline>-<HHMM>-<sha>/`: a README with the table,
 `report.json`, every launch's marks and a frame sheet of the worst sample per case. Commit it
-with the change it measured. The raw frames stay in `perf/.runs/`, which is too big to commit.
+with the change it measured. The raw frames stay in `~/Library/Caches/UsefulBotPerf/runs/` (`UB_PERF_RUNS` overrides it), outside the checkout: the app reads its scenario there, and a file under `~/Desktop` would wait on a Desktop-folder privacy prompt a background launch never shows. The remembered owner selection (`perf/.runs/owner-selection-dev.json`) stays in the checkout: only the runner reads it, never the app.
 
 ## Limits
 
