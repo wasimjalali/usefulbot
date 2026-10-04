@@ -656,6 +656,16 @@ struct ChatView: View {
                                     until: live ? model.failureRetryUntil : nil,
                                     maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85)
                                 ) { model.retryLastTurn() }
+                            case .message(let row, _) where row.kind == .unsent:
+                                UnsentRow(
+                                    text: row.text,
+                                    retryEnabled: !model.pending,
+                                    editEnabled: model.canEditUnsent,
+                                    maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
+                                    retry: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.retryUnsent(id) } },
+                                    edit: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.editUnsent(id) } },
+                                    dismiss: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.dismissUnsent(id) } }
+                                )
                             case .message(let row, let recipients):
                                 if row.id == model.continuationRowId {
                                     // The earlier session could not go on, so
@@ -1288,6 +1298,58 @@ private struct FailureRow: View {
     }
 }
 
+/// The line under an owner message the server refused before the bot got it:
+/// what happened, then Retry and Edit. Right-aligned under the bubble it
+/// belongs to. Edit waits for an empty composer, since the text would
+/// otherwise stack on whatever is there.
+private struct UnsentRow: View {
+    let text: String
+    let retryEnabled: Bool
+    let editEnabled: Bool
+    let maxWidth: CGFloat
+    let retry: () -> Void
+    let edit: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .accessibilityHidden(true)
+                Text(text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                NativeButton("Retry", kind: .secondary, small: true, enabled: retryEnabled, action: retry)
+                    .accessibilityIdentifier("unsent-retry")
+                NativeButton("Edit", kind: .secondary, small: true, enabled: editEnabled, action: edit)
+                    .help(editEnabled ? "" : UnsentMessage.editBlockedHint)
+                    .accessibilityLabel(editEnabled ? "Edit" : UnsentMessage.editBlockedHint)
+                    .accessibilityIdentifier("unsent-edit")
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(Theme.C.inkMuted)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+                .accessibilityLabel("Dismiss")
+                .accessibilityIdentifier("unsent-dismiss")
+            }
+            .frame(maxWidth: max(160, maxWidth), alignment: .trailing)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("unsent-row")
+    }
+}
+
 /// One line over the composer for a failure no turn can hold: a send that
 /// never reached the server, a load that failed, a write that was refused.
 private struct ComposerNote: View {
@@ -1668,7 +1730,7 @@ struct TranscriptRowView: View, Equatable {
         case .page:
             // The row's text is the page title; the id names the Library item.
             PageRow(mediaId: row.imageId ?? "", title: row.text)
-        case .failure:
+        case .failure, .unsent:
             // Drawn by the transcript itself, which owns its Retry.
             EmptyView()
         }

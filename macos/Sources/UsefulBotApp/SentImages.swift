@@ -32,7 +32,10 @@ enum SentImageStore {
 
     /// Keeps the pictures of a message being sent, off the main thread. One
     /// that cannot be kept still sends; its bubble just shows a plain tile.
-    static func keep(_ images: [Attachment], botId: String) {
+    /// The write's task is returned: a refused send awaits it before its
+    /// failed bubble is saved, so the picture is on disk by then.
+    @discardableResult
+    static func keep(_ images: [Attachment], botId: String) -> Task<Void, Never>? {
         let items = images.compactMap { image -> (URL, String)? in
             guard image.isImage, let dataUrl = image.dataUrl else { return nil }
             // In memory at once, so the bubble drawn right after this send
@@ -43,8 +46,8 @@ enum SentImageStore {
             }
             return (url(for: image.name, botId: botId), dataUrl)
         }
-        guard !items.isEmpty else { return }
-        Task.detached(priority: .utility) {
+        guard !items.isEmpty else { return nil }
+        return Task.detached(priority: .utility) {
             for (target, dataUrl) in items where !FileManager.default.fileExists(atPath: target.path) {
                 guard let data = Attachments.bytes(ofDataURL: dataUrl) else { continue }
                 do {
@@ -55,6 +58,17 @@ enum SentImageStore {
                 }
             }
         }
+    }
+
+    /// A held picture with its bytes read back from the kept copy, or nil
+    /// when this Mac no longer has it.
+    static func restored(_ attachment: Attachment, botId: String) -> Attachment? {
+        guard let mediaType = attachment.mediaType else { return attachment }
+        let perBot = url(for: attachment.name, botId: botId)
+        guard let data = try? Data(contentsOf: perBot) else { return nil }
+        var restored = attachment
+        restored.dataUrl = "data:\(mediaType);base64,\(data.base64EncodedString())"
+        return restored
     }
 
     /// A deleted bot's pictures go with it.

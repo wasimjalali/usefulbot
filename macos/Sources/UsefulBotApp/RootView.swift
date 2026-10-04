@@ -425,6 +425,8 @@ struct NativeDialog<Content: View>: View {
     /// Off for a dialog whose own header row carries the close button.
     var closeRow = true
     let onClose: () -> Void
+    /// Esc, when it should do something other than close (a page that goes back first).
+    var onEscape: (() -> Void)? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -455,7 +457,7 @@ struct NativeDialog<Content: View>: View {
             // Never flush with the window's edges when the window is narrow.
             .padding(.horizontal, 24)
         }
-        .onExitCommand(perform: onClose)
+        .onExitCommand(perform: onEscape ?? onClose)
     }
 }
 
@@ -770,11 +772,262 @@ struct CreateGroupDialog: View {
     }
 }
 
+/// What one added tile opens inside the Connectors dialog: who it is, how it
+/// is doing, what the owner can do with it and the tools it offers.
+private struct ConnectorDetailPage: View {
+    @EnvironmentObject private var model: AppModel
+    let tile: ConnectorTile
+    let search: String
+    /// Back to the Connectors list; also closes the page once the item is gone.
+    let onBack: () -> Void
+
+    @State private var confirming = false
+    @State private var appTools: [DirectConnectionTool]?
+    @State private var toolsFailed = false
+
+    private var busy: Bool {
+        switch tile.source {
+        case .app(let row): return model.connectorBusy == row.slug
+        case .server(let row): return model.directConnectionBusy.contains(row.id)
+        }
+    }
+
+    private var kindLine: String {
+        switch tile.source {
+        case .app: return "App"
+        case .server(let row): return "\(row.host) \u{00B7} \(row.kind.label)"
+        }
+    }
+
+    private var tools: [DirectConnectionTool]? {
+        switch tile.source {
+        case .app: return appTools
+        case .server(let row): return row.tools
+        }
+    }
+
+    /// A server shows its tools only once they are known: ready, or listed as none.
+    private var showsTools: Bool {
+        switch tile.source {
+        case .app: return true
+        case .server(let row):
+            switch row.state {
+            case .ready, .zeroTools: return true
+            default: return false
+            }
+        }
+    }
+
+    private var errorMessage: String? {
+        if case .server(let row) = tile.source, !row.state.isChecking, let message = row.lastError?.message, !message.isEmpty {
+            return message
+        }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onBack) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Connectors")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundStyle(Theme.C.inkMuted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back to Connectors")
+            .padding(.horizontal, 28)
+            HStack(spacing: 12) {
+                AppLogo(name: tile.name, url: tile.logoURL, size: 26, data: tile.iconData)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.C.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(Theme.C.edge, lineWidth: 1)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tile.name)
+                        .font(.system(size: DesignTokens.FontSize.dialogTitle, weight: .semibold))
+                        .foregroundStyle(Theme.C.ink)
+                        .lineLimit(1)
+                    Text(kindLine)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.C.inkMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 14)
+            HStack(spacing: 6) {
+                if tile.mark == .checking { ProgressView().controlSize(.small) }
+                Text(tile.status)
+                    .font(.system(size: 13))
+                    .foregroundStyle(tile.mark == .added || tile.mark == .checking ? Theme.C.inkMuted : Theme.C.warning)
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, 14)
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 4)
+            }
+            actions
+                .padding(.horizontal, 28)
+                .padding(.top, 16)
+            // A failed Disconnect or Remove shows here, where the owner pressed it.
+            if let actionError = tile.source.isApp ? model.connectorsError : model.directConnectionsError {
+                Text(actionError)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.danger)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 8)
+            }
+            if showsTools {
+                toolsSection
+                    .padding(.horizontal, 28)
+                    .padding(.top, 20)
+                    .padding(.bottom, 16)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+            // An error left from the list page is not about this tile.
+            if tile.source.isApp { model.connectorsError = nil } else { model.directConnectionsError = nil }
+            if case .app(let row) = tile.source {
+                if let list = await model.connectorTools(row) { appTools = list } else { toolsFailed = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var toolsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let tools {
+                if tools.isEmpty {
+                    Text("No tools")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.inkMuted)
+                } else {
+                    Text(tools.count == 1 ? "1 tool" : "\(tools.count) tools")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.C.inkMuted)
+                    ScrollView {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: 3), spacing: 10) {
+                            ForEach(Array(tools.enumerated()), id: \.offset) { _, tool in
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(tool.name)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(Theme.C.ink)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    if let description = tool.description, !description.isEmpty {
+                                        Text(description)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Theme.C.inkMuted)
+                                            .lineLimit(2)
+                                            .truncationMode(.tail)
+                                    }
+                                }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .background(Theme.C.sunken)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .uvScroll()
+                }
+            } else if toolsFailed {
+                Text("Couldn't load the tools.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.C.danger)
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            if confirming {
+                Text("Disconnect \(tile.name)?")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.C.ink)
+                NativeButton("Disconnect", kind: .danger, small: true, enabled: !busy, action: confirm)
+                NativeButton("Cancel", kind: .secondary, small: true) { confirming = false }
+            } else {
+                switch tile.source {
+                case .app(let row):
+                    NativeButton("Disconnect", kind: .ghost, small: true, enabled: !busy && row.accountId != nil) { confirming = true }
+                case .server(let row):
+                    if row.canReconnect {
+                        NativeButton(
+                            "Reconnect",
+                            kind: row.reconnectProminent ? .primary : .secondary,
+                            small: true,
+                            enabled: !busy
+                        ) { Task { await model.reconnectDirectConnection(row) } }
+                    }
+                    NativeButton("Refresh", kind: .secondary, small: true, enabled: !busy) {
+                        Task { await model.refreshDirectConnection(row) }
+                    }
+                    if row.canRemove {
+                        NativeButton("Disconnect", kind: .ghost, small: true, enabled: !busy) { confirming = true }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func confirm() {
+        confirming = false
+        switch tile.source {
+        case .app(let row):
+            Task {
+                // A failed disconnect leaves the app added; the dialog stays and the error shows behind it.
+                if await model.disconnectConnector(row, search: search) { onBack() }
+            }
+        case .server(let row):
+            Task {
+                await model.removeDirectConnection(row)
+                if !model.directConnections.contains(where: { $0.id == row.id }) { onBack() }
+            }
+        }
+    }
+}
+
+private extension ConnectorTile.Source {
+    var isApp: Bool {
+        if case .app = self { return true }
+        return false
+    }
+}
+
+private struct ConnectorsPageHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct ConnectorsDialog: View {
     @EnvironmentObject private var model: AppModel
     let onClose: () -> Void
 
     @State private var search = ""
+    @State private var selectedTile: String?
+    /// The list page's height with the catalogue showing; the detail page keeps it.
+    @State private var pageHeight: CGFloat?
+    private static let fallbackPageHeight: CGFloat = 600
     @State private var keyDraft = ""
     /// What the owner has typed into the own-app form, by field name. Cleared
     /// when the form closes; it never outlives the dialog.
@@ -786,35 +1039,47 @@ struct ConnectorsDialog: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var ownAppFocused: String?
 
+    /// Every added item in one list: the connected apps and every direct server.
+    private var addedTiles: [ConnectorTile] {
+        ConnectorTile.merge(apps: model.connectors?.toolkits ?? [], servers: model.directConnections)
+    }
+
+    private var selectedTileValue: ConnectorTile? {
+        guard let selectedTile else { return nil }
+        return addedTiles.first { $0.id == selectedTile }
+    }
+
     var body: some View {
-        NativeDialog(maxWidth: 760, ariaLabel: "Connectors", onClose: close) {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Text("Connectors")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(Theme.C.ink)
-                    Spacer(minLength: 0)
-                    if let payload = model.connectors, payload.hasKey {
-                        addedSummary(payload)
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.top, 4)
-                if let payload = model.connectors {
-                    if payload.hasKey {
-                        catalogue(payload)
-                    } else {
-                        keyForm
-                    }
-                } else {
-                    skeletonRows
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 20)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        connectorsPanel
+        .onChange(of: selectedTile) { _, value in
+            // Back from a detail page lands on the search field again.
+            guard value == nil, model.connectors?.hasKey == true else { return }
+            Task { @MainActor in searchFocused = true }
         }
-        .task { await model.loadConnectors() }
+        .onChange(of: addedTiles.map(\.id)) { _, ids in
+            if let selectedTile, !ids.contains(selectedTile) { self.selectedTile = nil }
+        }
+    }
+
+    private var connectorsPanel: some View {
+        NativeDialog(maxWidth: 760, ariaLabel: "Connectors", onClose: close, onEscape: {
+            // Esc on a detail page goes back to the list; on the list it closes.
+            if selectedTile != nil { selectedTile = nil } else { close() }
+        }) {
+            if let tile = selectedTileValue {
+                ConnectorDetailPage(tile: tile, search: search, onBack: { selectedTile = nil })
+                    .id(tile.id)
+                    // The page keeps the list's height, measured once the catalogue has shown.
+                    .frame(height: pageHeight ?? Self.fallbackPageHeight, alignment: .top)
+            } else {
+                listPage
+            }
+        }
+        .task {
+            async let direct: Void = model.loadDirectConnections()
+            await model.loadConnectors()
+            await direct
+        }
         .onChange(of: search) { _, value in
             model.connectorSearch = value
             Task {
@@ -831,8 +1096,61 @@ struct ConnectorsDialog: View {
         .onChange(of: model.connectorOwnApp?.toolkit) { _, _ in ownAppDraft = [:] }
     }
 
+    private var listPage: some View {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Text("Connectors")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Theme.C.ink)
+                    Spacer(minLength: 0)
+                    addedSummary
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 4)
+                if let error = model.directConnectionsError {
+                    HStack(spacing: 12) {
+                        Text(error)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.C.danger)
+                        NativeButton("Retry", kind: .secondary, small: true) {
+                            Task { await model.loadDirectConnections() }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+                }
+                if let payload = model.connectors {
+                    if payload.hasKey {
+                        catalogue(payload)
+                    } else {
+                        if !model.directConnections.isEmpty {
+                            catalogueSection("Added", addedTiles)
+                                .padding(.horizontal, 28)
+                                .padding(.top, 20)
+                        }
+                        keyForm
+                    }
+                } else {
+                    skeletonRows
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 20)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ConnectorsPageHeightKey.self, value: proxy.size.height)
+                }
+            )
+            .onPreferenceChange(ConnectorsPageHeightKey.self) { height in
+                if model.connectors?.hasKey == true, model.connectorOwnApp == nil, height > 0 { pageHeight = height }
+            }
+    }
+
     private func close() {
         model.stopConnectorPoll()
+        model.stopDirectConnectionPoll()
         model.dismissOwnApp()
         ownAppDraft = [:]
         onClose()
@@ -859,7 +1177,7 @@ struct ConnectorsDialog: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 28)
         .padding(.top, 16)
         .padding(.bottom, 24)
         .onAppear { keyFocused = true }
@@ -882,14 +1200,14 @@ struct ConnectorsDialog: View {
 
     /// The apps already added, as a row of overlapping logos and a count.
     @ViewBuilder
-    private func addedSummary(_ payload: ConnectorsPayload) -> some View {
-        let added = payload.toolkits.filter(\.connected)
+    private var addedSummary: some View {
+        let added = addedTiles
         // A search narrows the list it counts, so the count waits for it to clear.
         if !added.isEmpty, search.trimmingCharacters(in: .whitespaces).isEmpty {
             HStack(spacing: 8) {
                 HStack(spacing: -6) {
                     ForEach(added.prefix(4)) { row in
-                        AppLogo(name: row.name, url: row.logo, size: 22)
+                        AppLogo(name: row.name, url: row.logoURL, size: 22, data: row.iconData)
                             .background(Theme.C.surface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous))
                             .overlay(
                                 RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous)
@@ -959,7 +1277,7 @@ struct ConnectorsDialog: View {
                 }
             }
             // A failed load with nothing to list leaves only the error line.
-            .frame(height: payload.toolkits.isEmpty && model.connectorsError != nil ? 0 : Self.listHeight)
+            .frame(height: payload.toolkits.isEmpty && model.connectorsError != nil && addedTiles.isEmpty ? 0 : Self.listHeight)
             keyFooter(payload)
         }
     }
@@ -993,7 +1311,10 @@ struct ConnectorsDialog: View {
     private func catalogueList(_ payload: ConnectorsPayload) -> some View {
         let query = search.trimmingCharacters(in: .whitespaces)
         if payload.toolkits.isEmpty && model.connectorsError != nil {
-            EmptyView()
+            if !addedTiles.isEmpty && query.isEmpty {
+                catalogueSection("Added", addedTiles)
+                    .padding(.top, 20)
+            }
         } else if payload.toolkits.isEmpty {
             Text(query.isEmpty ? "No apps to show." : "No apps match \u{201C}\(query)\u{201D}.")
                 .font(.system(size: 14))
@@ -1008,13 +1329,12 @@ struct ConnectorsDialog: View {
                    let row = payload.toolkits.first(where: { $0.slug == form.toolkit }) {
                     ownAppCard(row, form)
                 }
-                let added = payload.toolkits.filter(\.connected)
                 let rest = payload.toolkits.filter { !$0.connected }
                 if !query.isEmpty {
-                    catalogueSection("Results", payload.toolkits)
+                    catalogueSection("Results", payload.toolkits.map(rowTile))
                 } else {
-                    if !added.isEmpty { catalogueSection("Added", added) }
-                    if !rest.isEmpty { catalogueSection("All apps", rest) }
+                    if !addedTiles.isEmpty { catalogueSection("Added", addedTiles) }
+                    if !rest.isEmpty { catalogueSection("All apps", rest.map(rowTile)) }
                 }
                 if let next = payload.nextOffset, next > 0 {
                     HStack {
@@ -1035,17 +1355,86 @@ struct ConnectorsDialog: View {
         }
     }
 
-    private func catalogueSection(_ title: String, _ rows: [ConnectorToolkit]) -> some View {
+    /// A catalogue row as a tile: an added app is a tile of the Added grid,
+    /// any other is an app with an Add button.
+    private func rowTile(_ row: ConnectorToolkit) -> ConnectorTile {
+        ConnectorTile(app: row)
+    }
+
+    private func catalogueSection(_ title: String, _ tiles: [ConnectorTile]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.C.ink)
             LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 18) {
-                ForEach(rows) { row in
-                    connectorTile(row)
+                ForEach(tiles) { tile in
+                    switch tile.source {
+                    case .app(let row) where !row.connected:
+                        connectorTile(row)
+                    default:
+                        addedTile(tile)
+                    }
                 }
             }
         }
+    }
+
+    private func tileLogo(_ name: String, url: String?, data: Data?) -> some View {
+        AppLogo(name: name, url: url, size: 26, data: data)
+            .frame(width: 40, height: 40)
+            .background(Theme.C.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Theme.C.edge, lineWidth: 1)
+            )
+    }
+
+    /// An added app or server. The whole tile opens its detail view.
+    private func addedTile(_ tile: ConnectorTile) -> some View {
+        var removing = false
+        if case .app(let row) = tile.source { removing = model.connectorBusy == row.slug }
+        let open = { selectedTile = tile.id }
+        return HStack(spacing: 12) {
+            tileLogo(tile.name, url: tile.logoURL, data: tile.iconData)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tile.name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.C.ink)
+                    .lineLimit(1)
+                Text(tile.status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            switch tile.mark {
+            case .added:
+                HStack(spacing: 4) {
+                    if !removing {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    Text(removing ? "Removing" : "Added")
+                        .font(.system(size: 13))
+                }
+                .foregroundStyle(Theme.C.inkMuted)
+            case .checking:
+                ProgressView().controlSize(.small)
+            case .warning(let label):
+                Text(label)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.C.warning)
+            }
+        }
+        .frame(minHeight: 48)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+        .pointerOnHover()
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default, open)
+        .accessibilityIdentifier("connector-tile-\(tile.id)")
     }
 
     private func connectorTile(_ row: ConnectorToolkit) -> some View {
@@ -1053,14 +1442,7 @@ struct ConnectorsDialog: View {
         let busy = model.connectorBusy == row.slug
         let formOpen = model.connectorOwnApp?.toolkit == row.slug
         return HStack(spacing: 12) {
-            AppLogo(name: row.name, url: row.logo, size: 26)
-                .frame(width: 40, height: 40)
-                .background(Theme.C.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Theme.C.edge, lineWidth: 1)
-                )
+            tileLogo(row.name, url: row.logo, data: nil)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
                     .font(.system(size: 14, weight: .medium))
@@ -1072,31 +1454,7 @@ struct ConnectorsDialog: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            if row.connected {
-                // Added is a state, not a button: its menu holds the one
-                // thing to do with it.
-                Menu {
-                    Button("Disconnect") {
-                        Task { await model.disconnectConnector(row, search: search) }
-                    }
-                    .disabled(busy || row.accountId == nil)
-                } label: {
-                    HStack(spacing: 4) {
-                        if !busy {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        Text(busy ? "Removing" : "Added")
-                            .font(.system(size: 13))
-                    }
-                    .foregroundStyle(Theme.C.inkMuted)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .pointerOnHover()
-                .accessibilityLabel("\(row.name) added")
-            } else if !formOpen {
+            if !formOpen {
                 AddPillButton(title: pending ? "Adding" : "Add", enabled: !busy && model.connectorPending == nil) {
                     Task { await model.connectConnector(row, search: search) }
                 }

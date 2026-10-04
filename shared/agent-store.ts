@@ -139,6 +139,12 @@ export type FanoutProposal = {
 };
 
 export type ConnectPhase = "proposed" | "waiting" | "connected" | "expired";
+/**
+ * A server card has one phase more: `failed`, for a connect that finished its
+ * sign-in or credential but whose tools could not be listed. `reason` says
+ * which of the connection states it was.
+ */
+export type ConnectServerPhase = ConnectPhase | "failed";
 
 export type ConnectAppProposal = {
   kind: "connectApp";
@@ -174,7 +180,9 @@ export type ConnectServerProposal = {
   authHeader: string | null;
   sourceBotId: string | null;
   threadId: string;
-  phase: ConnectPhase;
+  phase: ConnectServerPhase;
+  /** Why the card is `failed`: a connection state code such as `auth_failed`. Null otherwise. */
+  reason?: string | null;
   /** OAuth authorize host, once waiting. The app opens only this host. */
   redirectHost: string | null;
   waitingSince: string | null;
@@ -421,7 +429,8 @@ function parseProposal(raw: unknown): Proposal | null {
     };
   }
   if (rec.kind === "connectServer") {
-    const phase: ConnectPhase = rec.phase === "waiting" || rec.phase === "connected" || rec.phase === "expired"
+    const phase: ConnectServerPhase = rec.phase === "waiting" || rec.phase === "connected" || rec.phase === "expired"
+      || rec.phase === "failed"
       ? rec.phase
       : "proposed";
     const authKind: ConnectionAuthKind = rec.authKind === "apiKey" || rec.authKind === "bearer" || rec.authKind === "oauth"
@@ -441,6 +450,9 @@ function parseProposal(raw: unknown): Proposal | null {
       authKind,
       authHeader: typeof rec.authHeader === "string" && rec.authHeader ? rec.authHeader.slice(0, 64) : null,
       phase,
+      reason: phase === "failed" && typeof rec.reason === "string" && /^[a-z_]{1,40}$/.test(rec.reason)
+        ? rec.reason
+        : null,
       redirectHost: typeof rec.redirectHost === "string" && rec.redirectHost ? rec.redirectHost.slice(0, 253) : null,
       waitingSince: typeof rec.waitingSince === "string" ? rec.waitingSince : null,
       toolCount: typeof rec.toolCount === "number" && Number.isFinite(rec.toolCount)

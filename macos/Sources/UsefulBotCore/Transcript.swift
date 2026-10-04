@@ -5,6 +5,9 @@ public struct TranscriptRow: Identifiable, Equatable, Sendable {
         case user, assistant, handoff, post, note, widget, image, page
         /// A failed turn, where its reply would have been.
         case failure
+        /// The line under an owner message the server refused before eve took
+        /// it, with its Retry and Edit.
+        case unsent
     }
 
     public var id: String
@@ -75,7 +78,8 @@ public enum Transcript {
         events: [AgentEvent],
         messages: [ChatMessage],
         failures: [FailureMark] = [],
-        compactions: [CompactionMark] = []
+        compactions: [CompactionMark] = [],
+        unsent: [UnsentMessage] = []
     ) -> [TranscriptRow] {
         var durable: [TranscriptRow] = []
         var durableUserCounts: [String: Int] = [:]
@@ -180,7 +184,51 @@ public enum Transcript {
         // A mark whose row is gone still says what happened, at the end.
         live.append(contentsOf: unplacedCompactions.map { compactionRow($0, after: nil) })
         live.append(contentsOf: unplaced.map { failureRow($0, after: nil) })
-        return interleave(durable: durable, live: live)
+        return placeUnsent(unsent, in: interleave(durable: durable, live: live))
+    }
+
+    /// Each refused message goes under the row it was sent after, as the
+    /// owner's bubble and its failed line. One whose row is gone goes by its
+    /// time: after the last timed row at or before it, or before the first
+    /// timed row when every one is later. Only when no row has a time does it
+    /// go last.
+    static func placeUnsent(_ unsent: [UnsentMessage], in rows: [TranscriptRow]) -> [TranscriptRow] {
+        guard !unsent.isEmpty else { return rows }
+        let ids = Set(rows.map(\.id))
+        var byAnchor: [String: [UnsentMessage]] = [:]
+        var afterIndex: [Int: [UnsentMessage]] = [:]
+        var beforeIndex: [Int: [UnsentMessage]] = [:]
+        var atEnd: [UnsentMessage] = []
+        let firstTimed = rows.firstIndex { $0.at != nil }
+        for message in unsent {
+            if let anchor = message.anchorId, ids.contains(anchor) {
+                byAnchor[anchor, default: []].append(message)
+            } else if let firstTimed {
+                if let index = rows.lastIndex(where: { ($0.at ?? .distantFuture) <= message.at }) {
+                    afterIndex[index, default: []].append(message)
+                } else {
+                    beforeIndex[firstTimed, default: []].append(message)
+                }
+            } else {
+                atEnd.append(message)
+            }
+        }
+        func pair(_ message: UnsentMessage) -> [TranscriptRow] {
+            [
+                TranscriptRow(id: message.bubbleRowId, kind: .user, text: message.echo, at: message.at),
+                TranscriptRow(id: message.lineRowId, kind: .unsent, text: message.line, at: message.at),
+            ]
+        }
+        var placed: [TranscriptRow] = []
+        placed.reserveCapacity(rows.count + unsent.count * 2)
+        for (index, row) in rows.enumerated() {
+            for message in beforeIndex[index] ?? [] { placed.append(contentsOf: pair(message)) }
+            placed.append(row)
+            for message in byAnchor[row.id] ?? [] { placed.append(contentsOf: pair(message)) }
+            for message in afterIndex[index] ?? [] { placed.append(contentsOf: pair(message)) }
+        }
+        for message in atEnd { placed.append(contentsOf: pair(message)) }
+        return placed
     }
 
     /// Stable chronological merge of two lists that are each already in order.

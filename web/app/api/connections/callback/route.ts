@@ -1,10 +1,11 @@
-import { completeConnectionOAuth } from "../../../../../shared/connection-flow.ts";
+import { completeConnectionOAuth, failConnectionOAuth } from "../../../../../shared/connection-flow.ts";
 import { requestIsLoopback } from "../../../../../shared/origin.ts";
+import { errorCode } from "../../../../lib/api-guard";
 import { runtimeConfig } from "../../../../lib/auth";
 
 export const runtime = "nodejs";
 
-const PAGE = (ok: boolean, detail: string) => `<!doctype html>
+const PAGE = (heading: string, detail: string) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -20,15 +21,15 @@ const PAGE = (ok: boolean, detail: string) => `<!doctype html>
 </head>
 <body>
 <main>
-  <h1>${ok ? "Connected" : "Sign-in failed"}</h1>
+  <h1>${heading}</h1>
   <p>${detail}</p>
 </main>
 </body>
 </html>
 `;
 
-function html(ok: boolean, detail: string, status = 200) {
-  return new Response(PAGE(ok, detail), {
+function html(ok: boolean, detail: string, status = 200, heading = ok ? "Connected" : "Sign-in failed") {
+  return new Response(PAGE(heading, detail), {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
@@ -68,15 +69,30 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state") ?? "";
   const error = url.searchParams.get("error");
   if (error) {
+    // The pending sign-in and its card are ended here, so the card says so
+    // instead of waiting for its ten minutes to run out.
+    if (state) failConnectionOAuth(state);
     return html(false, "The server refused sign-in. You can close this tab and use Reopen.", 400);
   }
   if (!code || !state) {
     return html(false, "The sign-in reply was missing. You can close this tab and use Reopen.", 400);
   }
   try {
-    await completeConnectionOAuth(code, state);
+    const outcome = await completeConnectionOAuth(code, state);
+    if (outcome.state === "pending") {
+      return html(true, "Finishing sign-in. You can close this tab; Useful Bot shows the result.", 200, "Signing in");
+    }
+    if (!outcome.ready) {
+      return html(false, "Signed in, but Useful Bot couldn't list this server's tools. Check it in Useful Bot.", 200, "Signed in");
+    }
     return html(true, "You can close this tab and return to Useful Bot.");
-  } catch {
+  } catch (err) {
+    // The code only: an error's own text can carry a path or a piece of what
+    // the sign-in server answered.
+    console.error(`[useful-bot] connection sign-in did not finish: ${errorCode(err, "unknown")}`);
+    if (err instanceof Error && err.message === "oauth_superseded") {
+      return html(false, "A newer sign-in replaced this one. You can close this tab.", 200, "Sign-in replaced");
+    }
     return html(false, "The sign-in could not finish. You can close this tab and use Reopen.", 400);
   }
 }

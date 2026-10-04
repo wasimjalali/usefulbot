@@ -740,6 +740,37 @@ export async function countToolkitTools(slug: string, path = connectorsPath()): 
   }
 }
 
+const TOOL_LIST_TTL_MS = 60_000;
+const toolListCache = new Map<string, { at: number; tools: Array<{ name: string; description: string }> }>();
+
+/** Tests start from an empty tool-list cache. */
+export function forgetToolLists(): void {
+  toolListCache.clear();
+}
+
+/**
+ * The tools one connected toolkit publishes, for the Connectors detail view.
+ * A toolkit that isn't connected is refused. Cached for a minute per toolkit.
+ */
+export async function listToolkitTools(
+  slug: string,
+  path = connectorsPath(),
+): Promise<Array<{ name: string; description: string }>> {
+  if (!isToolkitSlug(slug)) throw new Error("toolkit_invalid");
+  const store = readConnectorsStore(path);
+  if (!store.connectedToolkits.includes(slug)) throw new Error("not_connected");
+  const hit = toolListCache.get(slug);
+  if (hit && Date.now() - hit.at < TOOL_LIST_TTL_MS) return hit.tools;
+  const client = factory(requireKey(store));
+  const raw = await client.tools.getRawComposioTools({ toolkits: [slug], limit: 200 });
+  if (!Array.isArray(raw)) throw new Error("tools_unavailable");
+  const tools = raw
+    .filter((tool) => (tool.toolkit?.slug ?? toolkitOf(tool.slug, [slug]) ?? "").toLowerCase() === slug)
+    .map((tool) => ({ name: tool.slug, description: (tool.description ?? "").replace(/[\r\n\t]+/g, " ").trim().slice(0, 200) }));
+  toolListCache.set(slug, { at: Date.now(), tools });
+  return tools;
+}
+
 /** Executes one tool. The caller has already decided the approval question. */
 export async function executeConnectorTool(
   toolSlug: string,

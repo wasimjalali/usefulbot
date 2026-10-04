@@ -62,3 +62,41 @@ test("hash is dropped and the card host is the hostname", () => {
   assert.equal(isHttpsPublicHost("https://evil.example.com/authorize", "auth.example.com"), false);
   assert.equal(isHttpsPublicHost("http://auth.example.com/authorize", "auth.example.com"), false);
 });
+
+// UB-003 review round 1: every answer counts, both families.
+
+test("a host is refused when any one of its answers is private, loopback, link-local or unique-local", async () => {
+  const refuse = async (answers: string | string[], pattern = /url_resolved/) => {
+    setConnectionLookup(async () => answers as never);
+    try {
+      await assert.rejects(() => assertResolvedPublic("https://mcp.example.com/mcp"), pattern, JSON.stringify(answers));
+    } finally {
+      setConnectionLookup(null);
+    }
+  };
+  // One public answer does not excuse a private one beside it.
+  await refuse(["8.8.8.8", "10.0.0.4"]);
+  await refuse(["8.8.8.8", "127.0.0.1"]);
+  await refuse(["169.254.169.254", "8.8.8.8"]);
+  await refuse(["2606:4700:4700::1111", "192.168.1.9"]);
+  // The v6 families: loopback, unspecified, link-local, unique-local, multicast.
+  for (const v6 of ["::1", "::", "fe80::1", "febf::1", "fc00::1", "fd12:3456::1", "ff02::1", "fec0::1"]) {
+    await refuse(["8.8.8.8", v6]);
+  }
+  // IPv4 smuggled into v6: mapped, compatible, NAT64 and 6to4.
+  for (const v6 of ["::ffff:127.0.0.1", "::ffff:10.0.0.4", "::ffff:7f00:1", "::ffff:a00:4", "::10.0.0.4", "64:ff9b::a00:4", "2002:a00:4::1", "::ffff:169.254.169.254"]) {
+    await refuse([v6], /url_resolved/);
+  }
+  // Nothing that is an address at all.
+  await refuse(["not-an-address"]);
+  await refuse([], /url_resolve$/);
+  // A public answer in either family, alone or together, passes.
+  for (const ok of [["8.8.8.8"], ["2606:4700:4700::1111"], ["8.8.8.8", "2606:4700:4700::1111"], ["::ffff:8.8.8.8"]]) {
+    setConnectionLookup(async () => ok as never);
+    try {
+      assert.equal(await assertResolvedPublic("https://mcp.example.com/mcp"), "https://mcp.example.com/mcp", JSON.stringify(ok));
+    } finally {
+      setConnectionLookup(null);
+    }
+  }
+});

@@ -302,7 +302,7 @@ public enum TranscriptBlocks {
                 // Each marked row is the first of a reply of its own.
                 if taskReplies.contains(row.id) { run = [] }
                 run.insert(row.id)
-            case .handoff, .note, .widget, .image, .page, .failure: continue
+            case .handoff, .note, .widget, .image, .page, .failure, .unsent: continue
             }
         }
         return run
