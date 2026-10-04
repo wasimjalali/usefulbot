@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { activeBotId } from "../lib/active-bot.ts";
+import { callerOf, SUB_AGENT_BLOCKED } from "../lib/permission.ts";
+import { isSubAgent } from "../lib/active-bot.ts";
 import {
   appendAgentEvent,
   createProposal,
@@ -21,13 +22,14 @@ import { readShell } from "../../shared/shell-io.ts";
  */
 export default defineTool({
   description:
-    "Ask the owner to connect an app from the catalogue so you can use it. Shows a card with Authorize. Call connector_catalog first; propose one app per turn, then end your turn.",
+    "Ask the owner to connect a catalogue app; shows an Authorize card. Call connector_catalog first. One app per turn, then end your turn with one line, and never propose a different app instead.",
   inputSchema: z.object({
     slug: z.string().min(1).max(80),
     purpose: z.string().min(3).max(120),
     requestId: z.string().min(1).max(120).optional(),
   }),
   async execute(input, ctx) {
+    if (isSubAgent(ctx)) return SUB_AGENT_BLOCKED;
     const store = readConnectorsStore();
     if (!store.apiKey) return { status: "blocked", error: "connectors_not_set_up" };
     const slug = input.slug.trim().toLowerCase();
@@ -46,7 +48,9 @@ export default defineTool({
     if (row.connected) return { status: "already_connected", slug, name: row.name };
 
     const shell = readShell();
-    const botId = activeBotId(shell, ctx);
+    const who = await callerOf(shell, ctx);
+    if (!who.ok) return who.result;
+    const botId = who.caller.id;
     const threadId = threadIdFor(botId);
     // One open connect card per bot: the instructions say one app per turn,
     // and this is what makes a second proposal in the same turn a no-op

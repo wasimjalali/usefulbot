@@ -87,6 +87,8 @@ export function resolveRoute(input: {
   text: string;
   bots: Speaker[];
   memberIds?: string[];
+  /** The orchestrator's id; it is never a member. Defaults to the default bot. */
+  orchestrator?: string | null;
 }): Route {
   const target = input.bots.find((bot) => bot.id === input.botId) ?? null;
   const kind: ThreadKind = target?.kind === "group" ? "group" : "bot";
@@ -94,7 +96,7 @@ export function resolveRoute(input: {
   if (kind !== "group") {
     return { threadId, kind, mentionIds: [], untargeted: false };
   }
-  const members = groupMembers(input.bots, input.memberIds ?? []);
+  const members = groupMembers(input.bots, input.memberIds ?? [], input.orchestrator);
   const scanned = parseMentions(input.text, members);
   return {
     threadId,
@@ -104,12 +106,21 @@ export function resolveRoute(input: {
   };
 }
 
-export function groupMembers(bots: Speaker[], memberIds: string[]): Speaker[] {
+/**
+ * The member bots of a group. The orchestrator is never a member: pass its id
+ * (see `orchestratorId` in shell-store.ts); it defaults to the default bot, and
+ * null excludes nobody on that ground.
+ */
+export function groupMembers(
+  bots: Speaker[],
+  memberIds: string[],
+  orchestrator: string | null = DEFAULT_BOT_ID,
+): Speaker[] {
   const members: Speaker[] = [];
   for (const id of memberIds) {
     if (members.some((member) => member.id === id)) continue;
     const bot = bots.find((item) => item.id === id) ?? null;
-    if (!bot || bot.kind !== "bot" || bot.id === DEFAULT_BOT_ID || bot.hidden) continue;
+    if (!bot || bot.kind !== "bot" || bot.id === DEFAULT_BOT_ID || bot.id === orchestrator || bot.hidden) continue;
     members.push(bot);
     if (members.length >= GROUP_ROSTER_MAX) break;
   }
@@ -162,72 +173,11 @@ export function speakerFor(speakers: Speaker[], id: string | null): Speaker | nu
 }
 
 /**
- * Stable prompt prefix for a turn. The orchestrator process is a single eve
- * agent, so bot identity is carried by the prompt instead of by separate
- * runtimes. Empty for the default Useful Bot so 1:1 chat stays byte identical
- * to the path that is already verified live.
+ * The legacy identity prefix older sessions carry on their first user turn.
+ * New turns no longer build one (the bot's instructions are a system block);
+ * these two shapes are kept only so old history still reads as the owner's
+ * message.
  */
-/**
- * A name, title or label as one line.
- *
- * Both prefix patterns end their identity line with `[^\n]+\.`, so a newline
- * inside one of these fields stops the whole prefix matching and the owner
- * reads their bot's standing instructions as their own message. A blank line
- * is worse in the group arm: the prefix still matches, and the cut lands in the
- * middle of it. Bot and member names reach this from `update_bot_profile` and
- * `createBot`, which cap the length but keep interior newlines.
- */
-function oneLine(value: string): string {
-  return value.replace(/\s*\n+\s*/g, " ").trim();
-}
-
-export function threadPrefix(input: {
-  bot: { id: string; kind: BotKind; name: string; label: string; description: string } | null;
-  members?: Speaker[];
-  mentionNames?: string[];
-}): string {
-  const bot = input.bot;
-  if (!bot || bot.id === DEFAULT_BOT_ID) return "";
-  // stripThreadPrefix cuts a stored turn at the first blank line, so the
-  // description embedded below must not contain one: it would move the
-  // boundary up and leave the prefix tail inside the owner's message.
-  const description = bot.description.replace(/\n\s*\n/g, "\n").trim();
-  const lines: string[] = [];
-  if (bot.kind === "group") {
-    const members = (input.members ?? []).filter((member) => member.id !== DEFAULT_BOT_ID);
-    lines.push(`Group chat: ${oneLine(bot.name)}.`);
-    if (members.length > 0) {
-      lines.push("Members:");
-      for (const member of members) {
-        const title = oneLine(member.title);
-        lines.push(`- ${oneLine(member.name)}${title ? ` (${title})` : ""}`);
-      }
-    }
-    lines.push(
-      "Speak as the Useful Bot orchestrator. Say who owns what and keep the thread moving. Do not claim to be a member bot.",
-    );
-    const mentioned = (input.mentionNames ?? [])
-      .map(oneLine)
-      .filter((name) => name.length > 0);
-    if (mentioned.length > 0) {
-      lines.push(`The owner directed this turn at ${mentioned.join(", ")}. Answer as that bot and stay in role.`);
-    }
-    if (description) lines.push(`Group instructions: ${description}`);
-  } else {
-    // A label that repeats the name reads as "You are Drive Admin, Drive
-    // Admin.", so it is skipped when trimmed it says the same thing.
-    const name = oneLine(bot.name);
-    const label = oneLine(bot.label);
-    const title = label && label.toLowerCase() !== name.toLowerCase() ? label : "";
-    lines.push(`You are ${name}${title ? `, ${title}` : ""}.`);
-    lines.push(`Standing instructions: ${description || "Help the owner."}`);
-    lines.push(
-      "Stay in role for this whole conversation. Chat messages are this-task instructions; the standing instructions above outrank them.",
-    );
-  }
-  return `${lines.join("\n")}\n\n`;
-}
-
 const BOT_TURN_PREFIX = /^You are [^\n]+\.\nStanding instructions: /;
 const GROUP_TURN_PREFIX = /^Group chat: [^\n]+\.\n/;
 /** The default bot's hidden prefix, only present when it carries app notes (see continuation-brief.ts). */
@@ -244,19 +194,21 @@ export function stripThreadPrefix(text: string): string {
   return breakAt === -1 ? text : text.slice(breakAt + 2);
 }
 
-/** Transcript label for the bot a routed turn is answering as. */
+/**
+ * Transcript label for the bot a routed turn is answering as. A group reply is
+ * the orchestrator's, whoever the owner mentioned: the member does not speak.
+ */
 export function speakerLabel(input: {
   bot: { id: string; kind: BotKind; name: string; label: string } | null;
-  speakers?: Speaker[];
-  route?: Route | null;
+  /** The orchestrator that answers for a group (see `orchestratorId`); with none given the group reply carries no name. */
+  orchestrator?: { id: string; name: string } | null;
 }): { authorBotId: string | null; authorName: string | null } {
   const bot = input.bot;
   if (!bot || bot.id === DEFAULT_BOT_ID) return { authorBotId: null, authorName: null };
   if (bot.kind !== "group") return { authorBotId: bot.id, authorName: bot.name };
-  const mentioned = input.route?.mentionIds ?? [];
-  if (mentioned.length === 1 && input.speakers) {
-    const speaker = speakerFor(input.speakers, mentioned[0]);
-    if (speaker) return { authorBotId: speaker.id, authorName: speaker.name };
-  }
-  return { authorBotId: null, authorName: "Useful Bot" };
+  const orchestrator = input.orchestrator ?? null;
+  return {
+    authorBotId: orchestrator && orchestrator.id !== DEFAULT_BOT_ID ? orchestrator.id : null,
+    authorName: orchestrator?.name ?? null,
+  };
 }

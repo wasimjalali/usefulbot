@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { statePath } from "./stack.ts";
 
 /**
  * Legacy generated images, one JSON record each under ~/.useful-bot/images/.
@@ -44,7 +45,7 @@ export function imagesDir(root = process.env.UB_IMAGES_DIR): string {
   if (root) return root;
   // Migration deletes from here, so a test must never reach the real folder.
   if (process.env.NODE_TEST_CONTEXT) throw new Error("images under test needs UB_IMAGES_DIR");
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/images");
+  return statePath("images");
 }
 
 function pathFor(id: string, dir = imagesDir()): string {

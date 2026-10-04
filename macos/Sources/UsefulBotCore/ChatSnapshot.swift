@@ -18,7 +18,7 @@ public struct ChatSnapshot: Codable, Equatable, Sendable {
     /// of any type stored inside it, changes. A snapshot of another version is
     /// never restored; the chat is replayed from zero instead and written
     /// again. `ChatSnapshotTests` pins the stored names to this number.
-    public static let formatVersion = 4
+    public static let formatVersion = 11
 
     public var version: Int
     public var botId: String
@@ -87,14 +87,13 @@ public struct ChatSnapshotStore: Sendable {
         self.maxAge = maxAge
     }
 
-    /// `~/Library/Caches/UsefulBot/chat-snapshots`. A cache: everything in it
+    /// `~/Library/Caches/UsefulBot/chat-snapshots` (the dev build keeps its own
+    /// under its bundle id; see `AppVariant`). A cache: everything in it
     /// can be rebuilt from the eve session, so the system may purge it.
     public static var defaultDirectory: URL {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return caches
-            .appendingPathComponent("UsefulBot", isDirectory: true)
-            .appendingPathComponent("chat-snapshots", isDirectory: true)
+        return AppVariant.current.snapshotsCacheDirectory(caches: caches)
     }
 
     /// Bot ids are server-minted, but a file name is never taken on trust:

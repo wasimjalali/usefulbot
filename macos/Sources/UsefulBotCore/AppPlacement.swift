@@ -110,8 +110,8 @@ public enum AppPlacement {
         return .elsewhere(path: path)
     }
 
-    public static func shouldOffer(isRelease: Bool, suppressed: Bool, location: Location) -> Bool {
-        isRelease && !suppressed && location != .applications
+    public static func shouldOffer(isRelease: Bool, suppressed: Bool, location: Location, variant: AppVariant = .current) -> Bool {
+        variant.allowsMoveToApplications && isRelease && !suppressed && location != .applications
     }
 
     /// /Applications, or the user's own Applications folder when they cannot

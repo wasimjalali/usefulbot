@@ -9,6 +9,8 @@ struct UsefulBotDesktopApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
+        // Before anything reads state or starts a service.
+        LaunchCheck.runOrQuit()
         // The Dock icon, set before the first window rather than when it
         // appears. Until then the Dock shows whatever Launch Services holds
         // for this bundle id, and a stale registration showed the old icon.
@@ -16,7 +18,7 @@ struct UsefulBotDesktopApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Useful Bot") {
+        WindowGroup(AppVariant.current.displayName) {
             RootView()
                 .environmentObject(model)
                 .task { await model.start() }

@@ -108,6 +108,11 @@ public enum TurnActivity: Codable, Equatable, Sendable {
     /// and the sub-agent: the owner only sees that it runs and when it is back.
     case subagent(finished: Bool)
 
+    public var isSubagent: Bool {
+        if case .subagent = self { return true }
+        return false
+    }
+
     /// Sentence case, no trailing period: the row swaps between these while
     /// the turn runs, and a period on every one of them reads as a stutter.
     public var label: String {
@@ -278,8 +283,26 @@ public struct TurnFailure: Codable, Equatable, Sendable {
         return formatter.string(from: date)
     }
 
+    /// Also what a refused send says, so the composer note and a failed
+    /// turn's row read the same.
+    public static let modelSelectionUnavailableCopy = "This bot's model isn't available any more. Pick another model below."
+
     public var reason: String? {
         let haystack = "\(code) \(detail)".lowercased()
+        // The bot's own pick is gone (its connection was removed or
+        // disconnected). Nothing was substituted, so the owner chooses.
+        if haystack.contains("model_selection_unavailable") {
+            return Self.modelSelectionUnavailableCopy
+        }
+        if haystack.contains("model_unavailable") {
+            return "The provider doesn't offer this model right now. Pick another model."
+        }
+        if haystack.contains("upstream_auth_failed") || haystack.contains("upstream_credential_missing") {
+            return "Sign-in to the model provider expired. Reconnect it in Settings."
+        }
+        if haystack.contains("provider_disconnected") {
+            return "The model provider is disconnected. Reconnect it in Settings."
+        }
         // The provider's own limits, from the 429 body: no wait lifts these
         // in a turn's time, so the copy says what ran out and what to do.
         if haystack.contains("upstream_usage_limit") {
@@ -424,6 +447,28 @@ public struct FailureMark: Identifiable, Codable, Equatable, Sendable {
 
     /// The transcript row id this mark renders as.
     public var rowId: String { "failure-\(id)" }
+}
+
+/// Where eve compacted a conversation: the row it goes under and when. The
+/// summary replaces the history for good, so the transcript keeps a quiet
+/// line at that point. Keyed by the event's id, so a replay of the same
+/// event never adds a second line.
+public struct CompactionMark: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    /// The last row the transcript held when compaction finished.
+    public var anchorId: String?
+    public var at: Date?
+
+    public init(id: String, anchorId: String?, at: Date?) {
+        self.id = id
+        self.anchorId = anchorId
+        self.at = at
+    }
+
+    /// The transcript row id this mark renders as.
+    public var rowId: String { "compaction-\(id)" }
+
+    public static let text = "Conversation compacted to fit the model's window"
 }
 
 /// How a send ended, and whether the banner it put up may be retried by
@@ -633,7 +678,7 @@ public enum EveStream {
     /// (`formatTaskNotification` and the update and authorization wakes in
     /// eve's `execution/tasks/child/steps.js`, 0.54). Streams from before the
     /// `kind` mark carry nothing else to tell such a report by.
-    private static let taskReportPattern = try! NSRegularExpression(
+    static let taskReportPattern = try! NSRegularExpression(
         pattern: "^Background task (task_[A-Za-z0-9]+)(?: \\([^\\n]*?\\))? (is completed\\.|failed\\.|is cancelled\\.|needs input\\.|needs authorization\\.|update: )",
         options: [.anchorsMatchLines]
     )
@@ -857,6 +902,8 @@ public struct StreamProjection: Codable, Equatable, Sendable {
     /// Every failed turn still worth showing, in the order they failed. A
     /// retry that gets somewhere takes its failure's mark away.
     public private(set) var failureMarks: [FailureMark] = []
+    /// Every compaction eve ran in this session, in order.
+    public private(set) var compactionMarks: [CompactionMark] = []
     /// The mark of the failure `failed` is about, while it is.
     private var liveFailureMarkId: String?
     /// The one failure row that may still be retried: the newest turn's, and
@@ -892,6 +939,63 @@ public struct StreamProjection: Codable, Equatable, Sendable {
     /// delivered again, or an update wake that trails the completion, is
     /// still the bot's and never an owner row.
     private var settledTasks: Set<String> = []
+    /// Every background sub-agent this session launched, one row per agent id,
+    /// in the order they first started. A relaunch of the same agent moves its
+    /// row back to working.
+    public private(set) var subagentRuns: [SubagentRun] = []
+    /// The same runs grouped by the turn that launched them, for one card each.
+    public var subagentBatches: [SubagentBatch] {
+        var batches: [SubagentBatch] = []
+        for run in subagentRuns {
+            if let at = batches.firstIndex(where: { $0.id == run.groupId }) {
+                batches[at].runs.append(run)
+            } else {
+                batches.append(SubagentBatch(id: run.groupId, runs: [run]))
+            }
+        }
+        return batches
+    }
+    /// The row each launching turn's card sits under: the last row that turn
+    /// put in the transcript. Missing once the turn is forgotten.
+    public func subagentAnchor(forGroup id: String) -> String? {
+        id == (currentTurnId ?? "") ? turn.lastRowId : (turns[id]?.lastRowId ?? groupAnchors[id])
+    }
+    /// Requests from eve that are not questions (a session limit, a tool
+    /// approval, a kind not known yet), open until `input.resolved`. Unlike a
+    /// question, the owner's next message does not answer one: eve keeps it
+    /// pending and queues what the owner writes.
+    public private(set) var pendingRequests: [PendingRequest] = []
+    /// Owner rows whose turn ended with no model step while a request was
+    /// open: eve held them for later. They stay marked once it is answered.
+    public private(set) var queuedMessageIds: Set<String> = []
+    /// The held rows in the order they were held, until eve replays them,
+    /// drops them or the session ends. A row raised the request itself (its
+    /// turn had no step) or was queued behind it.
+    private var heldOrder: [String] = []
+    /// Held rows eve never replayed: the bot never got them.
+    public private(set) var droppedMessageIds: Set<String> = []
+    /// A request was answered with rows still held: the next turn eve runs is
+    /// its replay. `replayTurn` is that turn once it has begun; its end is
+    /// when rows it did not include are judged dropped.
+    private var replayOpen = false
+    /// Held rows whose own turn raised the request: eve never replays these.
+    private var heldOrigins: Set<String> = []
+    /// The row each launching turn ended on, kept after the turn table lets
+    /// the turn go (it holds the newest 256).
+    private var groupAnchors: [String: String] = [:]
+    /// The session the last event came from. A different one is a new chat.
+    private var activeSession: String?
+    private var replayTurn: String?
+    /// The brief of each sub-agent call, by call id, until its receipt claims it.
+    private var callBriefs: [String: String] = [:]
+    /// The turn each task's receipt was seen under, keyed by call id.
+    private var callTurns: [String: String] = [:]
+    /// Which agent each task id belongs to, every task it ever ran.
+    private var taskAgents: [String: String] = [:]
+    /// The child session eve named for each agent.
+    private var childSessions: [String: String] = [:]
+    /// Where each agent's `subagent.called` sits on its parent's stream.
+    private var childCalls: [String: SubagentCallSite] = [:]
     private var seen = Set<String>()
     private var seenOrder: [String] = []
     private var seenCursor = 0
@@ -909,6 +1013,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             // in the eviction order.
             + turns.count * 128
             + failureMarks.reduce(0) { $0 + $1.failure.detail.utf8.count + 128 }
+            + compactionMarks.count * 128
     }
     /// The one session every positioned event here was read from, or nil when
     /// there were none or more than one. A send that moved to a fresh session
@@ -1001,6 +1106,11 @@ public struct StreamProjection: Codable, Equatable, Sendable {
         /// never answered. A turn that reasoned, failed and was resent left
         /// the question standing twice with nothing between.
         var producedWork = false
+        /// Whether a model step began in it. A turn eve queued behind a
+        /// pending request runs none.
+        var sawStep = false
+        /// Whether a non-question request was raised in it.
+        var raisedRequest = false
         /// Whether a message arrived in this turn at all. A turn refused
         /// before its own echo (`session_busy`, an open circuit) would
         /// otherwise be read as having thrown away a message an earlier turn
@@ -1110,7 +1220,12 @@ public struct StreamProjection: Codable, Equatable, Sendable {
         if turns.updateValue(record, forKey: id) == nil {
             turnOrder.append(id)
             if turnOrder.count > Self.turnCap {
-                turns[turnOrder.removeFirst()] = nil
+                let old = turnOrder.removeFirst()
+                // A card's anchor outlives its turn's record.
+                if let row = turns[old]?.lastRowId, subagentRuns.contains(where: { $0.groupId == old }) {
+                    groupAnchors[old] = row
+                }
+                turns[old] = nil
             }
         }
     }
@@ -1271,6 +1386,9 @@ public struct StreamProjection: Codable, Equatable, Sendable {
         for index in failureMarks.indices where failureMarks[index].anchorId == old {
             failureMarks[index].anchorId = new
         }
+        for index in compactionMarks.indices where compactionMarks[index].anchorId == old {
+            compactionMarks[index].anchorId = new
+        }
     }
 
     /// The turn in flight got somewhere, so a failure it was the retry of is
@@ -1375,6 +1493,179 @@ public struct StreamProjection: Codable, Equatable, Sendable {
         settledTasks.insert(task)
     }
 
+    /// A message from eve on a sub-agent's behalf: settle what it finished
+    /// and record what each report said on its run.
+    private mutating func settleReports(_ reports: [(taskId: String, settled: Bool)], text: String, at stamp: Date?) {
+        for report in reports where report.settled { settle(report.taskId) }
+        for detail in EveStream.taskReportDetails(text) {
+            // A task nobody here launched, or one a relaunch replaced, is
+            // not a row's to change.
+            guard let agent = taskAgents[detail.taskId],
+                  let index = subagentRuns.firstIndex(where: { $0.agentId == agent }),
+                  subagentRuns[index].taskId == detail.taskId else { continue }
+            switch detail.outcome {
+            case .completed:
+                subagentRuns[index].state = .reported(at: stamp)
+                subagentRuns[index].result = cutReplayedOwnerText(detail.body)
+            case .failed:
+                // eve words an owner's Stop as a failure; it is a stop.
+                subagentRuns[index].state = EveStream.isCancellation(detail.body)
+                    ? .cancelled(at: stamp)
+                    : .failed(at: stamp, message: detail.body)
+            case .cancelled:
+                subagentRuns[index].state = .cancelled(at: stamp)
+            case .other:
+                break
+            }
+        }
+    }
+
+    /// A merged report turn runs its last report's body to the end of the
+    /// message, and eve's replay of held owner text sits there. The body ends
+    /// where a held message begins as its own blank-line segment.
+    private func cutReplayedOwnerText(_ body: String) -> String {
+        guard replayOpen, pendingRequests.isEmpty, !heldOrder.isEmpty else { return body }
+        let held = Set(heldOrder.compactMap { id in indexById[id].map { Self.replayKey(messages[$0].text) } }.filter { !$0.isEmpty })
+        guard !held.isEmpty else { return body }
+        let parts = body.components(separatedBy: "\n\n")
+        for start in parts.indices.dropFirst() {
+            for end in start..<min(parts.count, start + 8) {
+                if held.contains(parts[start...end].map(Self.replayKey).joined(separator: " ")) {
+                    return parts[..<start].joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+        }
+        return body
+    }
+
+    /// A sub-agent's admission receipt, from the tool result or from
+    /// `subagent.completed`, whichever arrives first. The other is the same task.
+    private mutating func noteLaunch(agent: String, task: String, call: String?, turn: String?, at stamp: Date?) {
+        taskAgents[task] = agent
+        let group = turn ?? call.flatMap { callTurns[$0] } ?? currentTurnId ?? ""
+        if let index = subagentRuns.firstIndex(where: { $0.agentId == agent }) {
+            // Steered again: one row, back to work.
+            if subagentRuns[index].taskId != task {
+                subagentRuns[index].taskId = task
+                subagentRuns[index].taskStartedAt = stamp
+                subagentRuns[index].state = .working
+                subagentRuns[index].result = nil
+            }
+        } else {
+            let brief = call.flatMap { callBriefs[$0] }
+            subagentRuns.append(SubagentRun(
+                agentId: agent,
+                childSessionId: childSessions[agent],
+                childCall: childCalls[agent],
+                taskId: task,
+                title: SubagentRun.title(fromBrief: brief, fallbackIndex: subagentRuns.count + 1),
+                startedAt: stamp,
+                groupId: group
+            ))
+        }
+        if let call {
+            callBriefs[call] = nil
+            callTurns[call] = nil
+        }
+    }
+
+    /// The session is gone or replaced: nothing it started will report back.
+    private mutating func abandonRuns() {
+        for index in subagentRuns.indices where subagentRuns[index].state == .working {
+            subagentRuns[index].state = .cancelled(at: nil)
+        }
+    }
+
+    /// An owner row whose turn ended with no model step while a request was
+    /// open was held by eve, not answered.
+    private mutating func markQueued(_ record: TurnRecord) {
+        // The turn that raised the request before doing any work is held
+        // too, and eve never replays it. It may show a `step.started` (the
+        // pause lands before the model call) or none, so the step is no test.
+        guard !pendingRequests.isEmpty, record.sawMessage,
+              record.raisedRequest || (!record.sawStep && !record.producedWork),
+              let carried = record.carriedUserMessageId,
+              let index = indexById[carried] else { return }
+        let id = messages[index].id
+        queuedMessageIds.insert(id)
+        if !heldOrder.contains(id) { heldOrder.append(id) }
+        if record.raisedRequest { heldOrigins.insert(id) }
+    }
+
+    /// The held rows are gone for good: the answer was Stop, or eve went on
+    /// without replaying them.
+    public mutating func dropHeldMessages() {
+        for id in heldOrder { droppedMessageIds.insert(id) }
+        heldOrder = []
+        heldOrigins = []
+        queuedMessageIds = []
+        replayOpen = false
+        replayTurn = nil
+    }
+
+    /// Owner text as eve repeats it: without the thread prefix, whitespace
+    /// folded, so a stray newline or a doubled space is the same message.
+    private static func replayKey(_ text: String) -> String {
+        EveStream.stripThreadPrefix(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// eve answers a request by replaying what it held as one new message
+    /// (several joined by a blank line), and never replays the message whose
+    /// turn raised the request. A message that is that replay joins the rows
+    /// it repeats instead of adding new ones. `within` is a report turn eve
+    /// merged the replay into: the held text is found inside it. Nothing is
+    /// dropped here; the replay turn's end decides (`settleReplay`).
+    private mutating func attachReplay(_ text: String, within: Bool, at stamp: Date?) -> Bool {
+        guard replayOpen, pendingRequests.isEmpty, !heldOrder.isEmpty else { return false }
+        let here = currentTurnId ?? ""
+        // Once a turn has been taken for the replay, no other turn is.
+        if let taken = replayTurn, taken != here { return false }
+        let texts = heldOrder.map { id in indexById[id].map { Self.replayKey(messages[$0].text) } ?? "" }
+        let wanted = Self.replayKey(text)
+        var matched: [Int] = []
+        search: for length in stride(from: texts.count, through: 1, by: -1) {
+            for start in 0...(texts.count - length) where texts[start..<start + length].joined(separator: " ") == wanted {
+                matched = Array(start..<start + length)
+                break search
+            }
+        }
+        if matched.isEmpty, within {
+            // Inside a merged report turn the held text stands as its own
+            // blank-line-separated segment, never as a word inside another's.
+            // A held text of several paragraphs is a run of consecutive segments.
+            let parts = text.components(separatedBy: "\n\n").map(Self.replayKey)
+            var runs = Set<String>()
+            for start in parts.indices {
+                for end in start..<min(parts.count, start + 8) {
+                    runs.insert(parts[start...end].joined(separator: " "))
+                }
+            }
+            matched = texts.indices.filter { !texts[$0].isEmpty && runs.contains(texts[$0]) }
+        }
+        guard !matched.isEmpty else { return false }
+        replayTurn = here
+        let attached = matched.map { heldOrder[$0] }
+        heldOrder = heldOrder.enumerated().filter { !matched.contains($0.offset) }.map(\.element)
+        queuedMessageIds = Set(heldOrder)
+        if heldOrder.isEmpty { replayOpen = false; replayTurn = nil }
+        if !within {
+            for id in attached { Self.claimUserRow(id, on: &turn) }
+            turn.lastRowId = attached.last
+            turnStartedAt = stamp ?? Date()
+            failed = false
+            failure = nil
+            pending = true
+            activity = .thinking
+        }
+        return true
+    }
+
+    /// The replay turn ended: whatever it did not include never reached the bot.
+    private mutating func settleReplay(_ event: EveEvent) {
+        guard replayOpen, let turnId = replayTurn, (event.turnId ?? currentTurnId ?? "") == turnId else { return }
+        dropHeldMessages()
+    }
+
     public mutating func beginTurn() {
         pending = true
         turnStartedAt = Date()
@@ -1420,6 +1711,9 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             if seen.contains(id) { return }
             remember(id)
         }
+        // The position on the event's own session stream, before it becomes
+        // the projection's count: a sub-agent's call site is named by it.
+        let streamIndex = event.index
         // Every journal comparison below reads this, so it is the one place a
         // session's positions are put in the projection's count.
         event.index = journalPosition(of: event)
@@ -1435,8 +1729,16 @@ public struct StreamProjection: Codable, Equatable, Sendable {
         if let session = event.sessionId {
             if let tasks = tasksSession, tasks != session {
                 runningTasks = [:]
+                abandonRuns()
                 tasksSession = nil
             }
+            // Another session is another chat: what the last one was waiting
+            // on, and the rows it held, will never be answered or replayed.
+            if let active = activeSession, active != session {
+                pendingRequests = []
+                dropHeldMessages()
+            }
+            activeSession = session
             if firstSession == nil { firstSession = session }
             if session != firstSession, let turnId = event.turnId, !turnId.isEmpty {
                 event.turnId = "\(session)/\(turnId)"
@@ -1567,7 +1869,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                     guard canResume(known) || ownEcho, var stepped = unstash(named) else {
                         // A late report is still the bot's, never an owner row.
                         if fromTask {
-                            for report in reports where report.settled { settle(report.taskId) }
+                            settleReports(reports, text: text, at: stamp)
                             return
                         }
                         lateUserRow(event, text: text, at: stamp, for: named)
@@ -1597,7 +1899,8 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             // owner's: it opens the turn in which the bot answers, and shows
             // only in the working row.
             if fromTask {
-                for report in reports where report.settled { settle(report.taskId) }
+                settleReports(reports, text: text, at: stamp)
+                _ = attachReplay(text, within: true, at: stamp)
                 turn.fromTask = true
                 failed = false
                 failure = nil
@@ -1667,6 +1970,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                 activity = .thinking
                 return
             }
+            if attachReplay(text, within: false, at: stamp) { return }
             let userId = event.id ?? mintId("u")
             turnStartedAt = stamp ?? Date()
             appendMessage(ChatMessage(
@@ -1692,6 +1996,14 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             guard case .current = turnOwner(of: event) else { break }
             activity = .compacting
         case "compaction.completed":
+            // The history was replaced whichever turn this belonged to, so
+            // the note is kept for a stepped-off turn too. The event's id
+            // already deduped a replay at the top of `apply`.
+            compactionMarks.append(CompactionMark(
+                id: event.id ?? mintId("c"),
+                anchorId: messages.last?.id,
+                at: stamp
+            ))
             guard case .current = turnOwner(of: event) else { break }
             activity = .thinking
         case "reasoning.appended", "reasoning.completed":
@@ -1707,6 +2019,12 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             // on screen. A stepped-off turn's late call is a drawing that
             // turn made, and a replay shows it; what the working row says is
             // still the live turn's.
+            for action in event.data?["actions"]?.arrayValue ?? [] {
+                guard action["toolName"]?.stringValue == "agent" || action["subagentName"]?.stringValue != nil,
+                      let call = action["callId"]?.stringValue, !call.isEmpty else { continue }
+                if let brief = action["input"]?["message"]?.stringValue { callBriefs[call] = brief }
+                if let turn = event.turnId { callTurns[call] = turn }
+            }
             let owner = turnOwner(of: event)
             guard var record = record(of: owner) else { break }
             record.producedWork = true
@@ -1846,6 +2164,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             // stale bubble.
             record.assistantId = nil
         case "turn.failed", "session.failed":
+            if event.type == "turn.failed" { settleReplay(event) }
             switch turnOwner(of: event) {
             case .ignored:
                 // Another turn's failure, replayed mid-turn, neither ends
@@ -1864,6 +2183,9 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                     questions = []
                     // A retired session wakes for nothing again.
                     runningTasks = [:]
+                    abandonRuns()
+                    pendingRequests = []
+                    dropHeldMessages()
                 }
                 guard var stepped = turns[id] else { break }
                 stepped.ended = true
@@ -1892,6 +2214,9 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                     questions = []
                     // A retired session wakes for nothing again.
                     runningTasks = [:]
+                    abandonRuns()
+                    pendingRequests = []
+                    dropHeldMessages()
                 }
                 let standing = retryableMarkId
                 pending = false
@@ -1923,6 +2248,9 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                let task = output["taskId"]?.stringValue, task.hasPrefix("task_") {
                 runningTasks[task] = runningTasks[task] ?? stamp ?? Date()
                 if let session = event.sessionId { tasksSession = session }
+                if let agent = output["agentId"]?.stringValue, !agent.isEmpty {
+                    noteLaunch(agent: agent, task: task, call: event.data?["result"]?["callId"]?.stringValue, turn: event.turnId, at: stamp)
+                }
             }
             // Another turn's results are not this turn's chips.
             guard case .current = turnOwner(of: event) else { break }
@@ -1931,13 +2259,58 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             let chips = EveStream.parseSearchChips(event.data)
             if !chips.isEmpty { searchHits = chips }
             if event.type == "action.result" { activity = .thinking }
+        case "subagent.completed":
+            // The admission receipt, not a completion: `backgroundTask.status`
+            // says the task is working.
+            if let task = event.data?["backgroundTask"]?["taskId"]?.stringValue, task.hasPrefix("task_"),
+               event.data?["backgroundTask"]?["status"]?.stringValue == "working",
+               let output = event.data?["output"]?.stringValue,
+               let raw = output.data(using: .utf8),
+               let agent = (try? JSONDecoder().decode(JSONValue.self, from: raw))?["agentId"]?.stringValue, !agent.isEmpty {
+                noteLaunch(agent: agent, task: task, call: event.data?["callId"]?.stringValue, turn: event.turnId, at: stamp)
+            }
+        case "subagent.called":
+            // May arrive after the receipt and after the parent's turn ended;
+            // its turn is the next one's, so it only names the child session.
+            if let agent = event.data?["agentId"]?.stringValue, !agent.isEmpty,
+               let child = event.data?["childSessionId"]?.stringValue, !child.isEmpty {
+                childSessions[agent] = child
+                let site = streamIndex.map { SubagentCallSite(sessionId: event.sessionId, index: $0) }
+                childCalls[agent] = site
+                if let index = subagentRuns.firstIndex(where: { $0.agentId == agent }) {
+                    subagentRuns[index].childSessionId = child
+                    subagentRuns[index].childCall = site
+                }
+            }
+        case "step.started":
+            let owner = turnOwner(of: event)
+            guard var record = record(of: owner) else { break }
+            record.sawStep = true
+            store(record, for: owner)
         case "input.requested":
             // A question an older turn asked and the owner has already
             // answered must not come back as a live card on this one. A
             // stepped-off turn's late question is still open: the owner's
             // answer, when there is one, follows as `input.resolved`.
             let owner = turnOwner(of: event)
+            // Not a question: eve holds it until `input.resolved`, whatever
+            // turns begin meanwhile, so neither the owner nor the turn rule
+            // below closes it. A replayed one is removed by its own resolve.
+            for request in EveStream.parsePendingRequests(event.data, eventId: event.id) {
+                replayOpen = false
+                replayTurn = nil
+                if let index = pendingRequests.firstIndex(where: { $0.id == request.id }) {
+                    pendingRequests[index] = request
+                } else {
+                    pendingRequests.append(request)
+                }
+            }
             guard var record = record(of: owner) else { break }
+            // Only a request raised before the turn did anything holds its
+            // message: one raised mid-turn resumes that turn once answered.
+            if !record.producedWork, !EveStream.parsePendingRequests(event.data, eventId: event.id).isEmpty {
+                record.raisedRequest = true
+            }
             // A question ends the turn: the bot is waiting on the owner, not
             // working. So it closes the rows above it, the way an answer does.
             record.producedWork = true
@@ -1961,7 +2334,28 @@ public struct StreamProjection: Codable, Equatable, Sendable {
             let resolved = Set((event.data?["resolutions"]?.arrayValue ?? [])
                 .compactMap { $0["requestId"]?.stringValue })
             questions.removeAll { resolved.contains($0.id) }
+            pendingRequests.removeAll { resolved.contains($0.id) }
+            // Stop is in the resolution, so a replay reads it the way a live
+            // stream does: nothing held will ever be replayed.
+            let stopped = (event.data?["resolutions"]?.arrayValue ?? []).contains {
+                $0["kind"]?.stringValue == "session-limit" && $0["response"]?["optionId"]?.stringValue == "stop"
+            }
+            if stopped {
+                dropHeldMessages()
+            } else if pendingRequests.isEmpty, !heldOrder.isEmpty {
+                // eve never replays the message whose turn raised the request:
+                // it is gone now, and the owner can send it again.
+                for id in heldOrigins { droppedMessageIds.insert(id) }
+                heldOrder.removeAll { heldOrigins.contains($0) }
+                queuedMessageIds.subtract(heldOrigins)
+                heldOrigins = []
+                replayOpen = !heldOrder.isEmpty
+                replayTurn = nil
+            }
         case "turn.completed", "turn.cancelled", "session.waiting", "session.completed":
+            // The session ended with rows still held: eve will not replay them.
+            if event.type == "session.completed", pendingRequests.isEmpty { dropHeldMessages() }
+            if event.type == "turn.completed" || event.type == "turn.cancelled" { settleReplay(event) }
             switch turnOwner(of: event) {
             case .ignored:
                 // The same for another turn's end: this turn is still running.
@@ -1973,6 +2367,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                 guard var stepped = turns[id] else { break }
                 stepped.ended = true
                 turns[id] = stepped
+                if event.type == "turn.completed" { markQueued(stepped) }
                 if let carried = stepped.carriedUserMessageId, discardedUserMessageId == carried {
                     discardedUserMessageId = nil
                 }
@@ -1990,6 +2385,7 @@ public struct StreamProjection: Codable, Equatable, Sendable {
                     // last word on that message.
                     if event.type == "turn.completed" { foldRetriedFailures() }
                 }
+                if event.type == "turn.completed" { markQueued(turn) }
                 pending = false
                 turn.ended = true
                 leaveCurrentTurn()

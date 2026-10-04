@@ -20,11 +20,32 @@ const FAILURE_OPEN_MS = 30_000;
  */
 const MISSING_MODEL_OPEN_MS = 300_000;
 
+/**
+ * A 4xx the provider answered with (context overflow, invalid request,
+ * unsupported tools or images). The request was refused, the upstream is fine:
+ * it keeps the wire shape of a protocol error, but it never counts toward the
+ * failure circuit, or one oversized prompt would pause every bot on the model.
+ */
+export class UpstreamRefusalError extends RouterError {}
+
+/**
+ * One circuit per upstream: alias, connection and model. A rate limit or a
+ * missing model on one model must not stop another model or another bot that
+ * picked a different one. The alias comes first so `disable` can find it.
+ */
+export function circuitKey(alias: string, connectionId: string, modelId: string): string {
+  return `${alias}|${connectionId}|${modelId}`;
+}
+
+function aliasOf(key: string): string {
+  const cut = key.indexOf("|");
+  return cut === -1 ? key : key.slice(0, cut);
+}
+
 interface CircuitState {
   openUntil: number;
   /** Open because the provider said to slow down, not because it failed. */
   rateLimited: boolean;
-  disabled: boolean;
   failures: number[];
 }
 
@@ -35,22 +56,25 @@ function clampRetryAfter(ms: number | undefined): number {
 
 export class AliasCircuit {
   private readonly states = new Map<string, CircuitState>();
+  /** Alias-wide: the spend tripwire covers every model of the alias. */
+  private readonly disabled = new Set<string>();
 
-  private state(alias: string): CircuitState {
-    let current = this.states.get(alias);
+  private state(key: string): CircuitState {
+    let current = this.states.get(key);
     if (!current) {
-      current = { openUntil: 0, rateLimited: false, disabled: false, failures: [] };
-      this.states.set(alias, current);
+      current = { openUntil: 0, rateLimited: false, failures: [] };
+      this.states.set(key, current);
     }
     return current;
   }
 
-  assertClosed(alias: string, now = Date.now()): void {
-    const current = this.state(alias);
+  assertClosed(key: string, now = Date.now()): void {
+    const alias = aliasOf(key);
+    const current = this.state(key);
     // The spend tripwire, which no timer lifts. Its own code, because the app
     // tells the owner to wait out a `circuit_open` and no wait clears this:
     // the two states read alike from the outside and do not mean alike.
-    if (current.disabled) {
+    if (this.disabled.has(alias)) {
       throw new RouterError({
         status: 503,
         type: "internal_error",
@@ -87,24 +111,25 @@ export class AliasCircuit {
     }
   }
 
-  recordSuccess(alias: string): void {
-    const current = this.state(alias);
+  recordSuccess(key: string): void {
+    const current = this.state(key);
     current.failures = [];
     current.openUntil = 0;
     current.rateLimited = false;
   }
 
   /**
-   * Stop calling this alias until the router restarts. The one caller is a
+   * Stop calling this alias (every model of it) until the router restarts. The one caller is a
    * reservation that overran its budget, which means the spend accounting and
    * the upstream disagree. That is not something a wait fixes.
    */
   disable(alias: string): void {
-    this.state(alias).disabled = true;
+    this.disabled.add(alias);
   }
 
-  recordFailure(alias: string, error: RouterError, now = Date.now()): void {
-    const current = this.state(alias);
+  recordFailure(key: string, error: RouterError, now = Date.now()): void {
+    if (error instanceof UpstreamRefusalError) return;
+    const current = this.state(key);
     if (error.code === "upstream_rate_limited") {
       const retryAfter = clampRetryAfter(error.retryAfterMs);
       if (now + retryAfter > current.openUntil) {

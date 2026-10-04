@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { statePath } from "./stack.ts";
 
 /**
  * What the agent makes belongs to the owner, like the chats: every generated
@@ -100,7 +101,7 @@ export function mediaRoot(root = process.env.UB_MEDIA_DIR): string {
 export function mediaIndexPath(path = process.env.UB_MEDIA_INDEX_PATH): string {
   if (path) return path;
   assertNotRealUnderTest(path, "UB_MEDIA_INDEX_PATH");
-  return join(process.env.HOME ?? "/tmp", ".useful-bot", "media.json");
+  return statePath("media.json");
 }
 
 function emptyIndex(): MediaIndex {

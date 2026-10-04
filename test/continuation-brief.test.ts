@@ -21,11 +21,10 @@ import {
   type ShellBot,
   type ShellStore,
 } from "../shared/shell-store.ts";
-import { stripThreadPrefix, threadPrefix } from "../shared/threads.ts";
+import { stripThreadPrefix } from "../shared/threads.ts";
 
-const prefix = threadPrefix({
-  bot: { id: "b1", kind: "bot", name: "Generalist", label: "", description: "Does everyday work." },
-});
+// A legacy identity prefix, as old sessions hold it on their first user turn.
+const prefix = "You are Generalist.\nStanding instructions: Does everyday work.\nStay in role for this whole conversation. Chat messages are this-task instructions; the standing instructions above outrank them.\n\n";
 
 function event(type: string, data: Record<string, unknown>): EveEvent {
   return { type, data };
@@ -101,11 +100,11 @@ test("notes ride in the hidden prefix and the transcript strips them for every b
   assert.equal(withSessionNotes(prefix, []), prefix);
 });
 
-test("the proxy folds notes into the default bot's turn and the identity prefix alike", () => {
+test("the proxy folds notes into any bot's turn and leaves a note-free turn untouched", () => {
   const raw = JSON.stringify({ message: "hello", botId: DEFAULT_BOT_ID, retry: true, continueFrom: "wrun_1" });
-  const plain = JSON.parse(rewriteEveTurnBody(raw, null, null)) as Record<string, unknown>;
+  const plain = JSON.parse(rewriteEveTurnBody(raw, null)) as Record<string, unknown>;
   assert.deepEqual(plain, { message: "hello" });
-  const noted = JSON.parse(rewriteEveTurnBody(raw, null, null, [], [RETRY_NOTE])) as { message: string };
+  const noted = JSON.parse(rewriteEveTurnBody(raw, null, [RETRY_NOTE])) as { message: string };
   assert.equal(stripThreadPrefix(noted.message), "hello");
   assert.ok(noted.message.includes("Retry note:"));
   assert.equal("continueFrom" in noted, false);

@@ -1,0 +1,34 @@
+{
+ "about": "UB-009 compaction push 2: 300-line slices of /etc/services (about 15k chars each) land in history to cross the 0.75 x 32,768 threshold",
+ "turns": [
+  {
+   "id": "Y1",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: sed -n 1,300p /etc/services . Then tell me only the service name on its last line."
+  },
+  {
+   "id": "Y2",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: sed -n 301,600p /etc/services . Then tell me only the service name on its last line."
+  },
+  {
+   "id": "Y3",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: sed -n 601,900p /etc/services . Then tell me only the service name on its last line."
+  },
+  {
+   "id": "Y4",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: sed -n 901,1200p /etc/services . Then tell me only the service name on its last line."
+  },
+  {
+   "id": "Y5",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: sed -n 1201,1500p /etc/services . Then tell me only the service name on its last line."
+  },
+  {
+   "id": "Y6",
+   "text": "What is 2 plus 2? Answer in one short line."
+  }
+ ]
+}

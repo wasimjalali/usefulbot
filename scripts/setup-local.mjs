@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
+import { enforceStack, keychainName, keychainServiceAllowed, stateRoot, webOrigin } from "../shared/stack.ts";
 
 const [NODE_MAJOR, NODE_MINOR, NODE_PATCH] = process.versions.node.split(".").map(Number);
 if (NODE_MAJOR !== 24 || NODE_MINOR < 11 || (NODE_MINOR === 11 && NODE_PATCH < 1)) {
   process.stderr.write(`setup refuses Node ${process.versions.node}, need >=24.11.1 <25\n`);
   process.exit(2);
 }
+
+// The dev stack must be fully configured before anything is minted or written:
+// a missing prefix or state root would otherwise land on the daily stack's items.
+enforceStack("setup-local");
 
 process.umask(0o077);
 
@@ -20,23 +24,33 @@ process.umask(0o077);
 // JWTs. The reviewer credential is the only one that may carry the reviewer
 // alias, so without it "ask the reviewer" reports reviewer_unconfigured.
 const TOKEN_CREDENTIALS = [
-  { id: "device-desktop", kind: "device", callerId: "desktop", profile: "desktop", keychain: "com.usefulbot.device.desktop" },
-  { id: "router-desktop", kind: "router", callerId: "desktop", profile: "desktop", keychain: "com.usefulbot.router.desktop" },
-  { id: "router-ops", kind: "router", callerId: "ops", profile: "ops", keychain: "com.usefulbot.router.ops" },
-  { id: "router-reviewer", kind: "router", callerId: "reviewer", profile: "reviewer", keychain: "com.usefulbot.router.reviewer" },
+  { id: "device-desktop", kind: "device", callerId: "desktop", profile: "desktop", keychain: keychainName("device.desktop") },
+  { id: "router-desktop", kind: "router", callerId: "desktop", profile: "desktop", keychain: keychainName("router.desktop") },
+  { id: "router-ops", kind: "router", callerId: "ops", profile: "ops", keychain: keychainName("router.ops") },
+  { id: "router-reviewer", kind: "router", callerId: "reviewer", profile: "reviewer", keychain: keychainName("router.reviewer") },
 ];
 // The owner-phone credential (spec S7/§4.1): minted by --pair-phone only, so a
 // plain setup or --add-missing never creates phone authority by accident.
-const PHONE_CREDENTIAL = { id: "device-phone", kind: "device", callerId: "phone", profile: "phone", keychain: "com.usefulbot.device.phone" };
+const PHONE_CREDENTIAL = { id: "device-phone", kind: "device", callerId: "phone", profile: "phone", keychain: keychainName("device.phone") };
 // Phone rows match by kind+callerId, never by id: the id is unique per mint
 // so a session bound to a rotated-away row resolves to nothing (S9).
 const isPhoneRow = (row) => row && row.kind === PHONE_CREDENTIAL.kind && row.callerId === PHONE_CREDENTIAL.callerId;
 const mintPhone = () => mint({ ...PHONE_CREDENTIAL, id: `${PHONE_CREDENTIAL.id}-${randomBytes(6).toString("hex")}` });
-const CHANNEL_KEYCHAIN = "com.usefulbot.channel.desktop";
+const CHANNEL_KEYCHAIN = keychainName("channel.desktop");
 const KEYCHAIN_ITEMS = [...TOKEN_CREDENTIALS.map((cred) => cred.keychain), CHANNEL_KEYCHAIN];
 
 function digest(token) {
   return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+// Every Keychain call below goes through this: an item outside the running
+// stack's namespace (daily refuses com.usefulbot.dev.*, dev refuses anything
+// not com.usefulbot.dev.*) is never read, written or deleted, in any mode.
+function assertOwnItem(service) {
+  if (!keychainServiceAllowed(service)) {
+    process.stderr.write(`${JSON.stringify({ error: "keychain_item_foreign", item: service })}\n`);
+    process.exit(1);
+  }
 }
 
 // A bare `-w` makes security prompt for the value and a retype, both read
@@ -45,6 +59,7 @@ function digest(token) {
 // the whole command on stdin instead, so the value never reaches argv and a
 // failure is a non-zero status. Tokens are base64url, so no quoting is needed.
 function putKeychain(service, token) {
+  assertOwnItem(service);
   const input = Buffer.from(`add-generic-password -U -s ${service} -a useful-bot -w ${token}\n`, "utf8");
   const result = spawnSync("/usr/bin/security", ["-i"], { input, stdio: ["pipe", "ignore", "ignore"] });
   input.fill(0);
@@ -57,6 +72,7 @@ function putKeychain(service, token) {
 // is absent or empty. An empty value is what the old prompt driven write left
 // behind, and a service reading it gets nothing.
 function readKeychain(service) {
+  assertOwnItem(service);
   const result = spawnSync("/usr/bin/security", ["find-generic-password", "-s", service, "-a", "useful-bot", "-w"], {
     stdio: ["ignore", "pipe", "ignore"],
     encoding: "utf8",
@@ -70,6 +86,7 @@ function hasKeychain(service) {
 }
 
 function deleteKeychain(service) {
+  assertOwnItem(service);
   spawnSync("/usr/bin/security", ["delete-generic-password", "-s", service, "-a", "useful-bot"], {
     stdio: ["ignore", "ignore", "ignore"],
   });
@@ -107,7 +124,7 @@ const rotatePhone = process.argv.includes("--rotate-phone");
 const printOnly = process.argv.includes("--print-pairing");
 const printFlag = process.argv.includes("--print");
 const hostOverride = flagValue("--host");
-const root = join(homedir(), ".useful-bot");
+const root = stateRoot();
 const configPath = join(root, "config.json");
 
 const fail = (payload) => {
@@ -276,7 +293,7 @@ function pairingPayload(config, { host } = {}) {
   const tailnet = config.tailnet;
   const resolved = host || tailnet?.httpsOrigin;
   if (!resolved) {
-    fail({ error: "pairing_host_missing", hint: "configure tailnet.httpsOrigin or pass --host http://127.0.0.1:4320 for the simulator" });
+    fail({ error: "pairing_host_missing", hint: `configure tailnet.httpsOrigin or pass --host ${webOrigin()} for the simulator` });
   }
   return {
     v: 1,
@@ -462,7 +479,7 @@ async function main() {
   renameSync(tmpConfigPath, configPath);
   chmodSync(configPath, 0o600);
 
-  const connectionsPath = join(homedir(), ".useful-bot/connections.json");
+  const connectionsPath = join(root, "connections.json");
   mkdirSync(dirname(connectionsPath), { recursive: true, mode: 0o700 });
   let connections = { schemaVersion: 1, connections: [], updatedAt: null };
   if (existsSync(connectionsPath)) {
@@ -504,7 +521,7 @@ async function main() {
     config: configPath,
     keychainItems: KEYCHAIN_ITEMS,
     reveal: "Keychain Access",
-    manual: "install com.usefulbot.opencode-go yourself (see README)",
+    manual: `install ${keychainName("opencode-go")} yourself (see README)`,
     restart: "restart the router, eve and web services: the router reloads the credential table and the other two read the tokens at boot",
   })}\n`);
 }

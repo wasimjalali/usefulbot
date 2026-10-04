@@ -1,21 +1,20 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
-import { activeBotId } from "../lib/active-bot.ts";
+import { callerOf, inAppGate, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
 import { toolRouterIds } from "../lib/router-identity.ts";
 import { appendAgentEvent, releaseSend, reserveSend } from "../../shared/agent-store.ts";
 import { writeImage } from "../../shared/images-store.ts";
 import { saveImage } from "../../shared/media-store.ts";
 import { readShell } from "../../shared/shell-io.ts";
-import { ROUTER_HOST, ROUTER_PORT } from "../../shared/policy.ts";
+import { routerOrigin } from "../../shared/stack.ts";
 
 /** Image models answer slowly; two and a half minutes is the tool's ceiling. */
 const GENERATE_TIMEOUT_MS = 150_000;
 
 export default defineTool({
   description:
-    "Draw an image from a text prompt with the owner's image model and place it in this chat. Use it when the owner asks for a picture, illustration, icon or render. It only works when an image-capable provider (an OpenAI, xAI, Z.ai or OpenRouter API key) is connected in Settings; when it is not, say so instead of retrying. It uses the owner's default image model; pass `model` (an image model id from list_models, with its `connectionId` when two providers offer the same id) only when the owner asks for a model or the job clearly needs a different one, since some models cost far more per image. The drawing lands in the transcript by itself and is saved in the owner's Library, the Useful Bot folder in Documents (the result gives its path): answer in text and do not link or embed the file. The Library is where it belongs. Do not copy, move or save it anywhere else (Desktop, Downloads, a project folder) unless the owner asks for a copy there, for this image or as a standing preference; an attached folder, full access or an earlier file saved elsewhere is not such a request. When the owner does name a place, copy the Library file there and keep the Library one.",
+    "Draw an image from a text prompt with the owner's image model, when they ask for a picture, illustration, icon or render. Needs an image provider key in Settings; without one, say so. Pass `model` (an id from list_models, plus `connectionId` if two providers share it) only when asked, since some cost far more. The image appears in the chat and is saved in the Library (path in the result): answer in text, don't link or embed it. Copy or move it elsewhere only when the owner names that place, for this image or as a standing preference (an attached folder, Full access or an earlier file saved elsewhere is not such a request), and keep the Library copy.",
   inputSchema: z.object({
     prompt: z.string().min(1).max(4000),
     size: z.enum(["square", "wide", "tall"]).optional(),
@@ -26,10 +25,14 @@ export default defineTool({
   async execute(input, ctx) {
     // An image costs real money at the provider and lands in the transcript,
     // so Read only refuses it like every other change inside the app.
-    if (inAppGate(sessionPermission(ctx)) === "refuse") return READ_ONLY_BLOCKED;
     if (input.connectionId && !input.model) {
       return { status: "failed", error: "connection_without_model", hint: "Pass the image model id as `model` with its connectionId, or neither for the default." };
     }
+    // The bot that will own the picture is resolved before the provider is
+    // paid: an unbound session is refused here, never after the bill.
+    const who = await callerOf(readShell(), ctx);
+    if (!who.ok) return who.result;
+    if (inAppGate(sessionPermission(ctx)) === "refuse") return READ_ONLY_BLOCKED;
     const token = process.env.UB_ROUTER_DESKTOP_TOKEN;
     if (!token) {
       throw new Error("router token missing");
@@ -41,7 +44,7 @@ export default defineTool({
     }
     let res: Response;
     try {
-      res = await fetch(`http://${ROUTER_HOST}:${ROUTER_PORT}/v1/images/generations`, {
+      res = await fetch(`${routerOrigin()}/v1/images/generations`, {
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
@@ -104,7 +107,7 @@ export default defineTool({
     let botName = "Useful Bot";
     try {
       const shell = readShell();
-      botId = activeBotId(shell, ctx);
+      botId = who.caller.id;
       botName = shell.bots.find((bot) => bot.id === botId)?.name ?? botName;
     } catch (err) {
       console.error(`[media] could not read the roster for image ${imageId}`, err);

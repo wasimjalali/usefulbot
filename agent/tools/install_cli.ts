@@ -2,14 +2,16 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { homedir, tmpdir } from "node:os";
 import { effectiveRoot } from "../lib/workspace.ts";
-import { confinedCommand, sandboxAvailable } from "../lib/sandbox.ts";
+import { approvedCommand, confinedCommand, sandboxAvailable } from "../lib/sandbox.ts";
 import { runCommand } from "../lib/run-command.ts";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, settle } from "../lib/permission.ts";
+import { inAppGate, READ_ONLY_BLOCKED, SUB_AGENT_BLOCKED, settle } from "../lib/permission.ts";
+import { isSubAgent } from "../lib/active-bot.ts";
 import { CLI_REGISTRY, cliStatus, findCli, resolveBin } from "../lib/cli-registry.ts";
 import { ownerPath, rescanOwnerPath } from "../../shared/user-path.ts";
 import { wrapUntrusted } from "../../shared/untrusted.ts";
+import { markOutside } from "../lib/outside-content.ts";
 
 /** An install fetches a package and builds it; npm on a cold cache is slow. */
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -18,7 +20,7 @@ const BUFFER_MAX_BYTES = 256 * 1024;
 
 export default defineTool({
   description:
-    "Look up which command-line tools this Mac has, and install one the owner asks for. `list` reports every known CLI, where it resolves on the owner's PATH and whether it holds a sign-in; it only reads, so it runs in every mode. `install` takes one name from that list and runs its exact install command: Read only refuses, Auto shows the owner an approval card with the command on it, Full access runs it. Use `list` before telling the owner a tool is missing, and before guessing a package name. A CLI that is not in the list is still installable through bash, where the owner reads the whole line.",
+    "List the command-line tools this Mac has, or install one. `list` shows each known CLI, where it resolves and whether a sign-in is stored (not proof it still works: if a tool is signed out, point the owner at its own login, don't authenticate it yourself); it runs in every mode. Call it before saying a tool is missing. `install` runs the exact command for a listed name: Read only refuses, Auto shows a card, Full access runs it. A CLI not on the list goes through bash; name the package so the owner sees what they approve.",
   inputSchema: z.object({
     action: z.enum(["list", "install"]),
     /** Required for install; ignored by list. */
@@ -36,6 +38,8 @@ export default defineTool({
       };
     }
 
+    // An install leaves a program on the owner's Mac: the owner's own chat only.
+    if (isSubAgent(ctx)) return SUB_AGENT_BLOCKED;
     const wanted = (input.name ?? "").trim();
     const entry = wanted ? findCli(wanted) : null;
     if (!entry) {
@@ -86,12 +90,28 @@ export default defineTool({
     await settle(store, record.id, hash, gate, ctx, permission);
 
     return executeIfApproved(store, record.id, hash, async () => {
+      // The installer's output is text from outside.
+      markOutside(ctx);
       // Approved on a card: run it as the owner read it. Full access: run it
       // confined, which at that posture still refuses the credential files
       // and the app's own stores.
-      const argv = gate === "ask"
-        ? ["/bin/sh", "-c", entry.install]
-        : confinedCommand(root, entry.install, scope, true, { allowToolInstall: true });
+      let argv: string[];
+      if (gate === "ask") {
+        // Approved: not confined to the folder, but not bare either. Everything
+        // is allowed except planted config; the PATH denies are lifted because
+        // putting the program on the PATH is the point.
+        try {
+          argv = approvedCommand(entry.install, { allowToolInstall: true });
+        } catch (error) {
+          return {
+            status: "blocked",
+            error: "approved_line_profile_unavailable",
+            hint: `The install was not run: the write guard could not be set up (${error instanceof Error ? error.message : "unknown error"}). Nothing was changed.`,
+          };
+        }
+      } else {
+        argv = confinedCommand(root, entry.install, scope, true, { allowToolInstall: true });
+      }
       const run = await runCommand(argv, {
         cwd: root,
         env: {

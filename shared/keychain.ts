@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { keychainName, keychainServiceAllowed } from "./stack.ts";
 
 /**
  * Generic-password Keychain items, same write path as setup-local.mjs:
@@ -12,7 +13,6 @@ export type KeychainDriver = {
 };
 
 const ACCOUNT = "useful-bot";
-const SERVICE = /^com\.usefulbot\.[a-z0-9][a-z0-9._-]{0,120}$/;
 
 let driver: KeychainDriver | null = null;
 
@@ -36,8 +36,15 @@ export function memoryKeychain(): KeychainDriver & { store: Map<string, string> 
   };
 }
 
+/**
+ * A service must be `<this stack's prefix>.<name>` (shared/stack.ts owns the
+ * rule): daily is `com.usefulbot.*` minus everything under `dev.`, dev is
+ * `com.usefulbot.dev.*`. Every read, write and delete goes through here, so a
+ * stack can never touch the other's items. A UB_KEYCHAIN_PREFIX that is not the
+ * stack's own value throws.
+ */
 function assertService(service: string): string {
-  if (!SERVICE.test(service)) throw new Error("keychain_service");
+  if (!keychainServiceAllowed(service)) throw new Error("keychain_service");
   return service;
 }
 
@@ -105,5 +112,5 @@ export function keychainDel(service: string): void {
 
 export function connectionSecretService(id: string): string {
   if (!/^[a-z][a-z0-9-]{0,63}$/.test(id)) throw new Error("keychain_service");
-  return `com.usefulbot.connection.${id}`;
+  return keychainName(`connection.${id}`);
 }

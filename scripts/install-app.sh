@@ -17,6 +17,14 @@ DEST="/Applications/Useful Bot.app"
 
 [ -d "$SRC" ] || { echo "No build at $SRC. Run npm run build:app first." >&2; exit 1; }
 
+# This script replaces the app people use. Only a bundle whose id is
+# ai.useful.bot and that is not the dev variant may go there; a dev build never can.
+SRC_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$SRC/Contents/Info.plist" 2>/dev/null || true)"
+if [ "$SRC_ID" != "ai.useful.bot" ] || /usr/libexec/PlistBuddy -c 'Print :UBVariant' "$SRC/Contents/Info.plist" >/dev/null 2>&1; then
+  echo "$SRC is not the daily app (id '$SRC_ID'); expected ai.useful.bot with no UBVariant. Not installing over $DEST." >&2
+  exit 1
+fi
+
 # A clean copy, not a merge: ditto over an existing bundle keeps files the new
 # build no longer has, and the copy no longer matches its signature.
 WAS_RUNNING=0

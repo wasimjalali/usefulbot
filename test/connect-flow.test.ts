@@ -9,7 +9,7 @@ import { CONNECT_LINGER_MS, CONNECT_WAIT_MS, pumpConnects, resetConnectMemo, sta
 import { forgetConnected, setComposioFactory, type ComposioLike, type ComposioSessionLike } from "../shared/composio.ts";
 import { setConnectorsKey, updateConnectorsStore } from "../shared/connectors-store.ts";
 import { claimHandoff, listHandoffs, markDelivered, queueHandoff } from "../shared/handoffs.ts";
-import { writeShell } from "../shared/shell-io.ts";
+import { readShell, writeShell } from "../shared/shell-io.ts";
 import { seedStore } from "../shared/shell-store.ts";
 
 type Item = {
@@ -389,4 +389,39 @@ test("the pump respects the 5 s memo, expires after 10 min, and leaves toolCount
   // Reopen after a timeout goes back to waiting.
   await startConnectAuthorize(second.id, CALLBACK, { now: t0 + CONNECT_WAIT_MS + 61_000 });
   assert.equal((readProposal(second.id, storePath) as { phase: string }).phase, "waiting");
+});
+
+test("the resume is sent by the orchestrator under its real name, not by a hard-coded default", async () => {
+  const { storePath } = paths();
+  const item: Item = { slug: "gmail", name: "Gmail", isNoAuth: false };
+  stubComposio([item]);
+  const proposal = seed(storePath);
+  const shell = readShell();
+  writeShell({
+    ...shell,
+    bots: shell.bots.map((bot) => (bot.id === "bot-useful" ? { ...bot, name: "Generalist" } : bot)),
+  });
+  await startConnectAuthorize(proposal.id, CALLBACK);
+  item.connection = { isActive: true, connectedAccount: { status: "ACTIVE", id: "ca_gmail_1" } };
+  resetConnectMemo();
+  await pumpConnects({ now: Date.now() + 6_000 });
+  assert.equal(listHandoffs()[0].sourceBotId, "bot-useful");
+  assert.equal(listHandoffs()[0].sourceName, "Generalist");
+});
+
+test("with the default bot deleted, the resume comes from the first visible bot", async () => {
+  const { storePath } = paths();
+  const item: Item = { slug: "gmail", name: "Gmail", isNoAuth: false };
+  stubComposio([item]);
+  const proposal = seed(storePath);
+  const shell = readShell();
+  const lead = { ...shell.bots[0], id: "lead", name: "Lead" };
+  writeShell({ ...shell, bots: [lead, ...shell.bots.filter((bot) => bot.id !== "bot-useful")] });
+  await startConnectAuthorize(proposal.id, CALLBACK);
+  item.connection = { isActive: true, connectedAccount: { status: "ACTIVE", id: "ca_gmail_1" } };
+  resetConnectMemo();
+  await pumpConnects({ now: Date.now() + 6_000 });
+  assert.equal(listHandoffs()[0].sourceBotId, "lead");
+  assert.equal(listHandoffs()[0].sourceName, "Lead");
+  assert.equal(listHandoffs()[0].targetBotId, "b1");
 });

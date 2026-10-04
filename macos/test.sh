@@ -5,6 +5,7 @@
 # copied next to the test bundle before running.
 set -eu
 cd "$(dirname "$0")"
+sh ./test-build-guard.sh
 CLT="/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 XCODE="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
 FRAMEWORKS=""

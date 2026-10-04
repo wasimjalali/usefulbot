@@ -18,6 +18,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { foldPath } from "../../shared/fold-path.ts";
 
 type Token = { text: string; quoted: boolean };
 
@@ -88,7 +89,7 @@ const EDITORS: Record<string, string> = {
 const VERB_CLIS = new Set([
   "npm", "pnpm", "yarn", "bun", "npx",
   "pip", "pip3", "pipx", "uv", "poetry",
-  "brew", "cargo", "gem", "go",
+  "brew", "cargo", "gem", "go", "uvx", "corepack", "tofu",
   "docker", "podman", "kubectl", "helm", "terraform", "pulumi",
   "gh", "aws", "gcloud", "az", "vercel", "wrangler", "supabase", "flyctl", "fly",
   "heroku", "netlify", "firebase", "doctl", "railway", "stripe",
@@ -99,6 +100,245 @@ const DESTRUCTIVE_VERBS = new Set([
   "remove", "rm", "rmi", "rimraf", "uninstall", "unpublish", "publish", "deprecate",
   "reset", "teardown", "kill", "clean", "cleanup",
 ]);
+
+/**
+ * Paid-cloud CLIs, and the words that create or deploy something there
+ * (owner decision P1, 2026-10-01). A false card costs a click, a miss costs
+ * money, so the verb is looked for among the first few words (flag values
+ * included, since a value flag may sit before it).
+ */
+const CLOUD_CLIS = new Set([
+  "aws", "gcloud", "az", "vercel", "wrangler", "supabase", "flyctl", "fly",
+  "heroku", "netlify", "firebase", "doctl", "railway", "terraform", "tofu", "pulumi",
+]);
+/** Words that create or deploy, for any cloud CLI. */
+const CLOUD_DEPLOY_WORDS = new Set(["deploy", "create", "launch", "run-instances"]);
+/** Words that only mean it for one CLI (`up` and `apply` are everyday words elsewhere). */
+const CLOUD_CLI_WORDS: Record<string, string[]> = {
+  terraform: ["apply"], tofu: ["apply"], pulumi: ["up"], railway: ["up"], az: ["up"],
+};
+
+/**
+ * The non-flag words of a line, with the value that follows a value-taking
+ * flag skipped, so `npm --prefix app --workspace x i` has `i` first.
+ * `--flag=value` carries its own value.
+ */
+function positional(tokens: string[], valued: Set<string>): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i];
+    if (token === "--") {
+      out.push(...tokens.slice(i + 1));
+      break;
+    }
+    if (token.startsWith("-")) {
+      if (valued.has(token)) i += 1;
+      continue;
+    }
+    out.push(token);
+  }
+  return out;
+}
+
+const NPM_INSTALL_VERBS = new Set([
+  "install", "i", "in", "ins", "inst", "insta", "instal", "isnt", "isnta", "isntal", "isntall", "add",
+  "ci", "clean-install", "ic", "install-clean", "cit", "clean-install-test", "sit", "install-ci-test",
+  "it", "install-test", "update", "up", "upgrade", "udpate",
+]);
+const PNPM_INSTALL_VERBS = new Set(["install", "i", "add", "update", "up", "upgrade", "fetch"]);
+const YARN_INSTALL_VERBS = new Set(["install", "add", "up", "upgrade", "upgrade-interactive"]);
+const BUN_INSTALL_VERBS = new Set(["install", "i", "add", "update", "ci", "upgrade"]);
+const MANAGER_VALUED: Record<string, Set<string>> = {
+  npm: new Set(["--prefix", "--workspace", "-w", "--registry", "--userconfig", "--globalconfig", "--cache", "--tag", "--loglevel", "--otp", "--script-shell", "--omit", "--include", "--install-strategy", "--before", "--min-release-age"]),
+  pnpm: new Set(["-C", "--dir", "--filter", "-F", "--filter-prod", "--registry", "--config", "--reporter", "--loglevel", "--store-dir", "--virtual-store-dir"]),
+  yarn: new Set(["--cwd", "--registry", "--use-yarnrc", "--emoji", "--cache-folder", "--modules-folder"]),
+  bun: new Set(["--cwd", "--registry", "--config", "-c", "--cache-dir"]),
+};
+/** Subcommands that never install, per manager: what is NOT in here is scanned for an install verb (fail closed). */
+const NON_INSTALL_SUBCOMMANDS = new Set([
+  "run", "run-script", "test", "t", "tst", "start", "stop", "restart", "ls", "list", "la", "ll", "view", "info", "show", "v",
+  "explain", "why", "exec", "x", "outdated", "audit", "help", "config", "root", "prefix", "bin", "whoami", "ping", "doctor",
+  "version", "pack", "pm", "build", "dev", "init", "fund", "search", "docs", "bugs", "repo", "pkg", "diff", "completion",
+  "get", "set", "cache", "org", "team", "token", "owner", "access", "profile", "login", "logout", "adduser", "hook",
+]);
+const PIP_VALUED = new Set(["--index-url", "-i", "--extra-index-url", "--proxy", "--cache-dir", "--log", "--timeout", "--retries", "--cert", "--client-cert", "--trusted-host", "--python", "--exists-action", "--isolated-env"]);
+const AWS_GLOBAL_VALUED = new Set(["--region", "--profile", "--output", "--endpoint-url", "--query", "--color", "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout", "--cli-binary-format", "--cli-auto-prompt"]);
+
+/**
+ * Whether the line's install verb is one of `installVerbs`. The first
+ * positional decides when it is a known non-install subcommand (`run`, `test`,
+ * `ls`...), so `npm run add` does not ask; when it is anything else (a value
+ * flag this list does not know ate the real verb's place) the next few
+ * positionals are scanned too, so `npm --cache /x i foo` still asks.
+ */
+function installVerbIn(verbs: string[], installVerbs: Set<string>, from: number): string | null {
+  const first = verbs[from];
+  if (first === undefined) return null;
+  if (installVerbs.has(first)) return first;
+  if (NON_INSTALL_SUBCOMMANDS.has(first)) return null;
+  return verbs.slice(from + 1, from + 4).find((verb) => installVerbs.has(verb)) ?? null;
+}
+
+/**
+ * Whether an owner-approved line is a single, plain GLOBAL tool install: one
+ * that genuinely writes a PATH directory (`npm i -g`, `brew install`, `cargo
+ * install`...). Only such a line may run with the PATH denies lifted. A local
+ * install (`npm i` in a project) does not need them, and a compound line or one
+ * with a substitution or redirect could use them for anything else.
+ */
+const PLAIN_NPM_NAME = /^(@[\w.-]+\/)?\w[\w.-]*(@[\w.^~<>=*+-]+)?$/;
+/** Go modules and Homebrew taps have slashes; still no leading `.`, `/` or `~`. */
+const PLAIN_OTHER_NAME = /^\w[\w.-]*(\/[\w.-]+)*(@[\w.^~<>=*+-]+)?$/;
+const PLAIN_FLAG = /^--?[A-Za-z][\w-]*(=[\w.@^~<>=*+-]*)?$/;
+
+export function needsPathWrite(line: string): boolean {
+  if (/[;&|\n`<>]|\$\(|\$\{/.test(line)) return false;
+  const tokens = line.trim().split(/[ \t]+/).filter(Boolean);
+  if (tokens.length === 0 || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0])) return false;
+  const name = basename(tokens[0]);
+  const rest = tokens.slice(1);
+  // Allow-list, not a deny-list: every token must be a plain registry name,
+  // version or known-shape flag. Anything with a quote, backslash, `$`, glob,
+  // brace, `~`, a leading `.` or `/`, a tarball name, or a file/git/github/http/
+  // link/workspace spec (`foo@file:../x`) is a package from somewhere else and
+  // does not get PATH writes. Control characters other than space and tab fail.
+  if (/[\x00-\x08\x0a-\x1f\x7f]/.test(line)) return false;
+  const npmFamily = ["npm", "pnpm", "yarn", "bun"].includes(name);
+  const plain = npmFamily ? PLAIN_NPM_NAME : PLAIN_OTHER_NAME;
+  const refused = (token: string) => token.split("/").some((part) => part === "." || part === "..") || /\.(tgz|tar|tar\.gz|zip|rb|whl|gem)$/i.test(token) || /@(file|git|github|gitlab|bitbucket|http|https|link|portal|workspace|npm|ssh)/i.test(token);
+  for (const token of rest) {
+    if (token.startsWith("-")) {
+      if (!PLAIN_FLAG.test(token) || /^--(path|git|url|root|manifest-path|index|repo|tap)(=|$)/.test(token)) return false;
+    } else if (!plain.test(token) || refused(token)) {
+      return false;
+    }
+  }
+  const isGlobal = rest.some((token) => token === "-g" || token === "--global" || token === "--location=global");
+  const verbs = (valued: Set<string>) => positional(rest, valued);
+  switch (name) {
+    case "npm": return isGlobal && NPM_INSTALL_VERBS.has(verbs(MANAGER_VALUED.npm)[0] ?? "");
+    case "pnpm": return isGlobal && PNPM_INSTALL_VERBS.has(verbs(MANAGER_VALUED.pnpm)[0] ?? "");
+    case "bun": return isGlobal && BUN_INSTALL_VERBS.has(verbs(MANAGER_VALUED.bun)[0] ?? "");
+    case "yarn": {
+      const v = verbs(MANAGER_VALUED.yarn);
+      return v[0] === "global" && v[1] === "add";
+    }
+    case "brew": return ["install", "reinstall", "upgrade"].includes(verbs(new Set())[0] ?? "");
+    case "cargo": case "go": case "gem": return verbs(new Set())[0] === "install";
+    case "uv": { const v = verbs(new Set()); return v[0] === "tool" && v[1] === "install"; }
+    // pipx is left out: a bare name can resolve to a local project, not the registry.
+    case "corepack": return verbs(new Set())[0] === "enable";
+    default: return false;
+  }
+}
+
+/** Package installs and runs-by-name run other people's code (owner decision P1). */
+function packageInstallRisk(name: string, words: string[], flags: string[]): string | null {
+  if (name === "npm" || name === "pnpm" || name === "yarn" || name === "bun") {
+    const verbs = positional(flags, MANAGER_VALUED[name]);
+    const installVerbs = name === "npm" ? NPM_INSTALL_VERBS : name === "pnpm" ? PNPM_INSTALL_VERBS : name === "yarn" ? YARN_INSTALL_VERBS : BUN_INSTALL_VERBS;
+    // `yarn global add x` and `yarn workspace pkg add x`.
+    const from = name === "yarn" && verbs[0] === "global" ? 1 : name === "yarn" && verbs[0] === "workspace" ? 2 : 0;
+    const verb = installVerbIn(verbs, installVerbs, from);
+    if (verb !== null) return `installs packages (${name} ${verb})`;
+    // A bare `yarn` installs.
+    if (name === "yarn" && verbs.length === 0 && !flags.some((flag) => ["-v", "--version", "-h", "--help"].includes(flag))) {
+      return "installs packages (yarn)";
+    }
+    return null;
+  }
+  // corepack downloads and runs a package manager, in every form.
+  if (name === "corepack") return "downloads and runs a package manager (corepack)";
+  if ((name === "pip" || name === "pip3") && installVerbIn(positional(flags, PIP_VALUED), new Set(["install"]), 0) !== null) return `installs packages (${name} install)`;
+  if (name === "uv") {
+    const verbs = positional(flags, new Set(["--directory", "--project", "--python", "-p", "--index-url", "--config-file"]));
+    if (verbs[0] === "add" || verbs[0] === "sync") return `installs packages (uv ${verbs[0]})`;
+    if ((verbs[0] === "pip" && verbs[1] === "install") || (verbs[0] === "tool" && (verbs[1] === "install" || verbs[1] === "run"))) {
+      return `installs packages (uv ${verbs[0]} ${verbs[1]})`;
+    }
+    return null;
+  }
+  if (name === "poetry") {
+    const verb = positional(flags, new Set(["-C", "--directory", "-P", "--project"]))[0];
+    return verb === "install" || verb === "add" || verb === "update" || verb === "lock" ? `installs packages (poetry ${verb})` : null;
+  }
+  if (name === "pipx" && (words[0] === "run" || words[0] === "install")) return `downloads and runs a package (pipx ${words[0]})`;
+  if (name === "uvx") return `downloads and runs a package (uvx${words[0] ? ` ${words[0]}` : ""})`;
+  if (name === "brew" && ["install", "reinstall", "upgrade", "bundle"].includes(words[0] ?? "")) {
+    return `installs packages (brew ${words[0]})`;
+  }
+  if ((name === "cargo" || name === "gem") && words[0] === "install") return `installs packages (${name} install)`;
+  if (name === "go" && (words[0] === "install" || words[0] === "get")) return `installs packages (go ${words[0]})`;
+  return null;
+}
+
+function cloudDeployRisk(name: string, words: string[], flags: string[]): string | null {
+  if (!CLOUD_CLIS.has(name)) return null;
+  const own = CLOUD_CLI_WORDS[name] ?? [];
+  // aws is `aws [global flags] <service> <operation> ...`: only those two words
+  // are a verb, and the value of a later flag (`--function-name create`) is not.
+  const scan = name === "aws" ? positional(flags, AWS_GLOBAL_VALUED).slice(0, 2) : words.slice(0, 8);
+  const hit = scan.find((word) => CLOUD_DEPLOY_WORDS.has(word) || own.includes(word)
+    || word.startsWith("create-") || word.endsWith(":create") || word.endsWith(":deploy"));
+  if (hit) return `creates or deploys something in the cloud (${name} ${hit})`;
+  // A bare `vercel` deploys the folder.
+  if (name === "vercel" && words.length === 0 && !flags.some((flag) => ["-v", "--version", "-h", "--help"].includes(flag))) {
+    return "creates or deploys something in the cloud (vercel)";
+  }
+  return null;
+}
+
+/**
+ * Folders a tool reads its config from. A planted file under one of these
+ * names runs in the owner's next session, and the kernel cannot tell a
+ * directory renamed to `.claude` inside a project (accepted residual,
+ * shared/policy.ts), so a direct move, copy, link or sync naming such a folder asks.
+ */
+const CONFIG_FOLDER_NAMES = new Set([".claude", ".codex", ".gemini", ".cursor", ".github"]);
+
+function configFolderDestinationRisk(name: string, flags: string[]): string | null {
+  let operands = flags;
+  let label = name;
+  if (name === "git") {
+    const at = flags.indexOf("mv");
+    if (at < 0) return null;
+    operands = flags.slice(at + 1);
+    label = "git mv";
+  } else if (!["mv", "cp", "ln", "rsync", "ditto", "install"].includes(name)) {
+    return null;
+  }
+  // A plain `cp file dest` makes a file, not a folder.
+  if (name === "cp" && !flags.some((flag) => /^-[a-zA-Z]*[rRa]/.test(flag) || flag === "--recursive" || flag === "--archive" || flag === "-t" || /^(-t.|--target-directory)/.test(flag))) return null;
+  // Every non-flag argument counts, and so does the value of a target-directory
+  // flag (`cp -t .claude x`), not only the last one: either side of the move can
+  // be the config folder. `args` keeps order so the last one is the destination.
+  const args: string[] = [];
+  const targets: string[] = [];
+  for (let i = 0; i < operands.length; i += 1) {
+    const token = operands[i];
+    if (token === "-t" || token === "--target-directory") {
+      const value = operands[i + 1];
+      if (value !== undefined) targets.push(value);
+      i += 1;
+    } else if (token.startsWith("--target-directory=")) {
+      targets.push(token.slice("--target-directory=".length));
+    } else if (/^-t.+/.test(token) && !token.startsWith("--")) {
+      targets.push(token.slice(2));
+    } else if (!token.startsWith("-")) {
+      args.push(token);
+    }
+  }
+  if (args.length + targets.length < (name === "install" ? 1 : 2)) return null;
+  // A destination this cannot read cannot be told from a config folder.
+  const destinations = [...targets, ...(args.length > 0 ? [args[args.length - 1]] : [])];
+  const dynamic = destinations.find((value) => /[$`]/.test(value));
+  if (dynamic !== undefined) return `puts something at a variable or substitution destination this cannot read (${label} ... ${dynamic})`;
+  for (const value of [...args, ...targets]) {
+    const leaf = foldPath(basename(value.replace(/\/+$/, "")));
+    if (CONFIG_FOLDER_NAMES.has(leaf)) return `puts something at or from a tool's config folder name (${label} ... ${leaf})`;
+  }
+  return null;
+}
 
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh", "ksh93", "mksh", "fish", "csh", "tcsh", "ash", "yash", "pwsh", "powershell", "nu", "elvish"]);
 /** Interpreters whose inline-code flag can do anything a shell can. */
@@ -187,6 +427,10 @@ export function commandRisk(command: string, root: string, depth = 0): string | 
     const reason = commandRisk(inner, root, depth);
     if (reason) return reason;
   }
+  // The tokenizer turns a backtick into a separator, which drops the operand
+  // a substitution stands for; a move, copy, link or sync with one fails closed.
+  const backtickDestination = /(?:^|[\s;&|(])(?:git\s+(?:-\S+\s+)*mv|mv|cp|ln|rsync|ditto|install)\s[^;&|\n]*`/.exec(command);
+  if (backtickDestination) return "puts something at a variable or substitution destination this cannot read (a backtick substitution)";
   for (const segment of split(tokenize(command))) {
     // What the command does comes first: `sudo rm -rf /` is "runs as root",
     // which says more than the path it reaches.
@@ -687,6 +931,7 @@ function commandReason(tokens: Token[], root: string, afterPipe: boolean, depth 
       if ((module === "pip" || module === "pip3") && flags.includes("install") && flags.some(isLocalInstall)) {
         return "runs the project's setup (pip install .)";
       }
+      if ((module === "pip" || module === "pip3") && flags.includes("install")) return "installs packages (python -m pip install)";
       return null;
     }
     if (name === "deno") {
@@ -756,6 +1001,8 @@ function commandReason(tokens: Token[], root: string, afterPipe: boolean, depth 
   }
   if (name === "rsync" && flags.some((flag) => flag.startsWith("--delete"))) return "deletes at the destination (rsync --delete)";
   if (name === "chmod" && flags.some((flag) => /^-[a-zA-Z]*R/.test(flag))) return "changes permissions recursively (chmod -R)";
+  const configDestination = configFolderDestinationRisk(name, flags);
+  if (configDestination) return configDestination;
   if (name === "git") return gitRisk(flags, root);
   if (name === "make") return makeRisk(flags, root, depth);
   if (VERB_CLIS.has(name)) {
@@ -763,13 +1010,16 @@ function commandReason(tokens: Token[], root: string, afterPipe: boolean, depth 
     const hit = verbs.find((verb) => DESTRUCTIVE_VERBS.has(verb));
     if (hit) return `${hit === "publish" ? "publishes" : "removes something"} (${name} ${hit})`;
     if (name === "npm" || name === "pnpm" || name === "yarn" || name === "bun") {
-      return packageScriptRisk(name, words, root, depth);
+      // What the project's own lifecycle scripts do is the sharper reason;
+      // an install with nothing worse in it still asks, because it runs
+      // install scripts of whatever it fetches.
+      return packageScriptRisk(name, words, root, depth) ?? packageInstallRisk(name, words, flags);
     }
     // Installing the project itself runs its setup code.
     if ((name === "pip" || name === "pip3" || name === "uv") && words[0] === "install" && flags.some(isLocalInstall)) {
       return `runs the project's setup (${name} install .)`;
     }
-    return null;
+    return packageInstallRisk(name, words, flags) ?? cloudDeployRisk(name, words, flags);
   }
   // A script from the folder run by path: judged by what it does.
   const script = fileUnderRoot(head.text, root);

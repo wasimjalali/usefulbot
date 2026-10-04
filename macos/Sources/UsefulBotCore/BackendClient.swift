@@ -21,6 +21,9 @@ public enum BackendError: Error, LocalizedError, Equatable {
     case decoding
     /// `/api/providers` answered with its own error code.
     case provider(String)
+    /// `/api/providers` removed the connection but could not finish: the server's
+    /// own sentence (`message`) says what is left to do, so it is shown as is.
+    case providerNotice(code: String, message: String)
     /// `/api/attachments` answered with its own error code.
     case attachment(String)
     /// `/api/shell` answered with its own error code.
@@ -37,6 +40,9 @@ public enum BackendError: Error, LocalizedError, Equatable {
     case modelNoVision
     /// Regenerate on a lost image answered with its own error code.
     case regenerate(String)
+    /// The send was refused before reaching eve: the bot's stored model or
+    /// connection is gone, and the server never substitutes another.
+    case modelSelectionUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -78,6 +84,8 @@ public enum BackendError: Error, LocalizedError, Equatable {
             return "The local server sent data this app could not read."
         case .provider(let code):
             return code
+        case .providerNotice(_, let message):
+            return message
         case .attachment(let code):
             return code
         case .shell(let code):
@@ -92,6 +100,8 @@ public enum BackendError: Error, LocalizedError, Equatable {
             return "The connection dropped before the reply finished."
         case .modelNoVision:
             return "This model can't see images. Pick one that can from the model menu."
+        case .modelSelectionUnavailable:
+            return TurnFailure.modelSelectionUnavailableCopy
         }
     }
 
@@ -125,6 +135,8 @@ public enum BackendError: Error, LocalizedError, Equatable {
             return "Give the routine an instruction."
         case "routine_limit":
             return "This bot already has the maximum number of routines."
+        case "shell_description_too_long":
+            return "Instructions can be up to \(InstructionsLimit.grouped(InstructionsLimit.max)) characters."
         case "agent_credential_missing":
             return "Routines need the agent credential. Restart the local services."
         default:
@@ -135,6 +147,7 @@ public enum BackendError: Error, LocalizedError, Equatable {
     /// The `/api/providers` error code, when the failure came from that route.
     public var providerCode: String? {
         if case .provider(let code) = self { return code }
+        if case .providerNotice(let code, _) = self { return code }
         return nil
     }
 
@@ -182,7 +195,7 @@ private struct ProvidersResponse: Decodable {
     let providers: [ProviderPublic]?
     let error: String?
 }
-private struct ProvidersErrorResponse: Decodable { let error: String? }
+private struct ProvidersErrorResponse: Decodable { let error: String?; let message: String? }
 private struct ApprovalsResponse: Decodable { let approvals: [ApprovalItem] }
 private struct ConnectorAuthorizeResponse: Decodable {
     let ok: Bool?
@@ -293,7 +306,7 @@ public actor BackendClient {
     private var exchangeClosed = false
 
     public init(
-        base: URL = URL(string: "http://127.0.0.1:4320")!,
+        base: URL = AppVariant.current.webBaseURL,
         tokenStore: any DeviceTokenStore,
         endpointPolicy: any EndpointPolicy
     ) throws {
@@ -320,8 +333,8 @@ public actor BackendClient {
     /// from the login Keychain through `security`, and a non-loopback base
     /// resolves to the supervised local service.
     public init(
-        base: URL = URL(string: "http://127.0.0.1:4320")!,
-        tokenService: String = "com.usefulbot.device.desktop"
+        base: URL = AppVariant.current.webBaseURL,
+        tokenService: String = AppVariant.current.deviceTokenService
     ) throws {
         try self.init(
             base: base,
@@ -909,13 +922,23 @@ public actor BackendClient {
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             // The route reports its own code in the body; surface that so the
             // dialog can say why a connect was refused.
-            let decoded = try? JSONDecoder().decode(ProvidersErrorResponse.self, from: data)
-            throw Self.failure(status: http.statusCode, code: decoded?.error, fallback: "provider_failed", typed: BackendError.provider)
+            throw Self.providersFailure(status: http.statusCode, data: data)
         }
         guard let decoded = try? JSONDecoder().decode(ProvidersPayload.self, from: data) else {
             throw BackendError.decoding
         }
         return decoded
+    }
+
+    /// A failed `/api/providers` write as the error the app shows. A removed
+    /// connection that left pinned bots behind carries the server's message,
+    /// not a bare code, because the code alone reads as "nothing happened".
+    static func providersFailure(status: Int, data: Data) -> BackendError {
+        let decoded = try? JSONDecoder().decode(ProvidersErrorResponse.self, from: data)
+        if decoded?.error == "connection_removed_bots_pinned", let message = decoded?.message, !message.isEmpty {
+            return .providerNotice(code: "connection_removed_bots_pinned", message: message)
+        }
+        return failure(status: status, code: decoded?.error, fallback: "provider_failed", typed: BackendError.provider)
     }
 
     /// Start a device flow for one OAuth provider. Answers with what the
@@ -984,8 +1007,7 @@ public actor BackendClient {
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             // The route reports its own code in the body; surface that so the
             // dialog can say why a key was refused.
-            let decoded = try? JSONDecoder().decode(ProvidersResponse.self, from: data)
-            throw Self.failure(status: http.statusCode, code: decoded?.error, fallback: "provider_failed", typed: BackendError.provider)
+            throw Self.providersFailure(status: http.statusCode, data: data)
         }
         guard let decoded = try? JSONDecoder().decode(ProvidersResponse.self, from: data) else {
             throw BackendError.decoding
@@ -1108,14 +1130,22 @@ public actor BackendClient {
 
     /// Move the router's daily token budget. `nil` restores the shipped
     /// default. Answers with the refreshed usage so the pane never shows a
-    /// number the server did not accept.
+    /// number the server did not accept. The request budget is left alone.
     public func setDailyTokenBudget(_ tokens: Int?) async throws -> UsagePayload {
+        try await putBudget(["dailyTokenBudget": tokens as Any? ?? NSNull()])
+    }
+
+    /// Move the daily request budget; same contract as the token one.
+    public func setDailyRequestBudget(_ requests: Int?) async throws -> UsagePayload {
+        try await putBudget(["dailyRequestBudget": requests as Any? ?? NSNull()])
+    }
+
+    private func putBudget(_ body: [String: Any]) async throws -> UsagePayload {
         let (data, response) = try await perform { client, token in
             var request = URLRequest(url: client.base.appendingPathComponent("api/usage"))
             request.httpMethod = "PUT"
             request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
             request.setValue("application/json", forHTTPHeaderField: "content-type")
-            let body: [String: Any] = ["dailyTokenBudget": tokens as Any? ?? NSNull()]
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
             return request
         }
@@ -1130,11 +1160,41 @@ public actor BackendClient {
     }
 
     /// Ask the proxy to cancel the active turn on a session.
-    public func cancel(sessionId: String) async throws {
+    /// `reportOnly` marks the app's own cancel of a turn that only carries
+    /// cancelled reports of sub-agents the owner stopped: the proxy then retires
+    /// that session's cards alone, not those of sub-agents still running.
+    public func cancel(sessionId: String, reportOnly: Bool = false) async throws {
         let (data, response) = try await perform { client, token in
+            let path = client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/cancel")
             var request = URLRequest(
-                url: client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/cancel")
+                url: reportOnly ? path.appending(queryItems: [URLQueryItem(name: "scope", value: "report")]) : path
             )
+            request.httpMethod = "POST"
+            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
+            return request
+        }
+        try Self.expectOK(data, response)
+    }
+
+    /// Cancel a sub-agent's own turn. The proxy verifies the child the same way
+    /// it does a stream read: by the parent session and the index of the
+    /// parent's `subagent.called` for it.
+    public func cancelChild(
+        botId: String, childSessionId: String, parentSessionId: String, at: Int, agentId: String? = nil
+    ) async throws {
+        let (data, response) = try await perform { client, token in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(childSessionId))/cancel"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [
+                URLQueryItem(name: "parent", value: parentSessionId),
+                URLQueryItem(name: "at", value: String(at)),
+            ]
+            // The server uses it to keep the stopped agent from being relaunched.
+            if let agentId { components?.queryItems?.append(URLQueryItem(name: "agentId", value: agentId)) }
+            guard let url = components?.url else { throw BackendError.decoding }
+            var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
             return request
@@ -1268,9 +1328,69 @@ public actor BackendClient {
         return decoded.notes
     }
 
-    public func composer() async throws -> ComposerState? {
+    /// The JSON body of `DELETE /api/memory`.
+    static func memoryDeleteBody(botId: String, id: String, revision: MemoryRevision?) throws -> Data {
+        var body: [String: Any] = ["botId": botId, "id": id]
+        if let revision { body["revision"] = revision.json }
+        return try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+    }
+
+    /// `GET /api/memory?botId=&id=`: one full note.
+    public func memoryNote(botId: String, id: String) async throws -> MemoryNote {
         let (data, response) = try await perform { client, _ in
-            URLRequest(url: client.base.appendingPathComponent("api/providers"))
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/memory"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [URLQueryItem(name: "botId", value: botId), URLQueryItem(name: "id", value: id)]
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectOK(data, response)
+        struct One: Decodable { let note: MemoryNote }
+        guard let decoded = try? JSONDecoder().decode(One.self, from: data) else { throw BackendError.decoding }
+        return decoded.note
+    }
+
+    public func deleteMemoryNote(botId: String, id: String, revision: MemoryRevision?) async throws {
+        let body = try Self.memoryDeleteBody(botId: botId, id: id, revision: revision)
+        let (data, response) = try await perform { client, token in
+            var request = URLRequest(url: client.base.appendingPathComponent("api/memory"))
+            request.httpMethod = "DELETE"
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
+            request.httpBody = body
+            return request
+        }
+        try Self.expectOK(data, response)
+    }
+
+    public func botContext(botId: String) async throws -> BotContextInfo {
+        let (data, response) = try await perform { client, _ in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/bots/context"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [URLQueryItem(name: "botId", value: botId)]
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(BotContextInfo.self, from: data) else { throw BackendError.decoding }
+        return decoded
+    }
+
+    /// The chip's state for one bot: its own model, effort and speed. Without
+    /// a bot id the server answers with the last pick, which is only right
+    /// before a bot is known.
+    public func composer(botId: String? = nil) async throws -> ComposerState? {
+        let (data, response) = try await perform { client, _ in
+            var url = client.base.appendingPathComponent("api/providers")
+            if let botId, var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                parts.queryItems = [URLQueryItem(name: "botId", value: botId)]
+                if let withQuery = parts.url { url = withQuery }
+            }
+            return URLRequest(url: url)
         }
         try Self.expectOK(data, response)
         guard let decoded = try? JSONDecoder().decode(ProvidersResponse.self, from: data) else {
@@ -1390,6 +1510,12 @@ public actor BackendClient {
            failure.code == "session_moved" {
             throw BackendError.sessionMoved
         }
+        // The bot's stored model or connection is gone. The proxy refuses the
+        // turn before eve and never swaps in another model.
+        if let http = response as? HTTPURLResponse, http.statusCode == 409,
+           Self.refusalCode(in: data) == "model_selection_unavailable" {
+            throw BackendError.modelSelectionUnavailable
+        }
         // The proxy refuses a picture for a model that cannot look at it
         // before the turn exists, so the draft and its files come back.
         if let http = response as? HTTPURLResponse, http.statusCode == 400,
@@ -1405,6 +1531,41 @@ public actor BackendClient {
             throw BackendError.decoding
         }
         return sid
+    }
+
+    /// Answer an eve input request (a session limit, a tool approval). It goes
+    /// to the same session route a turn does, as `inputResponses`, never as a
+    /// message.
+    public func answerInput(botId: String, sessionId: String, requestId: String, optionId: String) async throws {
+        let (data, response) = try await perform { client, token in
+            var request = URLRequest(url: client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
+            let body: [String: Any] = [
+                "botId": botId,
+                "inputResponses": [["requestId": requestId, "optionId": optionId]],
+            ]
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            return request
+        }
+        // The session is gone, so the request it raised can never be answered.
+        if let http = response as? HTTPURLResponse, http.statusCode == 409,
+           let failure = try? JSONDecoder().decode(EveErrorResponse.self, from: data),
+           failure.code == "session_not_active" {
+            throw BackendError.sessionEnded
+        }
+        try Self.expectOK(data, response)
+    }
+
+    /// The code of a refusal body, whichever shape carries it: a top-level
+    /// `code`, an `error` string, or `error: { code }`.
+    static func refusalCode(in data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let code = object["code"] as? String { return code }
+        if let error = object["error"] as? String { return error }
+        if let error = object["error"] as? [String: Any] { return error["code"] as? String }
+        return nil
     }
 
     /// Persist the session pointer and preview for a bot, the same shell
@@ -1731,11 +1892,8 @@ public actor BackendClient {
 
     /// Persist effort/speed/model choices from the composer chip.
     @discardableResult
-    public func updateComposer(modelId: String? = nil, effort: String? = nil, speed: String? = nil) async throws -> ComposerState? {
-        var patch: [String: Any] = [:]
-        if let modelId { patch["modelId"] = modelId }
-        if let effort { patch["effort"] = effort }
-        if let speed { patch["speed"] = speed }
+    public func updateComposer(botId: String? = nil, modelId: String? = nil, effort: String? = nil, speed: String? = nil) async throws -> ComposerState? {
+        let patch = Self.composerPatch(botId: botId, modelId: modelId, effort: effort, speed: speed)
         let (data, response) = try await perform { client, token in
             var request = URLRequest(url: client.base.appendingPathComponent("api/providers"))
             request.httpMethod = "PUT"
@@ -1749,6 +1907,17 @@ public actor BackendClient {
             throw BackendError.decoding
         }
         return decoded.composer
+    }
+
+    /// The PUT body for a chip save. The bot id rides in the body so the
+    /// server writes that bot's selection and not only the last pick.
+    static func composerPatch(botId: String?, modelId: String?, effort: String?, speed: String?) -> [String: Any] {
+        var patch: [String: Any] = [:]
+        if let botId { patch["botId"] = botId }
+        if let modelId { patch["modelId"] = modelId }
+        if let effort { patch["effort"] = effort }
+        if let speed { patch["speed"] = speed }
+        return patch
     }
 
     /// Upload one attachment for the composer. The caller is responsible for
@@ -1966,7 +2135,10 @@ public actor BackendClient {
         untilTail: Bool = false,
         markHistory: Bool = false,
         historyMarker: String? = nil,
-        allowUntaggedTurn: Bool = true
+        allowUntaggedTurn: Bool = true,
+        parentSessionId: String? = nil,
+        calledAt: Int? = nil,
+        tailCount: Int? = nil
     ) -> AsyncThrowingStream<EveEvent, Error> {
         stream(
             sessionId: sessionId,
@@ -1977,6 +2149,9 @@ public actor BackendClient {
             markHistory: markHistory,
             historyMarker: historyMarker,
             allowUntaggedTurn: allowUntaggedTurn,
+            parentSessionId: parentSessionId,
+            calledAt: calledAt,
+            tailCount: tailCount,
             tailBox: nil
         )
     }
@@ -1990,12 +2165,17 @@ public actor BackendClient {
         markHistory: Bool = false,
         historyMarker: String? = nil,
         allowUntaggedTurn: Bool = true,
+        parentSessionId: String? = nil,
+        calledAt: Int? = nil,
+        tailCount: Int? = nil,
         tailBox: TailBox?
     ) -> AsyncThrowingStream<EveEvent, Error> {
         // A marker stands in for the tail index; without one, the tail is
         // asked for as before.
         let marker = markHistory ? historyMarker : nil
-        let wantsTail = untilTail || (markHistory && marker == nil)
+        // The last `tailCount` events: eve reads a negative `startIndex` from the
+        // tail, and the tail index is needed to say where the first one sits.
+        let wantsTail = untilTail || (markHistory && marker == nil) || tailCount != nil
         let base = self.base
         let client = self
         return AsyncThrowingStream { continuation in
@@ -2018,9 +2198,17 @@ public actor BackendClient {
                             url: base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/stream"),
                             resolvingAgainstBaseURL: false
                         )
-                        components?.queryItems = [URLQueryItem(name: "startIndex", value: String(max(0, startIndex)))]
+                        components?.queryItems = [URLQueryItem(name: "startIndex", value: tailCount.map { String(-max(1, $0)) } ?? String(max(0, startIndex)))]
                         if wantsTail {
                             components?.queryItems?.append(URLQueryItem(name: "includeTailIndex", value: "1"))
+                        }
+                        // A sub-agent's child session is read through its parent,
+                        // naming where the parent's `subagent.called` for it sits.
+                        if let parentSessionId {
+                            components?.queryItems?.append(URLQueryItem(name: "parent", value: parentSessionId))
+                            if let calledAt {
+                                components?.queryItems?.append(URLQueryItem(name: "at", value: String(calledAt)))
+                            }
                         }
                         guard let url = components?.url else { throw BackendError.decoding }
                         var request = URLRequest(url: url)
@@ -2054,7 +2242,9 @@ public actor BackendClient {
                             }
                         }
 #else
-                        if (status == 401 || status == 403), attempt == 0 {
+                        // A child stream's 403 is the proxy refusing it (the parent
+                        // does not vouch for it), which signing in again never fixes.
+                        if (status == 401 || (status == 403 && parentSessionId == nil)), attempt == 0 {
                             // The session rotated (server restart); sign in and
                             // rebuild the stream once.
                             try await client.reauth(unlessRotatedFrom: sentCookie, signedOutSince: sentEpoch)
@@ -2079,6 +2269,13 @@ public actor BackendClient {
                         openedBox.set()
                         tailBox?.set(tail)
                         var nextIndex = max(0, startIndex)
+                        if let tailCount {
+                            // Without the tail there is no telling where these
+                            // events sit, and a cursor built on a guess is worse
+                            // than no read.
+                            guard let tail else { throw BackendError.decoding }
+                            nextIndex = max(0, tail + 1 - max(1, tailCount))
+                        }
                         if untilTail, let tail, tail < nextIndex {
                             // Nothing recorded past the cursor.
                             continuation.finish()

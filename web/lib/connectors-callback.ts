@@ -1,4 +1,5 @@
 import { runtimeConfig } from "./auth";
+import { webOrigin } from "../../shared/stack.ts";
 
 /**
  * Where Composio sends the browser back (S6). A phone session gets the
@@ -9,6 +10,6 @@ import { runtimeConfig } from "./auth";
  */
 export function connectorsCallbackUrl(profile: string): string {
   const tailnet = profile === "phone" ? runtimeConfig()?.tailnet : null;
-  const base = tailnet?.httpsOrigin || process.env.UB_WEB_BASE_URL || "http://127.0.0.1:4320";
+  const base = tailnet?.httpsOrigin || webOrigin();
   return new URL("/api/connectors/callback", base).toString();
 }

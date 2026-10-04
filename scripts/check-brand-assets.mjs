@@ -208,7 +208,7 @@ for (const [index, svg] of masterSources.entries()) assert.deepEqual(eyeGeometry
 // Expected head silhouette: the source circle, untinted.
 const headPixels = await sharp(Buffer.from(faceSvg)).resize(1024, 1024).ensureAlpha().raw().toBuffer();
 const avatarPalette = JSON.parse(await read('brand/source/avatar-palette.json'));
-assert.equal(Object.keys(avatarPalette).length, 11);
+assert.equal(Object.keys(avatarPalette).length, 40, '30 grid ids plus 10 legacy ids');
 for (const color of Object.keys(avatarPalette)) {
   const svg = (await read(`brand/avatars/${color}.svg`)).toString();
   assert(svg.includes('viewBox="128 36 768 768"'), `Avatar crop/centering changed: ${color}`);

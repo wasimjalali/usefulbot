@@ -1,7 +1,6 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
-import { activeBotId } from "../lib/active-bot.ts";
+import { callerOf, inAppGate, notAvailable, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
 import { sendHandoff } from "../../shared/agents-send.ts";
 import { listThreadEvents, releaseSend, reserveSend } from "../../shared/agent-store.ts";
 import { HANDOFF_DEPTH_MAX, pendingHandoffCycle, readHandoff, waitForHandoff } from "../../shared/handoffs.ts";
@@ -9,13 +8,14 @@ import { readShell } from "../../shared/shell-io.ts";
 import { DEFAULT_BOT_ID } from "../../shared/shell-store.ts";
 import { groupMembers, speakersFrom } from "../../shared/threads.ts";
 import { wrapUntrusted } from "../../shared/untrusted.ts";
+import { markOutside } from "../lib/outside-content.ts";
 
 /** How long sendToBot waits for the teammate. Tests set this to 0. */
 const HANDOFF_WAIT_DEFAULT_MS = 180_000;
 
 export default defineTool({
   description:
-    "Message one teammate bot and wait for their reply. The question lands in their chat as an incoming message, they work (including while the owner is in another chat), and their answer comes back here as this tool's result and as a message in both transcripts. Use it when another bot owns the deliverable or should review your work. One recipient only: use postToGroup for several at once, which asks the owner first.",
+    "Message one teammate bot and wait for their reply. It lands in their chat, they work even if the owner is elsewhere, and the answer returns as this result and in both transcripts. Use when another bot owns the deliverable or should review your work. One recipient: use post_to_group for several. Call list_bots first.",
   inputSchema: z.object({
     botId: z.string().min(1).max(80),
     message: z.string().min(1).max(4000),
@@ -24,8 +24,10 @@ export default defineTool({
   async execute(input, ctx) {
     // A handoff or a run starts a teammate turn and writes transcripts, so
     // Read only refuses it like every other change inside the app.
-    if (inAppGate(sessionPermission(ctx)) === "refuse") return READ_ONLY_BLOCKED;
     const shell = readShell();
+    const who = await callerOf(shell, ctx);
+    if (!who.ok) return who.result;
+    if (inAppGate(sessionPermission(ctx)) === "refuse") return READ_ONLY_BLOCKED;
     const requested = input.botId.trim();
     const exact = shell.bots.find((bot) => bot.id === requested) ?? null;
     const named = exact
@@ -46,17 +48,22 @@ export default defineTool({
       return {
         status: "not_found",
         error: `no teammate matches ${requested}`,
-        hint: "Call listBots for exact ids.",
+        hint: "Call list_bots for exact ids.",
       };
     }
     if (target.hidden) {
       return { status: "invalid", error: `${target.name} is hidden; it cannot receive a handoff` };
     }
-    const sourceId = activeBotId(shell, ctx);
+    const sourceId = who.caller.id;
     if (target.id === sourceId) {
       return { status: "invalid", error: "that is this bot; answer directly instead" };
     }
-    const source = shell.bots.find((bot) => bot.id === sourceId) ?? null;
+    // A group session messages only its own members. Plain bots and the
+    // orchestrator reach any teammate (owner decision G1).
+    if (who.caller.role === "group" && !who.caller.bot.memberIds.includes(target.id)) {
+      return notAvailable("A group can message only its own members.");
+    }
+    const source = who.caller.bot;
     // A one-member group is still a group: the handoff carries the group so
     // the reply lands in the group thread instead of flipping its kind to a
     // plain bot chat.
@@ -69,7 +76,7 @@ export default defineTool({
       if (members.length > 1) {
         return {
           status: "needs_post_to_group",
-          error: "groups need postToGroup so the owner confirms the fan-out",
+          error: "groups need post_to_group so the owner confirms the fan-out",
           memberCount: members.length,
         };
       }
@@ -98,7 +105,7 @@ export default defineTool({
     let record;
     try {
       record = sendHandoff({
-        source: source && source.id !== DEFAULT_BOT_ID ? { id: source.id, name: source.name } : null,
+        source: source.id !== DEFAULT_BOT_ID ? { id: source.id, name: source.name } : null,
         target: { id: target.id, name: target.name },
         group: handoffGroup,
         message: input.message.trim(),
@@ -148,6 +155,8 @@ export default defineTool({
           note: "The teammate finished with no reply.",
         };
       }
+      // Another bot's reply is text this turn did not write.
+      markOutside(ctx);
       return {
         status: "delivered",
         handoffId: record.id,

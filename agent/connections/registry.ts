@@ -7,36 +7,11 @@ import { isAuthHeaderName, type ConnectionEntry } from "../../shared/connections
 import { bearerFromKeychain, oauthToken } from "../../shared/connection-auth.ts";
 import { eagerConnections, ensureMeasured, isEagerConnection } from "../../shared/connection-tools.ts";
 import { readConnectionsStore } from "../../shared/connections-store.ts";
+import { openApiOptions } from "../lib/openapi-approval.ts";
 
 function definitionFor(entry: ConnectionEntry) {
   const tools = entry.toolsAllow ? { allow: entry.toolsAllow } : undefined;
-  if (entry.kind === "openapi") {
-    if (entry.authKind === "none") {
-      return defineOpenAPIConnection({ spec: entry.url, description: entry.description });
-    }
-    if (entry.authKind === "apiKey") {
-      const header = isAuthHeaderName(entry.authHeader) ? entry.authHeader : "X-Api-Key";
-      return defineOpenAPIConnection({
-        spec: entry.url,
-        description: entry.description,
-        headers: { [header]: async () => (await bearerFromKeychain(entry.id)).token },
-      });
-    }
-    if (entry.authKind === "oauth") {
-      return defineOpenAPIConnection({
-        spec: entry.url,
-        description: entry.description,
-        instanceKey: entry.id,
-        auth: { getToken: () => oauthToken(entry) },
-      });
-    }
-    return defineOpenAPIConnection({
-      spec: entry.url,
-      description: entry.description,
-      instanceKey: entry.id,
-      auth: { getToken: () => bearerFromKeychain(entry.id) },
-    });
-  }
+  if (entry.kind === "openapi") return defineOpenAPIConnection(openApiOptions(entry));
   if (entry.authKind === "none") {
     return defineMcpClientConnection({
       url: entry.url,

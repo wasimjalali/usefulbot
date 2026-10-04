@@ -1,0 +1,34 @@
+{
+ "about": "UB-009 compaction push 3: generated text (about 20k chars per turn, no paths) lands in history to cross the 0.75 x 32,768 threshold",
+ "turns": [
+  {
+   "id": "Z1",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: seq -f \"line %g: the quick brown fox jumps over the lazy dog near the old river bank\" 1 250 . Then tell me only the last line number you saw."
+  },
+  {
+   "id": "Z2",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: seq -f \"line %g: the quick brown fox jumps over the lazy dog near the old river bank\" 251 500 . Then tell me only the last line number you saw."
+  },
+  {
+   "id": "Z3",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: seq -f \"line %g: the quick brown fox jumps over the lazy dog near the old river bank\" 501 750 . Then tell me only the last line number you saw."
+  },
+  {
+   "id": "Z4",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: seq -f \"line %g: the quick brown fox jumps over the lazy dog near the old river bank\" 751 1000 . Then tell me only the last line number you saw."
+  },
+  {
+   "id": "Z5",
+   "approve": true,
+   "text": "Run exactly this shell command, as written, with no pipe: seq -f \"line %g: the quick brown fox jumps over the lazy dog near the old river bank\" 1001 1250 . Then tell me only the last line number you saw."
+  },
+  {
+   "id": "Z6",
+   "text": "What is 2 plus 2? Answer in one short line."
+  }
+ ]
+}

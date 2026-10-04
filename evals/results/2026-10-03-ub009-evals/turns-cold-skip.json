@@ -1,0 +1,65 @@
+{
+ "about": "UB-009 cold start, stamp mode skip: the proxy never writes the session binding; each turn opens a new Test Bot session, replies, then clears",
+ "turns": [
+  {
+   "id": "S01",
+   "approve": true,
+   "text": "Cold start skip 1. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S02",
+   "approve": true,
+   "text": "Cold start skip 2. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S03",
+   "approve": true,
+   "text": "Cold start skip 3. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S04",
+   "approve": true,
+   "text": "Cold start skip 4. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S05",
+   "approve": true,
+   "text": "Cold start skip 5. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S06",
+   "approve": true,
+   "text": "Cold start skip 6. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S07",
+   "approve": true,
+   "text": "Cold start skip 7. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S08",
+   "approve": true,
+   "text": "Cold start skip 8. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S09",
+   "approve": true,
+   "text": "Cold start skip 9. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S10",
+   "approve": true,
+   "text": "Cold start skip 10. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S11",
+   "approve": true,
+   "text": "Cold start skip 11. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  },
+  {
+   "id": "S12",
+   "approve": true,
+   "text": "Cold start skip 12. Reply with the single word ready, then use your clear_history tool to clear your own chat."
+  }
+ ]
+}

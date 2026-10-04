@@ -293,6 +293,40 @@ export function usesInlineThink(providerId: string, model: string): boolean {
   return inlineThinkModels.has(modelKey(providerId, model));
 }
 
+/** Index of the last user message, or -1 when there is none. */
+export function lastUserIndex(messages: unknown[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const item = messages[index];
+    if (isRecord(item) && item.role === "user") return index;
+  }
+  return -1;
+}
+
+const REASONING_PART_TYPES = new Set(["reasoning", "thinking", "redacted_thinking"]);
+
+/** An assistant message without its reasoning field or reasoning parts. */
+export function withoutReasoning(item: Record<string, unknown>): Record<string, unknown> {
+  const { reasoning_content: _reasoning, ...rest } = item;
+  if (Array.isArray(rest.content)) {
+    return { ...rest, content: rest.content.filter((part) => !(isRecord(part) && typeof part.type === "string" && REASONING_PART_TYPES.has(part.type))) };
+  }
+  return rest;
+}
+
+/**
+ * Reasoning from turns before the last user message goes: a history that
+ * crosses a model switch holds reasoning another model wrote, and only the
+ * current turn is guaranteed to come from the model now answering. Applies to
+ * every protocol. A new array; the caller's messages are not changed.
+ */
+export function stripEarlierReasoning(messages: unknown): unknown {
+  if (!Array.isArray(messages)) return messages;
+  const turnStart = lastUserIndex(messages) + 1;
+  return messages.map((item, index) => (
+    index < turnStart && isRecord(item) && item.role === "assistant" ? withoutReasoning(item) : item
+  ));
+}
+
 /**
  * The history for a model that writes inline thinking: each assistant
  * message's reasoning goes back in front of its content as a think block, the
@@ -302,8 +336,13 @@ export function usesInlineThink(providerId: string, model: string): boolean {
  */
 export function rewrapThinkHistory(messages: unknown): unknown {
   if (!Array.isArray(messages)) return messages;
-  return messages.map((item) => {
+  // Only the current turn (after the last user message) is re-wrapped: the turn
+  // is frozen to one model, so that reasoning is its own. Earlier turns may have
+  // been written by another model, and their reasoning is dropped instead.
+  const turnStart = lastUserIndex(messages) + 1;
+  return messages.map((item, index) => {
     if (!isRecord(item) || item.role !== "assistant") return item;
+    if (index < turnStart) return withoutReasoning(item);
     const reasoning = item.reasoning_content;
     if (typeof reasoning !== "string" || !reasoning) return item;
     // Only text or nothing can take a think block in front of it.

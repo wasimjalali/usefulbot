@@ -104,6 +104,12 @@ export type ComposerPublic = {
   models: Array<{ id: string; label: string }>;
   /** One entry per connected connection, the active one first. The macOS model flyout groups by this. */
   groups: ComposerGroup[];
+  /**
+   * False when this composer cannot carry a turn: no connection, or (per bot)
+   * the bot's stored connection is gone or disconnected, or its model left a
+   * live list. The stored model is still shown as it is, never swapped.
+   */
+  available: boolean;
 };
 
 const EFFORT_LABELS: Record<EffortId, string> = {
@@ -364,6 +370,19 @@ export function modelOption(
   return list.find((item) => item.id === modelId) ?? list[0] ?? null;
 }
 
+/**
+ * The model exactly as the catalog lists it, with no stand-in. `modelOption`
+ * falls back to the list's first model, which is right for the legacy global
+ * composer and wrong anywhere a pick must be honoured or refused: a per-bot
+ * selection, the compaction window, the router's output cap.
+ */
+export function exactModelOption(
+  modelId: string | null | undefined,
+  catalog: ModelOption[],
+): ModelOption | null {
+  return catalog.find((item) => item.id === modelId) ?? null;
+}
+
 export function snapComposer(
   id: string,
   providerName: string,
@@ -372,6 +391,12 @@ export function snapComposer(
   preferredSpeed: SpeedId | null | undefined,
   catalog?: ModelOption[],
   groups: ComposerGroup[] = [],
+  /**
+   * Per-bot path: a model missing from the list is shown as stored (with the
+   * capabilities its id implies) instead of being replaced by the first one.
+   * Whether it may still carry a turn is the caller's call (`available`).
+   */
+  exact = false,
 ): ComposerPublic {
   let providerId = id;
   let connectionId = "";
@@ -385,7 +410,9 @@ export function snapComposer(
   // so neither the pick nor its fallback may land on one.
   const list = (catalog && catalog.length > 0 ? catalog : modelsFor(id))
     .filter((item) => modelChats(item) !== false && !modelIsImageGenerator(item));
-  const model = modelOption(id, preferredModel, list);
+  const model = exact
+    ? (preferredModel ? (exactModelOption(preferredModel, list) ?? hydrateModel(id, preferredModel)) : null)
+    : modelOption(id, preferredModel, list);
   if (!model) {
     return {
       providerId,
@@ -400,6 +427,7 @@ export function snapComposer(
       speeds: [],
       models: [],
       groups,
+      available: false,
     };
   }
   const effort = model.efforts.length === 0
@@ -419,6 +447,7 @@ export function snapComposer(
     speeds: model.speeds.map((item) => ({ id: item, label: speedLabel(item) })),
     models: list.map((item) => ({ id: item.id, label: item.label })),
     groups,
+    available: true,
   };
 }
 

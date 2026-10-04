@@ -28,7 +28,8 @@ public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
     public struct ProfilePatch: Decodable, Equatable, Sendable {
         public var name: String
         public var title: String
-        public var description: String
+        /// Nil means the card leaves the description alone.
+        public var description: String?
         public var petname: String?
         public var avatarShape: String?
         public var avatarColor: String?

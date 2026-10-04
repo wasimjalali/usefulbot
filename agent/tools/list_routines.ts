@@ -1,23 +1,26 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { activeBotId } from "../lib/active-bot.ts";
+import { callerOf, mayActOn, notAvailable, SELF_ONLY_HINT } from "../lib/permission.ts";
 import { listRoutines, routineNextRun } from "../../shared/routines-store.ts";
 import { readShell } from "../../shared/shell-io.ts";
 import { wrapUntrusted } from "../../shared/untrusted.ts";
 
 export default defineTool({
   description:
-    "List the routines a bot runs on a schedule, with their next run time and the outcome of the last few runs. Read only, needs no approval. Defaults to this bot. Call it before updating or deleting a routine so you use the right id.",
+    "List a bot's routines with next run and recent outcomes. Read only. Defaults to this bot. Call before editing or deleting one, for the id.",
   inputSchema: z.object({
     botId: z.string().min(1).max(80).optional(),
   }),
-  execute(input, ctx) {
+  async execute(input, ctx) {
     const shell = readShell();
-    const botId = input.botId?.trim() || activeBotId(shell, ctx);
+    const who = await callerOf(shell, ctx, { readOnly: true });
+    if (!who.ok) return who.result;
+    const botId = input.botId?.trim() || who.caller.id;
     const bot = shell.bots.find((item) => item.id === botId) ?? null;
     if (!bot) {
-      return { status: "not_found", error: `no bot with id ${botId}`, hint: "Call listBots for exact ids." };
+      return { status: "not_found", error: `no bot with id ${botId}`, hint: "Call list_bots for exact ids." };
     }
+    if (!mayActOn(who.caller, bot.id)) return notAvailable(SELF_ONLY_HINT);
     const now = new Date();
     return {
       status: "ok",

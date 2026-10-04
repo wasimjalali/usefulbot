@@ -7,6 +7,7 @@ import { createHmac } from "node:crypto";
 import { createServer } from "node:net";
 import { webLaunch } from "./web-mode.mjs";
 import { ownerPath } from "../shared/user-path.ts";
+import { LOOPBACK, enforceStack, evePort, keychainName, routerConfigPath, routerPort, webOrigin, webPort } from "../shared/stack.ts";
 
 // The interpreter running this script, not a fixed path: the supervisor
 // accepts more than one install location and launches this file with it.
@@ -28,11 +29,13 @@ process.env.NEXT_TELEMETRY_DISABLED = "1";
 
 const KEYCHAIN_TIMEOUT_MS = 15_000;
 
-const SERVICE_PORTS = {
-  router: { host: "127.0.0.1", port: 4319 },
-  eve: { host: "127.0.0.1", port: 4321 },
-  web: { host: "127.0.0.1", port: 4320 },
-};
+// Read after the stack check in main(): a bad port or prefix is reported
+// there, not thrown while the module loads.
+const servicePorts = () => ({
+  router: { host: LOOPBACK, port: routerPort() },
+  eve: { host: LOOPBACK, port: evePort() },
+  web: { host: LOOPBACK, port: webPort() },
+});
 
 function fail(code, item) {
   process.stderr.write(`${JSON.stringify({ error: code, item })}\n`);
@@ -40,16 +43,16 @@ function fail(code, item) {
 }
 
 // The reviewer credential arrived after the first installs. A service must
-// still boot without it: the review tool and the reviewer subagent answer
-// reviewer_unconfigured per call, so the miss is logged once here instead of
+// still boot without it: the review tool answers reviewer_unconfigured per
+// call, so the miss is logged once here instead of
 // taking chat down with it.
 async function reviewerToken() {
   try {
-    return await keychain("com.usefulbot.router.reviewer");
+    return await keychain(keychainName("router.reviewer"));
   } catch {
     process.stderr.write(`${JSON.stringify({
       warn: "reviewer_unconfigured",
-      item: "com.usefulbot.router.reviewer",
+      item: keychainName("router.reviewer"),
       hint: "run scripts/setup-local.mjs --add-missing, then restart the services",
     })}\n`);
     return null;
@@ -130,15 +133,15 @@ async function childEnv() {
     return env;
   }
   try {
-    env.UB_OPENCODE_GO_KEY = await keychain("com.usefulbot.opencode-go");
+    env.UB_OPENCODE_GO_KEY = await keychain(keychainName("opencode-go"));
   } catch (error) {
     // A fresh install has no OpenCode Go key: the owner connects a provider
     // in the app instead, and the router reports itself "limited" on
     // /health/live. Only a key that does not exist degrades; a locked or
     // refusing Keychain still stops the service.
-    if (error.message !== "not_found") fail("credential_store_locked_or_missing", "com.usefulbot.opencode-go");
+    if (error.message !== "not_found") fail("credential_store_locked_or_missing", keychainName("opencode-go"));
     delete env.UB_OPENCODE_GO_KEY;
-    process.stderr.write(`${JSON.stringify({ service: mode, warning: "credential_missing", item: "com.usefulbot.opencode-go" })}\n`);
+    process.stderr.write(`${JSON.stringify({ service: mode, warning: "credential_missing", item: keychainName("opencode-go") })}\n`);
   }
   return env;
 }
@@ -182,8 +185,10 @@ async function waitReady(url, timeoutMs) {
 }
 
 async function main() {
+  // The dev stack is refused before anything is read, bound or launched.
+  enforceStack(mode ?? "service");
   if (!existsSync(NODE)) fail("interpreter_missing", NODE);
-  const target = SERVICE_PORTS[mode];
+  const target = servicePorts()[mode];
   if (target) {
     try {
       await preflightPort(target.host, target.port);
@@ -194,61 +199,63 @@ async function main() {
   if (mode === "router") {
     const env = await childEnv();
     if (!env.UB_ROUTER_CONFIG) {
-      env.UB_ROUTER_CONFIG = path.join(process.env.HOME ?? "", ".useful-bot/config.json");
+      env.UB_ROUTER_CONFIG = routerConfigPath();
     }
     run(["--experimental-strip-types", path.join(ROOT, "router/src/index.ts")], env);
     return;
   }
   if (mode === "eve") {
-    await waitReady("http://127.0.0.1:4319/health/live", 60_000);
+    await waitReady(`http://${LOOPBACK}:${routerPort()}/health/live`, 60_000);
     const env = {
       ...process.env,
       PATH: ownerPath(),
       NODE_ENV: process.env.NODE_ENV || "production",
     };
     try {
-      env.UB_CHANNEL_JWT_SECRET = await keychain("com.usefulbot.channel.desktop");
+      env.UB_CHANNEL_JWT_SECRET = await keychain(keychainName("channel.desktop"));
     } catch {
-      fail("credential_store_locked_or_missing", "com.usefulbot.channel.desktop");
+      fail("credential_store_locked_or_missing", keychainName("channel.desktop"));
     }
     try {
-      env.UB_ROUTER_DESKTOP_TOKEN = await keychain("com.usefulbot.router.desktop");
+      env.UB_ROUTER_DESKTOP_TOKEN = await keychain(keychainName("router.desktop"));
     } catch {
-      fail("credential_store_locked_or_missing", "com.usefulbot.router.desktop");
+      fail("credential_store_locked_or_missing", keychainName("router.desktop"));
     }
     const reviewer = await reviewerToken();
     if (reviewer) env.UB_ROUTER_REVIEWER_TOKEN = reviewer;
     else delete env.UB_ROUTER_REVIEWER_TOKEN;
     // Lets an agent tool wake the handoff pump at once instead of waiting for
     // the next web poll. Best effort: the poll drains the same queue.
-    env.UB_WEB_BASE_URL = process.env.UB_WEB_BASE_URL || "http://127.0.0.1:4320";
-    run([path.join(ROOT, "node_modules/eve/bin/eve.js"), "dev", "--no-ui", "--host", "127.0.0.1", "--port", "4321"], env);
+    env.UB_WEB_BASE_URL = webOrigin();
+    run([path.join(ROOT, "node_modules/eve/bin/eve.js"), "dev", "--no-ui", "--host", LOOPBACK, "--port", String(evePort())], env);
     return;
   }
   if (mode === "web") {
     const env = {
       ...process.env,
       PATH: ownerPath(),
-      UB_ROUTER_CONFIG: process.env.UB_ROUTER_CONFIG ?? path.join(process.env.HOME ?? "", ".useful-bot/config.json"),
+      UB_ROUTER_CONFIG: routerConfigPath(),
     };
     try {
-      const secret = await keychain("com.usefulbot.channel.desktop");
+      const secret = await keychain(keychainName("channel.desktop"));
+      // The tick route's key only. It carries no bot claim, so eve refuses it:
+      // the web service signs its own per-bot tokens from the secret below.
       env.UB_CHANNEL_JWT = signChannelJwt(secret, "desktop-app");
       // The agent tool wakes the handoff pump with the raw secret as its key
       // (see shared/agents-send.ts). Without it here every wake-up would 403
       // and only the UI poll would drain the queue.
       env.UB_CHANNEL_JWT_SECRET = secret;
     } catch {
-      fail("credential_store_locked_or_missing", "com.usefulbot.channel.desktop");
+      fail("credential_store_locked_or_missing", keychainName("channel.desktop"));
     }
     // Regenerate on a lost image draws through the router's image alias,
     // the same credential the agent's generate_image uses. Without it only
     // that button fails (and says so); the rest of the app runs.
     try {
-      env.UB_ROUTER_DESKTOP_TOKEN = await keychain("com.usefulbot.router.desktop");
+      env.UB_ROUTER_DESKTOP_TOKEN = await keychain(keychainName("router.desktop"));
     } catch {
       delete env.UB_ROUTER_DESKTOP_TOKEN;
-      process.stderr.write(`${JSON.stringify({ service: "web", warning: "router_token_missing", item: "com.usefulbot.router.desktop" })}\n`);
+      process.stderr.write(`${JSON.stringify({ service: "web", warning: "router_token_missing", item: keychainName("router.desktop") })}\n`);
     }
     // The web reviewer route runs the same alias as the agent's review tool.
     const reviewer = await reviewerToken();
@@ -262,8 +269,8 @@ async function main() {
       run([launch.server], {
         ...env,
         NODE_ENV: "production",
-        HOSTNAME: "127.0.0.1",
-        PORT: "4320",
+        HOSTNAME: LOOPBACK,
+        PORT: String(webPort()),
         // Unset rather than "undefined" when package.json names no version.
         ...(typeof version === "string" && version ? { UB_APP_VERSION: version } : {}),
       });
@@ -274,9 +281,9 @@ async function main() {
       "dev",
       path.join(ROOT, "web"),
       "--hostname",
-      "127.0.0.1",
+      LOOPBACK,
       "--port",
-      "4320",
+      String(webPort()),
     ], env);
     return;
   }

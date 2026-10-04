@@ -1,0 +1,119 @@
+{
+ "window": [
+  "2026-10-03T23:11:29Z",
+  "2026-10-03T23:18:25Z"
+ ],
+ "new_sessions": 12,
+ "all_first_requests_carry_bot_block": true,
+ "sessions": [
+  {
+   "session": "wrun_01M420K4R8EMVM5KQYHMHEP8DZ",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:11:38.801Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-11-39-021Z-e0377b-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420M45WYCM2TKP6BPWEVR8M",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:12:10.978Z",
+   "requests": 4,
+   "first_dump": "2026-10-03T23-12-11-181Z-c06df2-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420NCYP3E021AYF1T53H1DF",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:12:52.732Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-12-52-932Z-df2b09-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420P7ZDF7VXNHNG5SZ1Z1AB",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:13:20.398Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-13-20-606Z-71dad9-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420Q2V1XHFXE5PKJJ8RHGKP",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:13:47.911Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-13-48-115Z-9dbb6e-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420RGA3MW6DZKRCAQXQ3216",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:14:34.474Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-14-34-678Z-673581-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420SS3M4Q3XWRNZFVD3TC9G",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:15:16.251Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-15-16-459Z-8b6bc3-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420TRNVACPWVRJXSYQGRR81",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:15:48.578Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-15-48-784Z-801217-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420VEZKWBQEQCCTVEPW859W",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:16:11.418Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-16-11-637Z-773aa0-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420WK2KN16GWB1VY1KDDHNF",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:16:48.376Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-16-48-583Z-105a0c-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420X9CPWVYRTXW77BDE2TK3",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:17:11.229Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-17-11-435Z-3acebd-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  },
+  {
+   "session": "wrun_01M420Y8WCMPSDST83S575C72Z",
+   "mode": "skip",
+   "boundAt": "2026-10-03T23:17:43.472Z",
+   "requests": 2,
+   "first_dump": "2026-10-03T23-17-43-700Z-5a0b67-openai-chat-glm-5.3-flash.json",
+   "has_your_bot": true,
+   "has_instructions": true
+  }
+ ],
+ "refusal_lines": []
+}

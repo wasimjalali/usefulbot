@@ -11,11 +11,12 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { MAX_SESSION_TOOLS, MAX_SESSION_TOOL_BYTES } from "./policy.ts";
 import { schemaBytesOf, toolWireBytes } from "./tool-wire-size.ts";
 import { wrapUntrusted } from "./untrusted.ts";
 import { rawSchemaHint, toolInputSchema } from "./json-schema-zod.ts";
+import { statePath } from "./stack.ts";
 
 /**
  * Which of a connection's tools a session has asked for, and what each
@@ -120,7 +121,7 @@ function sleep(ms: number): void {
 
 export function connectionToolsPath(root = process.env.UB_CONNECTION_TOOLS_PATH): string {
   if (root) return root;
-  return join(process.env.HOME ?? "/tmp", ".useful-bot/connection-tools.json");
+  return statePath("connection-tools.json");
 }
 
 /** The name eve mounts a connection's tool under, and the app parses back. */

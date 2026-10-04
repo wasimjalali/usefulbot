@@ -76,7 +76,7 @@ final class FirstRunController: ObservableObject {
         preview = Self.value(after: "--first-run-preview", in: arguments)
         // The provider store, not the service config: a Mac can have a config
         // with no store, but never a connection without one.
-        let store = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".useful-bot/providers.json")
+        let store = AppVariant.current.stateRoot(home: FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent("providers.json")
         freshMac = !FileManager.default.fileExists(atPath: store.path)
         harnessRun = PerfHarness.shared != nil
         // Decided before the first frame where it can be, so a forced run or

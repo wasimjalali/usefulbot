@@ -1,28 +1,40 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
+import { lenientNullableString } from "../lib/lenient-null.ts";
 import { approvalActor } from "../lib/approvals.ts";
-import { activeBotId } from "../lib/active-bot.ts";
+import { authoritySessionId, awaitActiveBotId, BOT_CONTEXT_MISSING, isBotContextMissing, isSubAgent } from "../lib/active-bot.ts";
 import { approvedWrite } from "../lib/write.ts";
 import { appendAgentEvent } from "../../shared/agent-store.ts";
 import { isPagePath, recordPage } from "../../shared/media-store.ts";
 import { readShell } from "../../shared/shell-io.ts";
 
 export default defineTool({
-  description: "Write a UTF-8 file in the workspace this conversation works in. Gated by the conversation's permission. An .html file also goes into the owner's Library and shows in the chat as a preview they can open in their browser.",
+  description: "Write a UTF-8 file in the workspace, gated by the conversation's permission. An .html file also lands in the owner's Library with a browser preview in the chat. Leaving expectedSha256 out overwrites without the conflict check.",
   inputSchema: z.object({
     path: z.string(),
     content: z.string(),
-    expectedSha256: z.string().nullable(),
+    expectedSha256: lenientNullableString("SHA-256 of the file's current bytes; the write is refused if it changed. Omit to overwrite unchecked."),
   }),
   async execute(input, ctx) {
+    let grantSessionId: string | undefined;
+    try {
+      grantSessionId = authoritySessionId(ctx);
+    } catch (error) {
+      if (isBotContextMissing(error)) return BOT_CONTEXT_MISSING;
+      throw error;
+    }
     const written = await approvedWrite({
       path: input.path,
       content: input.content,
       expectedSha256: input.expectedSha256,
       ...approvalActor(ctx),
+      // A sub-agent writes under its root session's grant, never one of its own.
+      grantSessionId,
     });
     if (!isPagePath(written.path)) return written;
-    return { ...written, note: showPage(written.path, input.content, ctx) };
+    // A sub-agent files nothing in the owner's Library or chat: its root reports.
+    if (isSubAgent(ctx)) return { ...written, note: "The page is written. A sub-agent adds nothing to the owner's Library or chat, so say where the file is in your report." };
+    return { ...written, note: await showPage(written.path, input.content, ctx) };
   },
 });
 
@@ -30,10 +42,12 @@ export default defineTool({
  * The file is written by now; this only files it. A failure here is told to
  * the bot, never thrown, so the turn does not retry a write that landed.
  */
-function showPage(path: string, html: string, ctx: { session?: { id?: string } }): string {
+async function showPage(path: string, html: string, ctx: { session?: { id?: string; parent?: unknown } }): Promise<string> {
   try {
     const shell = readShell();
-    const botId = activeBotId(shell, ctx);
+    // Waits for a just-created session's binding; an unbound one is
+    // bot_context_missing, caught below and told to the bot.
+    const botId = await awaitActiveBotId(shell, ctx);
     const botName = shell.bots.find((bot) => bot.id === botId)?.name ?? "Useful Bot";
     const { item } = recordPage({ path, html, botId, botName });
     if (item.forgotten) return "The owner removed this page from their Library, so it is not shown again.";

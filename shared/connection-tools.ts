@@ -13,7 +13,7 @@ import {
 import { readConnectionsStore, type ConnectionEntry } from "./connections-store.ts";
 import { listMcpTools, measureOpenApiConnection, modelToolNames } from "./mcp-http.ts";
 import { specWireBytes, type SpecSize } from "./tool-wire-size.ts";
-import { MOUNTED_TOOL_BUDGET, MOUNTED_TOOL_BYTE_BUDGET } from "./policy.ts";
+import { MAX_SESSION_TOOL_BYTES, MAX_SESSION_TOOLS, MOUNTED_TOOL_BUDGET, MOUNTED_TOOL_BYTE_BUDGET } from "./policy.ts";
 
 /**
  * Which connections are mounted for every turn, and how a bot finds the tools
@@ -303,4 +303,47 @@ export function splitMountedName(name: string): { connectionId: string; tool: st
   const at = name.indexOf("__");
   if (at <= 0 || at + 2 >= name.length) return null;
   return { connectionId: name.slice(0, at), tool: name.slice(at + 2) };
+}
+
+export type MountedPick = {
+  split: { connectionId: string; tool: string };
+  entry: ConnectionEntry;
+  indexed: IndexedTool;
+  /** What the tool is charged, the way it is mounted. */
+  weight: number;
+};
+
+/**
+ * Which of a session's picked-up tools actually mount, in the order the
+ * session took them. The one selection the resolver mounts with
+ * (agent/tools/connection_tools.ts) and admission weighs
+ * (web/lib/agent-exec.ts `mountedToolChars`): MCP connections only, inside the
+ * owner's allow-list as it is now, with an indexed listing, and clamped by the
+ * cumulative count (MAX_SESSION_TOOLS) and byte (MAX_SESSION_TOOL_BYTES)
+ * limits. A tool that would not mount is skipped, and so is not charged.
+ */
+export function selectMountedTools(
+  names: Iterable<string>,
+  lookup: {
+    connection: (connectionId: string) => ConnectionEntry | null | undefined;
+    indexed: (connectionId: string, tool: string) => IndexedTool | undefined;
+  },
+): MountedPick[] {
+  const picks: MountedPick[] = [];
+  let bytes = 0;
+  for (const name of names) {
+    const split = splitMountedName(name);
+    if (!split) continue;
+    const entry = lookup.connection(split.connectionId);
+    if (!entry || entry.kind !== "mcp") continue;
+    // The owner can narrow a server's allow-list after a session picked a tool up.
+    if (entry.toolsAllow && !entry.toolsAllow.includes(split.tool)) continue;
+    const indexed = lookup.indexed(split.connectionId, split.tool);
+    if (!indexed) continue;
+    const weight = indexedToolBytes(indexed, entry.id, entry.name);
+    if (picks.length + 1 > MAX_SESSION_TOOLS || bytes + weight > MAX_SESSION_TOOL_BYTES) continue;
+    bytes += weight;
+    picks.push({ split, entry, indexed, weight });
+  }
+  return picks;
 }

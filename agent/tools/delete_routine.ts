@@ -2,21 +2,36 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, sessionPermission, settle } from "../lib/permission.ts";
+import {
+  callerOf,
+  inAppGate,
+  mayActOn,
+  mayStillActOn,
+  notAvailable,
+  READ_ONLY_BLOCKED,
+  SELF_ONLY_HINT,
+  sessionPermission,
+  settle,
+} from "../lib/permission.ts";
+import { readShell } from "../../shared/shell-io.ts";
 import { deleteRoutine, readRoutine } from "../../shared/routines-store.ts";
 
 export default defineTool({
   description:
-    "Delete a routine for good, including its run history. It applies at once in Auto and Full access and is refused in Read only. Prefer updateRoutine with active false when the owner only wants it paused.",
+    "Delete a routine for good, run history included, only when the owner asks. Applies at once in Auto and Full access, refused in Read only. Prefer update_routine with active false when the owner only wants it paused.",
   inputSchema: z.object({
     routineId: z.string().min(1).max(120),
     reason: z.string().max(300).optional(),
   }),
   async execute(input, ctx) {
+    const who = await callerOf(readShell(), ctx);
+    if (!who.ok) return who.result;
     const routine = readRoutine(input.routineId);
     if (!routine) {
-      return { status: "not_found", error: `no routine with id ${input.routineId}`, hint: "Call listRoutines." };
+      return { status: "not_found", error: `no routine with id ${input.routineId}`, hint: "Call list_routines." };
     }
+    // A routine resolves to its owner: a plain bot deletes only its own.
+    if (!mayActOn(who.caller, routine.botId)) return notAvailable(SELF_ONLY_HINT);
     // A routine is recreated in one call, so Auto removes it when asked;
     // Read only refuses.
     const gate = inAppGate(sessionPermission(ctx));
@@ -44,6 +59,7 @@ export default defineTool({
     return executeIfApproved(store, record.id, hash, () => {
       // The routine could have been edited while the owner was reading the
       // card; the approval belongs to the revision they saw, not to the id.
+      if (!mayStillActOn(who.caller.id, routine.botId)) return notAvailable(SELF_ONLY_HINT);
       const current = readRoutine(routine.id);
       if (!current) return { status: "already_gone", routineId: routine.id, name: routine.name };
       if (current.updatedAt !== routine.updatedAt) throw new Error("routine_changed");

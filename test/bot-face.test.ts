@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AVATAR_COLORS,
   AVATAR_PALETTE,
+  AVATAR_PICKABLE_COLORS,
   defaultFaceFor,
   isAvatarColor,
   isAvatarShape,
@@ -18,6 +19,19 @@ test("avatar palette keeps legacy ids and tints only the approved mascot", () =>
   }
 });
 
+test("30 grid colors are pickable and the 10 legacy ids stay valid but unpicked", () => {
+  assert.equal(AVATAR_PICKABLE_COLORS.length, 30);
+  assert.equal(AVATAR_COLORS.length, 40);
+  for (const legacy of ["brown", "red", "orange", "gold", "green", "teal", "blue", "purple", "pink", "gray"] as const) {
+    assert.ok(isAvatarColor(legacy));
+    assert.ok(!(AVATAR_PICKABLE_COLORS as readonly string[]).includes(legacy));
+  }
+  for (let index = 0; index < 500; index += 1) {
+    assert.ok((AVATAR_PICKABLE_COLORS as readonly string[]).includes(randomFace(Date.now() + index * 977).color));
+    assert.ok((AVATAR_PICKABLE_COLORS as readonly string[]).includes(defaultFaceFor(`bot-${index}`).color));
+  }
+});
+
 test("random faces always produce a known shape and color", () => {
   // The old signed-bitwise implementation produced negative indices for large
   // timestamps, which yielded undefined and made the Generate button a no-op.
@@ -30,10 +44,10 @@ test("random faces always produce a known shape and color", () => {
 
 test("faces match the native client's fixtures", () => {
   // Keep in step with macos FacePaletteTests.defaultFacesMatchTheWebImplementation.
-  assert.deepEqual(defaultFaceFor("bot-scout"), { shape: "blob", color: "orange", image: null });
-  assert.deepEqual(defaultFaceFor("bot-useful"), { shape: "drop", color: "ink", image: null });
-  assert.deepEqual(defaultFaceFor("🙂".repeat(500)), { shape: "circle", color: "pink", image: null });
-  assert.deepEqual(defaultFaceFor("~".repeat(1000)), { shape: "circle", color: "blue", image: null });
+  assert.deepEqual(defaultFaceFor("bot-scout"), { shape: "blob", color: "blue-mid", image: null });
+  assert.deepEqual(defaultFaceFor("bot-useful"), { shape: "drop", color: "lilac-mid", image: null });
+  assert.deepEqual(defaultFaceFor("🙂".repeat(500)), { shape: "circle", color: "blue-deep", image: null });
+  assert.deepEqual(defaultFaceFor("~".repeat(1000)), { shape: "circle", color: "green-mid", image: null });
 });
 
 test("default faces derive from the bot id and stay valid", () => {

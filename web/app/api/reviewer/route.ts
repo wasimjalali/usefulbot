@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { isGateError, requireOwner } from "../../../lib/desktop-gate";
 import { apiError, errorCode, rateLimited, readJson } from "../../../lib/api-guard";
+import { routerApiBase } from "../../../../shared/stack.ts";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ function fixtureReview(text: string): string {
 async function liveReview(text: string, token: string): Promise<string> {
   // UB_ROUTER_BASE_URL is a base ending in /v1, the way agent/agent.ts reads
   // it; the chat path is appended here rather than baked into the default.
-  const base = process.env.UB_ROUTER_BASE_URL ?? "http://127.0.0.1:4319/v1";
+  const base = routerApiBase();
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {

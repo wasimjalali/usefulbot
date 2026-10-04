@@ -314,7 +314,7 @@ for (const [part, groups] of Object.entries(motionLayers)) {
 const avatarFace = (await read('brand/source/avatar-face.svg')).toString();
 const palette = JSON.parse(await read('brand/source/avatar-palette.json'));
 for (const [color, { fill }] of Object.entries(palette)) {
-  assert(/^[a-z]+$/.test(color) && /^#[A-Fa-f0-9]{6}$/.test(fill), `Invalid avatar color: ${color}`);
+  assert(/^[a-z]+(-[a-z]+)?$/.test(color) && /^#[A-Fa-f0-9]{6}$/.test(fill), `Invalid avatar color: ${color}`);
   const avatar = optimize(avatarFace, { plugins: [{ name: 'tintAvatarHead', fn: () => ({ element: {
     enter(node, parent) {
       if (parent.attributes?.id === 'head' && node.attributes.fill) node.attributes.fill = fill;

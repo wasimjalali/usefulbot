@@ -50,6 +50,9 @@ struct AppSettingsView: View {
     /// Tracks the daily-limit field so clicking away commits the typed value
     /// the way Return does.
     @FocusState private var budgetFieldFocused: Bool
+    /// The same two for the daily request limit.
+    @State private var editedRequests: String?
+    @FocusState private var requestFieldFocused: Bool
     /// The open Providers brand card, rendered at the dialog root so the
     /// scrolling body cannot clip it. Anchors come from the pane.
     @State private var providersCard: ProvidersCard?
@@ -382,16 +385,14 @@ struct AppSettingsView: View {
                                 .font(.system(size: 14))
                                 .foregroundStyle(Theme.C.ink)
                             Spacer(minLength: 0)
-                            settingsValue(usage.caps.requests24h > 0
-                                ? "\(compact(usage.requests)) of \(compact(usage.caps.requests24h))"
-                                : compact(usage.requests))
+                            settingsValue(BudgetInput.requestUsage(used: usage.requests, cap: usage.caps.requests24h))
                         }
                     }
                 }
                 if let budget = usage.budget {
                     section("Daily limit") {
                         settingsGroup {
-                            settingsRow(last: true) {
+                            settingsRow(last: usage.requestBudget == nil) {
                                 Text("Tokens a day")
                                     .font(.system(size: 14))
                                     .foregroundStyle(Theme.C.ink)
@@ -399,6 +400,7 @@ struct AppSettingsView: View {
                                 if !budget.isDefault {
                                     Button("Reset") {
                                         editedBudget = nil
+                                        model.clearBudgetError(.tokens)
                                         model.setDailyTokenBudget(nil)
                                     }
                                     .buttonStyle(.plain)
@@ -409,6 +411,40 @@ struct AppSettingsView: View {
                                 }
                                 budgetStepper(budget)
                             }
+                            if let requestBudget = usage.requestBudget {
+                                settingsRow(last: true) {
+                                    Text("Requests a day")
+                                        .font(.system(size: 14))
+                                        .foregroundStyle(Theme.C.ink)
+                                    Spacer(minLength: 0)
+                                    if !requestBudget.isDefault {
+                                        Button("Reset") {
+                                            editedRequests = nil
+                                            model.clearBudgetError(.requests)
+                                            model.setDailyRequestBudget(nil)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.C.inkMuted)
+                                        .pointerOnHover()
+                                        .disabled(model.usageBusy)
+                                    }
+                                    requestStepper(requestBudget)
+                                }
+                            }
+                        }
+                        if let error = model.budgetMessages.current {
+                            Text(error)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.C.danger)
+                                .padding(.leading, 4)
+                                .padding(.top, 8)
+                        } else if BudgetInput.tokenBudgetAboveDefault(tokens: budget.tokens, default: budget.default) {
+                            Text("Higher limits can mean higher provider bills.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.C.inkMuted)
+                                .padding(.leading, 4)
+                                .padding(.top, 8)
                         }
                     }
                 }
@@ -485,50 +521,100 @@ struct AppSettingsView: View {
                     settingsValue(cap > 0 ? "\(compact(used)) of \(compact(cap))" : compact(used))
                         .help(count(used))
                 }
-                usageMeter(fraction: cap > 0 ? min(1, Double(used) / Double(cap)) : 0)
+                usageMeter(fraction: BudgetInput.meterFraction(used: used, cap: cap))
             }
         }
     }
 
     /// Minus, the budget, plus. The field takes a typed number as well, since
-    /// moving from 30M to 100M is a sentence, not thirteen taps.
+    /// moving from 500M to 2,000M is a sentence, not forty taps.
     private func budgetStepper(_ budget: UsagePayload.Budget) -> some View {
         let step = Self.budgetStep(for: budget.tokens)
-        return HStack(spacing: 2) {
-            NativeIconButton(systemImage: "minus", size: 28, iconSize: 12) {
-                commitBudget(budget.tokens - step, budget)
-            }
-            .disabled(model.usageBusy || budget.tokens <= budget.min)
-            .opacity(budget.tokens <= budget.min ? 0.4 : 1)
-            .accessibilityLabel("Lower the daily limit")
+        return limitStepper(
+            text: Binding(
+                get: { editedBudget ?? BudgetInput.tokenLabel(budget.tokens) },
+                set: { editedBudget = $0; model.clearBudgetError(.tokens) }
+            ),
+            focused: $budgetFieldFocused,
+            atMin: budget.tokens <= budget.min,
+            atMax: budget.max.map { budget.tokens >= $0 } ?? false,
+            lower: { commitBudget(budget.tokens - step, budget) },
+            raise: { commitBudget(budget.tokens + step, budget) },
+            submit: { commitTypedBudget(budget) },
+            changed: { editedBudget = nil; model.clearBudgetError(.tokens) },
+            value: budget.tokens,
+            lowerLabel: "Lower the daily token limit",
+            raiseLabel: "Raise the daily token limit",
+            fieldLabel: "Daily token limit in millions"
+        )
+    }
 
-            TextField("", text: budgetText(budget))
+    private func requestStepper(_ budget: UsagePayload.RequestBudget) -> some View {
+        let step = Self.requestStep(for: budget.requests)
+        return limitStepper(
+            text: Binding(
+                get: { editedRequests ?? BudgetInput.requestLabel(budget.requests) },
+                set: { editedRequests = $0; model.clearBudgetError(.requests) }
+            ),
+            focused: $requestFieldFocused,
+            atMin: budget.requests <= budget.min,
+            atMax: budget.max.map { budget.requests >= $0 } ?? false,
+            lower: { commitRequests(budget.requests - step, budget) },
+            raise: { commitRequests(budget.requests + step, budget) },
+            submit: { commitTypedRequests(budget) },
+            changed: { editedRequests = nil; model.clearBudgetError(.requests) },
+            value: budget.requests,
+            lowerLabel: "Lower the daily request limit",
+            raiseLabel: "Raise the daily request limit",
+            fieldLabel: "Daily request limit"
+        )
+    }
+
+    private func limitStepper(
+        text: Binding<String>,
+        focused: FocusState<Bool>.Binding,
+        atMin: Bool,
+        atMax: Bool,
+        lower: @escaping () -> Void,
+        raise: @escaping () -> Void,
+        submit: @escaping () -> Void,
+        changed: @escaping () -> Void,
+        value: Int,
+        lowerLabel: String,
+        raiseLabel: String,
+        fieldLabel: String
+    ) -> some View {
+        HStack(spacing: 2) {
+            NativeIconButton(systemImage: "minus", size: 28, iconSize: 12, action: lower)
+                .disabled(model.usageBusy || atMin)
+                .opacity(atMin ? 0.4 : 1)
+                .accessibilityLabel(lowerLabel)
+
+            TextField("", text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14, weight: .medium).monospacedDigit())
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.C.ink)
-                .frame(width: 72)
-                .focused($budgetFieldFocused)
-                .onSubmit { commitTypedBudget(budget) }
+                .frame(width: 88)
+                .focused(focused)
+                .onSubmit(submit)
                 // The typed value stays until the router confirms it: cleared
                 // here on the new server value, so a refused write leaves the
                 // text the error is talking about in the field.
-                .onChange(of: budget.tokens) { _, _ in editedBudget = nil }
+                .onChange(of: value) { _, _ in changed() }
                 // Clicking away commits the same way Return does; the poll
                 // never overwrites an uncommitted edit, so without this the
                 // field would keep showing a limit the router is not enforcing.
-                .onChange(of: budgetFieldFocused) { _, focused in
-                    guard !focused else { return }
-                    commitTypedBudget(budget)
+                .onChange(of: focused.wrappedValue) { _, isFocused in
+                    guard !isFocused else { return }
+                    submit()
                 }
-                .accessibilityLabel("Daily token limit in millions")
+                .accessibilityLabel(fieldLabel)
 
-            NativeIconButton(systemImage: "plus", size: 28, iconSize: 12) {
-                commitBudget(budget.tokens + step, budget)
-            }
-            .disabled(model.usageBusy || budget.tokens >= budget.max)
-            .opacity(budget.tokens >= budget.max ? 0.4 : 1)
-            .accessibilityLabel("Raise the daily limit")
+            NativeIconButton(systemImage: "plus", size: 28, iconSize: 12, action: raise)
+                .disabled(model.usageBusy || atMax)
+                .opacity(atMax ? 0.4 : 1)
+                .accessibilityLabel(raiseLabel)
         }
         .padding(.horizontal, 4)
         .frame(height: 32)
@@ -538,75 +624,77 @@ struct AppSettingsView: View {
         )
     }
 
-    /// Below ten million a million at a time is the useful move; above it the
-    /// same step would take thirty taps to double the day.
+    /// A step that keeps the stepper useful as the budget grows: a million at a
+    /// time near the floor, half a billion once it is in the billions.
     private static func budgetStep(for tokens: Int) -> Int {
-        tokens >= 10_000_000 ? 5_000_000 : 1_000_000
+        switch tokens {
+        case ..<10_000_000: return 1_000_000
+        case ..<100_000_000: return 5_000_000
+        case ..<1_000_000_000: return 50_000_000
+        default: return 500_000_000
+        }
     }
 
-    /// The field shows whole millions. While it is being typed the poll must
-    /// not overwrite it, so the edit lives here until it is committed.
-    private func budgetText(_ budget: UsagePayload.Budget) -> Binding<String> {
-        Binding(
-            get: { editedBudget ?? Self.budgetLabel(budget.tokens) },
-            set: { editedBudget = $0 }
-        )
-    }
-
-    /// Millions, with a tenth only when the budget has one. Showing 3,500,000
-    /// as "3M" would be the field lying about what is enforced.
-    private static func budgetLabel(_ tokens: Int) -> String {
-        let millions = Double(tokens) / 1_000_000
-        return millions == millions.rounded()
-            ? "\(Int(millions))M"
-            : String(format: "%.1fM", millions)
+    private static func requestStep(for requests: Int) -> Int {
+        switch requests {
+        case ..<1_000: return 100
+        case ..<10_000: return 500
+        case ..<100_000: return 5_000
+        default: return 50_000
+        }
     }
 
     /// The field is in millions. "35", "35M" and "3.5" all mean what they look
-    /// like; anything else is refused rather than reinterpreted, because
-    /// stripping the punctuation out of "3.5M" would raise the spend limit
-    /// tenfold and call it a typo.
+    /// like; anything else is refused with the rule it broke, because
+    /// reinterpreting "3.5M" would change the spend limit and call it a typo.
+    /// A rejected value stays in the field so the message names text the owner
+    /// can still see.
     private func commitTypedBudget(_ budget: UsagePayload.Budget) {
         guard let typed = editedBudget else { return }
-        let cleaned = typed
-            .trimmingCharacters(in: .whitespaces)
-            .replacingOccurrences(of: "M", with: "", options: [.caseInsensitive])
-            .trimmingCharacters(in: .whitespaces)
-        guard !cleaned.isEmpty,
-              cleaned.allSatisfy({ $0.isNumber || $0 == "." }),
-              cleaned.filter({ $0 == "." }).count <= 1,
-              let millions = Double(cleaned),
-              millions.isFinite, millions > 0 else {
-            // The rejected text stays in the field: clearing it here would
-            // snap the field back to the server value and the error would
-            // name text the owner can no longer see.
-            model.reportUsageError("Type the limit in millions, like 30 or 3.5.")
-            return
+        switch BudgetInput.tokens(typed, min: budget.min, max: budget.max) {
+        case .failure(let error):
+            model.reportBudgetError(.tokens, error.message)
+        case .success(let tokens):
+            guard tokens != budget.tokens else {
+                editedBudget = nil
+                return
+            }
+            model.setDailyTokenBudget(tokens)
         }
-        let tokens = (millions * 1_000_000).rounded()
-        // A typed number is refused when it is out of range, never quietly
-        // clamped: someone who asks for 900M and gets 500M has been given a
-        // limit they did not choose.
-        guard tokens >= Double(budget.min), tokens <= Double(budget.max) else {
-            model.reportUsageError(
-                "The limit has to be between \(budget.min / 1_000_000)M and \(budget.max / 1_000_000)M."
-            )
-            return
-        }
-        guard Int(tokens) != budget.tokens else {
-            editedBudget = nil
-            return
-        }
-        model.setDailyTokenBudget(Int(tokens))
     }
 
-    /// The stepper's own moves: pressing + at the ceiling stops at the ceiling
+    private func commitTypedRequests(_ budget: UsagePayload.RequestBudget) {
+        guard let typed = editedRequests else { return }
+        switch BudgetInput.requests(typed, min: budget.min, max: budget.max) {
+        case .failure(let error):
+            model.reportBudgetError(.requests, error.message)
+        case .success(let requests):
+            guard requests != budget.requests else {
+                editedRequests = nil
+                return
+            }
+            model.setDailyRequestBudget(requests)
+        }
+    }
+
+    /// The stepper's own moves: pressing - at the floor stops at the floor
     /// rather than erroring. Typed input takes the stricter path above.
     private func commitBudget(_ tokens: Int, _ budget: UsagePayload.Budget) {
-        let clamped = max(budget.min, min(budget.max, tokens))
-        guard clamped != budget.tokens else { return }
+        let clamped = max(budget.min, min(budget.max ?? BudgetInput.maxSafe, tokens))
+        // A click is a new answer: a refusal about earlier typed text is stale,
+        // and so is the text, so both go together even when the value holds.
         editedBudget = nil
+        model.clearBudgetError(.tokens)
+        guard clamped != budget.tokens else { return }
         model.setDailyTokenBudget(clamped)
+    }
+
+    private func commitRequests(_ requests: Int, _ budget: UsagePayload.RequestBudget) {
+        let clamped = max(budget.min, min(budget.max ?? BudgetInput.maxSafe, requests))
+        editedRequests = nil
+        model.clearBudgetError(.requests)
+        guard clamped != budget.requests else { return }
+        model.setDailyRequestBudget(clamped)
     }
 
     private func usageMeter(fraction: Double) -> some View {
@@ -636,7 +724,7 @@ struct AppSettingsView: View {
             // A round budget is "30M", not "30.0M"; a real total keeps its
             // tenth, because 2.2M and 2.9M are a different day.
             if millions >= 100 || millions == millions.rounded() {
-                return "\(Int(millions.rounded()))M"
+                return "\(count(Int(millions.rounded())))M"
             }
             return String(format: "%.1fM", millions)
         }
@@ -774,6 +862,8 @@ struct AppSettingsView: View {
     /// of the same name overrides it for a local check. Nil means this build
     /// cannot send.
     private static var feedbackURL: URL? {
+        // The dev app never posts to the production Worker, even with a defaults override.
+        guard AppVariant.current.allowsFeedback else { return nil }
         let raw = UserDefaults.standard.string(forKey: "UBFeedbackURL")
             ?? Bundle.main.object(forInfoDictionaryKey: "UBFeedbackURL") as? String
         guard let raw, let url = URL(string: raw), url.scheme == "https" || url.scheme == "http" else { return nil }

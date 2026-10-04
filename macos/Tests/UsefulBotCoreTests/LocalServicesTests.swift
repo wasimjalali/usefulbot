@@ -34,9 +34,36 @@ private final class FakeRunner: ProcessRunner, @unchecked Sendable {
     }
 }
 
+/// Every process it starts stays alive and never opens its port: the shape of a
+/// service blocked on a macOS permission prompt.
+private final class HungRunner: ProcessRunner, @unchecked Sendable {
+    private let lock = NSLock()
+    private var spawned: [ServiceCommand] = []
+    private var live: Set<String> = []
+    /// A runner whose processes die on their own (a crash) instead of hanging.
+    var diesAtOnce = false
+
+    var started: [ServiceCommand] { lock.lock(); defer { lock.unlock() }; return spawned }
+    func count(_ mode: ServiceMode) -> Int { started.filter { $0.arguments.last == mode.rawValue }.count }
+
+    func start(_ command: ServiceCommand) {
+        lock.lock(); defer { lock.unlock() }
+        spawned.append(command)
+        if !diesAtOnce { live.insert(command.arguments.last ?? "") }
+    }
+    func hasLiveSpawn(of mode: ServiceMode) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return live.contains(mode.rawValue)
+    }
+    func portAccepting(_ port: Int) -> Bool { false }
+    func listeners(port: Int) -> [pid_t] { [] }
+    func stopOwnListeners(port: Int, owns: @escaping @Sendable (String) -> Bool) {}
+    func forceStopOwnListeners(port: Int, owns: @escaping @Sendable (String) -> Bool) {}
+}
+
 @Suite struct LocalServicesTests {
-    private var routerHealth: String { ServiceSupervisor.routerHealthURL.absoluteString }
-    private var eveHealth: String { ServiceSupervisor.eveHealthURL.absoluteString }
+    private var routerHealth: String { AppVariant.daily.routerHealthURL.absoluteString }
+    private var eveHealth: String { AppVariant.daily.eveHealthURL.absoluteString }
     private var webHealth: String { ServerConfig(repoPath: "/repo", port: 4320).healthURL.absoluteString }
 
     private func modes(_ runner: FakeRunner) -> [String] { runner.started.map { $0.arguments.last ?? "" } }
@@ -147,7 +174,7 @@ private final class FakeRunner: ProcessRunner, @unchecked Sendable {
         // It answers a moment later, as a slow starter does.
         Task {
             try? await Task.sleep(nanoseconds: 200_000_000)
-            probe.healthy.insert(ServiceSupervisor.routerHealthURL.absoluteString)
+            probe.healthy.insert(AppVariant.daily.routerHealthURL.absoluteString)
         }
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(runner.stopped.isEmpty)
@@ -187,6 +214,73 @@ private final class FakeRunner: ProcessRunner, @unchecked Sendable {
         #expect(outcome == .unavailable)
         // Three probes per attempt used to make each "second" cost several.
         #expect(elapsed < 5)
+    }
+
+    // MARK: - A hung service is never stacked
+
+    @Test func aServiceThatNeverBindsIsSpawnedOncePerModeAcrossTheWholeBudget() async {
+        // The 2026-10-01 leak: every service blocked on a permission prompt, the ports
+        // stayed empty, and each retry round spawned a fresh router, eve and web.
+        let runner = HungRunner()
+        let config = ServerConfig(repoPath: "/repo", port: 4420, variant: .dev)
+        let services = LocalServices(
+            runner: runner,
+            probe: FakeProbe(),
+            supervisor: ServiceSupervisor(nodeExists: { _ in true }),
+            startGraceSeconds: 0,
+            restartIntervalSeconds: 0.05
+        )
+        let outcome = await services.ensure(config: config, timeoutSeconds: 3)
+        #expect(runner.count(.router) == 1)
+        #expect(runner.count(.eve) == 1)
+        #expect(runner.count(.web) == 1)
+        // Said out loud, naming each service that never opened its port.
+        #expect(outcome == .neverBound([.router, .eve, .web]))
+    }
+
+    @Test func aRetryAfterTheBudgetStillDoesNotStackAHungService() async {
+        let runner = HungRunner()
+        let config = ServerConfig(repoPath: "/repo", port: 4420, variant: .dev)
+        let services = LocalServices(
+            runner: runner,
+            probe: FakeProbe(),
+            supervisor: ServiceSupervisor(nodeExists: { _ in true }),
+            startGraceSeconds: 0,
+            restartIntervalSeconds: 0.05
+        )
+        _ = await services.ensure(config: config, timeoutSeconds: 1)
+        let outcome = await services.ensure(config: config, timeoutSeconds: 1)
+        #expect(runner.started.count == 3)
+        #expect(outcome == .neverBound([.router, .eve, .web]))
+    }
+
+    @Test func aServiceThatExitsIsStartedAgainAndIsNotReportedAsHung() async {
+        // The retry exists for a start that fails or a service that dies a second
+        // later: nothing alive, so a new one is started and the outcome is plain.
+        let runner = HungRunner()
+        runner.diesAtOnce = true
+        let config = ServerConfig(repoPath: "/repo", port: 4420, variant: .dev)
+        let services = LocalServices(
+            runner: runner,
+            probe: FakeProbe(),
+            supervisor: ServiceSupervisor(nodeExists: { _ in true }),
+            startGraceSeconds: 0,
+            restartIntervalSeconds: 0.05
+        )
+        let outcome = await services.ensure(config: config, timeoutSeconds: 3)
+        #expect(runner.count(.router) > 1)
+        #expect(outcome == .unavailable)
+    }
+
+    @Test func theNeverBoundMessageNamesTheServiceItsPortAndWhereToLook() {
+        let message = LocalServices.neverBoundMessage([.router, .web], variant: .dev)
+        #expect(message.contains("router"))
+        #expect(message.contains("4419"))
+        #expect(message.contains("web"))
+        #expect(message.contains("4420"))
+        #expect(!message.contains("4421"))
+        #expect(message.contains("UsefulBotDev"))
+        #expect(LocalServices.neverBoundMessage([.eve], variant: .daily).contains("4321"))
     }
 }
 #endif

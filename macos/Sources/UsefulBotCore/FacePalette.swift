@@ -5,10 +5,19 @@ import Foundation
 /// in UInt32 throughout.
 public enum FacePalette {
     public static let shapes = ["circle", "oval", "square", "pill", "triangle", "hex", "blob", "drop"]
-    public static let colors = [
-        "ink", "brown", "red", "orange", "gold", "green",
-        "teal", "blue", "purple", "pink", "gray",
+    /// The picker's grid: 10 hues in three tones, one row per tone. Neutral
+    /// light keeps the legacy id "ink" (the default bot's color).
+    public static let hues = ["neutral", "red", "orange", "amber", "yellow", "green", "teal", "sky", "blue", "lilac"]
+    public static let tones = ["light", "mid", "deep"]
+    public static let gridColors: [String] = tones.flatMap { tone in
+        hues.map { hue in hue == "neutral" && tone == "light" ? "ink" : "\(hue)-\(tone)" }
+    }
+    /// Ids from before the grid. They still validate and render for bots that
+    /// have them, but the picker no longer offers them.
+    public static let legacyColors = [
+        "brown", "red", "orange", "gold", "green", "teal", "blue", "purple", "pink", "gray",
     ]
+    public static let colors = gridColors + legacyColors
     // The authoritative tint palette is brand/source/avatar-palette.json.
     // Legacy shape IDs remain decodable, but aren't selectable or rendered.
 
@@ -40,7 +49,7 @@ public enum FacePalette {
         }
         return Face(
             shape: shapes[Int(hash % UInt32(shapes.count))],
-            color: colors[Int((hash >> 3) % UInt32(colors.count))]
+            color: gridColors[Int((hash >> 3) % UInt32(gridColors.count))]
         )
     }
 
@@ -48,7 +57,7 @@ public enum FacePalette {
         let mixed = splitmix64(seed)
         return Face(
             shape: shapes[Int(mixed % UInt64(shapes.count))],
-            color: colors[Int((mixed >> 4) % UInt64(colors.count))]
+            color: gridColors[Int((mixed >> 4) % UInt64(gridColors.count))]
         )
     }
 

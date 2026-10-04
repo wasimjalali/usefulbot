@@ -1,12 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Popovers close on any mousedown outside the card. SwiftUI anchored
-/// overlays have no
-/// equivalent, so this installs temporary AppKit event monitors for the
-/// lifetime of the popover view and closes it when the user clicks anywhere
-/// else. Pass `triggers` with the toggle button's window frame so clicking the
-/// button again closes instead of dismissing-then-reopening.
+/// Popovers and side panes close on a click outside the card, inside one of
+/// Useful Bot's own windows. SwiftUI anchored overlays have no equivalent, so
+/// this installs a temporary AppKit local event monitor for the lifetime of
+/// the view. Clicks in other apps never close it (a global monitor would see
+/// exactly those), and neither does the click that brings Useful Bot back to
+/// the front. A click in a different window of this app counts as outside,
+/// since the card's coordinates mean nothing there. Pass `triggers` with the
+/// toggle button's window frame so clicking the button again closes instead of
+/// dismissing-then-reopening.
 ///
 /// Inside detection is hover based, not frame based: anchored popovers are
 /// placed with `.offset`, and the AppKit frame of an offset view does not
@@ -49,12 +52,14 @@ private struct OutsideClickDismissal: ViewModifier {
     /// the very row that was clicked. The frame covers what hover misses.
     @State private var cardFrame = CGRect.zero
     @State private var monitors: [Any] = []
+    @State private var state = ClickState()
 
     func body(content: Content) -> some View {
         content
             .background(
-                WindowFrameReader { rect, _ in
+                WindowFrameReader { rect, window in
                     if cardFrame != rect { cardFrame = rect }
+                    if state.cardWindow !== window { state.cardWindow = window }
                 }
             )
             .onHover { hoveringInside = $0 }
@@ -66,21 +71,45 @@ private struct OutsideClickDismissal: ViewModifier {
         guard monitors.isEmpty else { return }
         // Mouse-up, not mouse-down: popover rows run their action on mouse-up,
         // so a mouse-down dismissal would tear the row down before the action
-        // could fire for any click hover tracking missed.
-        let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .rightMouseUp]) { event in
-            if shouldClose(event) { close() }
+        // could fire for any click hover tracking missed. Mouse-down is only
+        // watched to spot the click that re-activates the app.
+        let state = state
+        let activation = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            state.lastActivation = ProcessInfo.processInfo.systemUptime
+        }
+        let local = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .leftMouseUp, .rightMouseUp]
+        ) { event in
+            switch event.type {
+            case .leftMouseDown, .rightMouseDown:
+                // The click that activated the app was pressed before, or a
+                // hair after, the activation it caused. A click a person
+                // makes after Cmd-Tab or a Dock click comes later than that.
+                state.activationClick = !NSApp.isActive
+                    || event.timestamp - state.lastActivation < 0.1
+            default:
+                if state.activationClick {
+                    state.activationClick = false
+                } else if shouldClose(event) {
+                    close()
+                }
+            }
             return event
         }
-        let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
-            // Sheets own the screen while they run; a click outside the app
-            // must not dismiss the popover under them.
-            if NSApp.modalWindow == nil, !hoveringInside { close() }
-        }
-        monitors = [local, global].compactMap { $0 }
+        state.activationObserver = activation
+        monitors = [local].compactMap { $0 }
     }
 
     private func uninstall() {
         monitors.forEach(NSEvent.removeMonitor)
+        if let observer = state.activationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            state.activationObserver = nil
+        }
         monitors = []
     }
 
@@ -94,6 +123,9 @@ private struct OutsideClickDismissal: ViewModifier {
         // Modal sheets own the screen while they run; dismissing the popover
         // under them would be surprising.
         if NSApp.modalWindow != nil || event.window?.sheetParent != nil { return false }
+        // The frames below are in the card's window space. A click in another
+        // window of this app is outside by definition.
+        if let cardWindow = state.cardWindow, event.window !== cardWindow { return true }
         // A click on the popover keeps it open so the row action can fire.
         if hoveringInside { return false }
         if cardFrame.contains(event.locationInWindow) { return false }
@@ -109,6 +141,15 @@ private struct OutsideClickDismissal: ViewModifier {
         }
         return true
     }
+}
+
+/// Mutable state the event monitors share with the view. A class, so the
+/// monitor closures see current values.
+private final class ClickState {
+    weak var cardWindow: NSWindow?
+    var lastActivation: TimeInterval = 0
+    var activationClick = false
+    var activationObserver: Any?
 }
 
 private struct WindowFrameReader: NSViewRepresentable {

@@ -11,8 +11,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { statePath } from "./stack.ts";
 import type { ThreadKind } from "./agent-store.ts";
 
 /**
@@ -70,7 +70,7 @@ export type HandoffDraft = Pick<
 
 export function handoffDir(): string {
   if (process.env.UB_HANDOFF_DIR) return process.env.UB_HANDOFF_DIR;
-  return join(homedir(), ".useful-bot", "handoffs");
+  return statePath("handoffs");
 }
 
 function clip(value: unknown, max: number): string {
@@ -320,6 +320,8 @@ export function markFailed(
   error: string,
   dir = handoffDir(),
   claimToken = "",
+  /** A failure another attempt cannot fix (the receiver's model is gone): fail now, not after the retries. */
+  terminal = false,
 ): HandoffRecord | null {
   if (claimToken && !ownsHandoffClaim(id, claimToken, dir)) return null;
   const record = readHandoff(id, dir);
@@ -327,7 +329,7 @@ export function markFailed(
   const attempts = record.attempts + 1;
   const next: HandoffRecord = {
     ...record,
-    status: attempts >= HANDOFF_ATTEMPTS_MAX ? "failed" : "pending",
+    status: terminal || attempts >= HANDOFF_ATTEMPTS_MAX ? "failed" : "pending",
     attempts,
     lastError: clip(error, 300),
     updatedAt: new Date().toISOString(),

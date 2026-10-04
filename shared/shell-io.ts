@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import {
   existsSync,
   mkdirSync,
@@ -12,12 +11,13 @@ import {
   rmdirSync,
   statSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { statePath } from "./stack.ts";
 import { parseShell, seedStore, type ShellStore } from "./shell-store.ts";
 
 export function defaultShellPath(): string {
   if (process.env.UB_SHELL_PATH) return process.env.UB_SHELL_PATH;
-  return join(homedir(), ".useful-bot", "shell.json");
+  return statePath("shell.json");
 }
 
 /**

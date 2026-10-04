@@ -25,26 +25,50 @@ When a change touches more than one surface, do the macOS work first and complet
 
 ## Change management
 
-Adversarial review in Claude Code runs one Opus 5.5 reviewer (up to two for a large diff) plus
-one Sonnet 5.5 reviewer, in parallel, each on the areas it suits. Sonnet runs at medium for most
-reviews and high for tough ones (the orchestrator picks); never xhigh or max. SWE-2 was retired
-here on 2026-09-28; other harnesses (Codex, Devin) may still use it, with the briefing rules in
-the global rules. Not Muse Spark or GLM in opencode, not `/code-review`. Check out the branch
-under review first: the reviewer reads the files, and a diff against code that is not in the
-tree wastes the pass. Never accept a bare empty array, ask for the list
-of what it dismissed and why. Fix every finding above low (critical, high, medium, major) and
+Since 2026-10-01, Opus 5.5 plans, orchestrates and verifies. Sonnet 5.5 writes the code:
+`sonnet-worker` (medium) for scoped jobs, `sonnet-sweeper` (high) for audits. Opus checks every
+worker's result before it lands.
+
+Reviews run in parallel, split by area so every file in the diff has an owner:
+- **Small, non-sensitive PRs:** Sonnet 5.5 alone.
+- **Bigger or sensitive PRs:** Sonnet 5.5 plus GPT-6.1-Sol at medium through Codex
+  (`codex exec -m gpt-6.1-sol -c model_reasoning_effort="medium" --sandbox read-only
+  --output-last-message <file> - < <brief>`).
+- **Tough or very sensitive work:** add one Opus 5.5 reviewer at medium.
+- **Muse Spark in opencode:** may join as an extra free reviewer when it's available, never as
+  the only one.
+
+Not `/code-review`. Write briefs and commit messages with the Write tool: the bash guard blocks
+heredocs with odd quotes. Check out the branch under review first: the reviewer reads the files,
+and a diff against code that is not in the tree wastes the pass. Never accept a bare empty array,
+ask for the DISMISSED list of what it considered and why. Fix every finding above low (critical, high, medium, major) and
 review again until a pass from every reviewer has none. Then fix every low too; lows need no
-further pass. Then merge, rebuild the app and install it from local `main`.
+further pass. Then merge, sync local `main`, and rebuild and reinstall Useful Bot Dev from it
+(`npm run build:dev-app`, `npm run install:dev-app`). The daily app is not rebuilt per PR: it
+updates through releases (see Verification).
 
 This arrangement expires on 2026-10-15; ask Wasim what to move to rather than falling back.
 
 ## Verification
 
 A UI change is verified with a real screenshot of the running macOS app, not with tests
-alone. Any live check that sends a message goes to the bot named "Test Bot": pick it in
-the rail, or create it first if it is missing. Never send a test turn to any other bot;
-those hold real conversations. `/Applications/Useful Bot.app` is the installed copy people
-use; rebuilding means `npm run build:app` then `npm run install:app` (not a bare `ditto`).
+alone. **Every live check runs in Useful Bot Dev, never the daily app** (decided 2026-10-01,
+UB-004). `/Applications/Useful Bot.app` is the owner's daily install with his real bots: agents
+never launch, quit, screenshot-test or send to it. Useful Bot Dev is a separate identity
+(`ai.useful.bot.dev`, `~/Applications/Useful Bot Dev.app`, state in `~/.useful-bot-dev-app`,
+`com.usefulbot.dev.*` Keychain items, ports 4419/4420/4421). Build and install it with
+`npm run build:dev-app` then `npm run install:dev-app`. The dev app carries a runtime built from
+the working tree (stage `macos/.build/runtime-stage-dev`, stamp `<version>-dev+<sha>.<hash>`) and
+runs its services from a copy under `~/Library/Application Support/Useful Bot Dev/app`, never from
+the checkout (an ad hoc signed bundle gets a fresh Desktop-folder privacy prompt on every rebuild,
+and a service reading the checkout blocks on it). Inside the dev app, a check that sends
+a message still goes to "Test Bot" (create it if missing). Never use `~/.useful-bot-dev`: it
+holds older owner data. The daily app is a release build with a runtime payload: it comes from
+`npm run release:mac` (installed from the DMG or by Sparkle), and only when the owner asks for it.
+A plain `npm run build:app` then `npm run install:app` installs a checkout-run daily app instead
+(no runtime payload, services read this checkout); while one is installed, `build:dev-app` refuses
+by design, because the dev build would swap that app's web build underneath it. Use that path only
+when the owner asks for it, and reinstall a release before the next dev build.
 
 **Logo and icon gotcha.** Launch Services keeps a record for every bundle with the id
 `ai.useful.bot` it has ever seen: `macos/dist`, agent scratch copies, old "before" builds. At
@@ -70,8 +94,9 @@ auto-install rewrites `package-lock.json`, and the router refuses a changed lock
 
 Until launch, PRs don't run `npm run perf:check` (decided 2026-09-28, to stop spending 20 minutes
 on every PR). The check runs once before the macOS app ships to users (after the landing page and
-the rest of launch are done): on `main` and on the newest open branch, each on its own `build:app`
-(about 20 minutes; it quits and relaunches the app in the background), and the records it writes
+the rest of launch are done): on `main` and on the newest open branch, each on its own
+`build:dev-app` (about 20 minutes; it drives only Useful Bot Dev and never quits or relaunches
+the daily app), and the records it writes
 under `evals/results/` are committed. After launch, every change that touches `macos/`, `shared/`,
 `agent/`, `router/src` or `web/` runs it again before merge. A breach is fixed, or the
 budget in `perf/budgets.json` is raised in a reviewed edit that says why; a re-run never erases a

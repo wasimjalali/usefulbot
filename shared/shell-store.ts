@@ -6,6 +6,9 @@ import {
   type AvatarColor,
   type AvatarShape,
 } from "./bot-face.ts";
+import { parseModelSelection, type ModelSelection } from "./session-selection.ts";
+import { foldPath } from "./fold-path.ts";
+import { APP_STATE_DIR, isAppStateSegment, isRuntimeInstallPath } from "./stack.ts";
 
 /** Client-safe: this file must never pull in node builtins. */
 export type WorkspacePermission = "read_only" | "auto" | "full_access";
@@ -30,7 +33,10 @@ export const GROUP_MAX_MEMBERS = 6;
 
 const NAME_MAX = 80;
 const LABEL_MAX = 24;
-const DESCRIPTION_MAX = 500;
+/** A bot's standing instructions. Over this is refused, never clipped. */
+export const DESCRIPTION_MAX = 8000;
+/** What a bot may put on a new teammate's card. The owner can grow it after. */
+export const PROPOSE_DESCRIPTION_MAX = 2000;
 
 export type BotKind = "bot" | "group";
 
@@ -89,6 +95,21 @@ export type ShellBot = {
    */
   permission: WorkspacePermission;
   workspace: BotWorkspace | null;
+  /**
+   * The model, connection, effort and speed this bot runs on. Null means it
+   * inherits the default (the last pick, as the old global chip resolved it).
+   * A bot is pinned only where a pick would otherwise move it: a per-bot chip
+   * pick pins every null bot first (ensureBotSelections). Every create path
+   * leaves it null, and so does a roster from before this field.
+   */
+  model: ModelSelection | null;
+  /**
+   * Counts every write to the profile (name, label, description, avatar). A
+   * profile card the owner confirms is bound to the revision it was raised
+   * against, so a card that went stale because the profile moved on is
+   * refused instead of overwriting the newer text.
+   */
+  profileRevision: number;
 };
 
 export type BotProfilePatch = Partial<
@@ -189,6 +210,17 @@ function clip(value: string, max: number): string {
   return value.trim().slice(0, max);
 }
 
+/**
+ * The one check every write path runs on a description. Returns the trimmed
+ * text and throws `shell_description_too_long` over the cap: a silent clip
+ * would change the owner's instructions without telling anyone.
+ */
+export function checkDescription(value: string, max = DESCRIPTION_MAX): string {
+  const text = value.trim();
+  if (text.length > max) throw new Error("shell_description_too_long");
+  return text;
+}
+
 function requireName(value: string, max = NAME_MAX): string {
   const name = clip(value, max);
   if (!name) throw new Error("shell_name_required");
@@ -197,6 +229,64 @@ function requireName(value: string, max = NAME_MAX): string {
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 80;
+}
+
+// New bots prepend, except behind a pinned, visible Generalist that is already first: that keeps
+// the starter on top of the pinned group. If the owner unpins, hides or moves it, nothing forces it back.
+function withNewBot(bots: ShellBot[], bot: ShellBot): ShellBot[] {
+  const first = bots[0];
+  if (first && first.id === DEFAULT_BOT_ID && first.pinned && !first.hidden) return [first, bot, ...bots.slice(1)];
+  return [bot, ...bots];
+}
+
+/**
+ * Every description the shipped Generalist (`bot-useful`) has carried, so an
+ * untouched one can be recognised and moved to the current text. Append only:
+ * when a new text ships, the one it replaces goes here. Found with
+ * `git log -p -S` on shared/shell-store.ts, which is the only file that ever
+ * seeded it:
+ *  - 1f7b7e1, 322f22b, 950dfd7 (2026-09-13): the first shell, "Local personal
+ *    agent on this Mac." (name "Useful Bot")
+ *  - bd41eed (2026-09-13, #20): added "Creates other bots with a name and
+ *    instructions." (name "Useful Bot")
+ *  - 3d25c70, 6413804 (2026-09-28, #145): "The starter bot. ..." (name
+ *    "Generalist"; 6413804 carries the same change after a rebase)
+ */
+export const GENERALIST_SEEDS: readonly string[] = [
+  "Local personal agent on this Mac.",
+  "Local personal agent on this Mac. Creates other bots with a name and instructions.",
+  "The starter bot. General work on this Mac, and creates other bots with a name and instructions.",
+];
+
+/** The Generalist's shipped instructions today (`generalist-v2`). Owner-editable. */
+export const GENERALIST_SEED_V2 = `You're the owner's main assistant on this Mac: research, writing, files, small scripts, diagrams and work in their connected apps. You also help them build a small team of bots for jobs that recur.
+
+How to help:
+- Start by doing. Ask one question only when the goal or the target is unclear.
+- On longer work, keep the owner posted in short lines, then give the result on its own.
+- Be direct and brief. Say plainly when something failed or isn't possible, and what would help.
+
+Preferences:
+- Show a draft before anything goes out in the owner's name.
+- Say what you'll change before a large edit.
+- When the owner is new, explain the app only as far as their task needs.`;
+
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/**
+ * A pure overlay for the Generalist only: a description that is still one of
+ * the shipped seeds reads as the current text, and a bot still named "Useful
+ * Bot" with a seed and no custom avatar reads as "Generalist". Nothing is
+ * written here; the change persists with the next normal write.
+ */
+function overlaySeed(bot: ShellBot, all: readonly ShellBot[]): ShellBot {
+  if (bot.id !== DEFAULT_BOT_ID || bot.kind !== "bot") return bot;
+  const wanted = squash(bot.description);
+  if (!GENERALIST_SEEDS.some((seed) => squash(seed) === wanted)) return bot;
+  // Never a second "Generalist": another bot may already carry the name.
+  const nameTaken = all.some((other) => other.id !== bot.id && other.name.toLowerCase() === "generalist");
+  const rename = bot.name === "Useful Bot" && !bot.avatarCustom && !nameTaken;
+  return { ...bot, description: GENERALIST_SEED_V2, ...(rename ? { name: "Generalist" } : {}) };
 }
 
 export function seedStore(at = new Date()): ShellStore {
@@ -214,9 +304,9 @@ export function seedStore(at = new Date()): ShellStore {
         name: "Generalist",
         petname: null,
         label: "",
-        description: "The starter bot. General work on this Mac, and creates other bots with a name and instructions.",
+        description: GENERALIST_SEED_V2,
         notify: false,
-        pinned: false,
+        pinned: true,
         hidden: false,
         sectionId: null,
         sessionId: null,
@@ -231,6 +321,8 @@ export function seedStore(at = new Date()): ShellStore {
         avatarCustom: false,
         permission: "auto",
         workspace: null,
+        model: null,
+        profileRevision: 0,
       },
     ],
     recents: [],
@@ -271,7 +363,10 @@ function parseBot(raw: unknown): ShellBot {
     name: clip(rec.name, NAME_MAX) || rec.id,
     petname: typeof rec.petname === "string" ? clip(rec.petname, NAME_MAX) || null : null,
     label: clip(rec.label, LABEL_MAX),
-    description: clip(rec.description, DESCRIPTION_MAX),
+    // Kept verbatim, whatever the length. A throw here makes readShell reseed
+    // the whole store; the cap is enforced when a description is written and
+    // when a turn is sent, not when the file is read.
+    description: rec.description.trim(),
     notify: rec.notify,
     pinned: rec.pinned,
     hidden: rec.hidden,
@@ -303,6 +398,12 @@ function parseBot(raw: unknown): ShellBot {
       ?? parseWorkspace(rec.workspace)?.permission
       ?? "auto",
     workspace: parseWorkspace(rec.workspace),
+    model: parseModelSelection(rec.model),
+    profileRevision: typeof rec.profileRevision === "number"
+      && Number.isInteger(rec.profileRevision)
+      && rec.profileRevision >= 0
+      ? rec.profileRevision
+      : 0,
   };
 }
 
@@ -466,11 +567,14 @@ export function isGrantableRootPath(path: string): boolean {
   // pass it while it covers every credential store on the machine. A grant is
   // a folder the owner picked, never the whole disk.
   if (path.replace(/\/+$/, "") === "") return false;
+  // The runtime install folders span three segments (Library/Application
+  // Support/Useful Bot[ Dev]), so they cannot be a per-segment name.
+  if (isRuntimeInstallPath(path)) return false;
   for (const segment of path.split("/")) {
     if (!segment) continue;
     if (segment === "..") return false;
-    const lowered = segment.toLowerCase();
-    if (FORBIDDEN_GRANT_SEGMENTS.has(lowered)) return false;
+    const lowered = foldPath(segment);
+    if (isForbiddenGrantSegment(lowered)) return false;
   }
   return true;
 }
@@ -481,10 +585,12 @@ export function isGrantableRootPath(path: string): boolean {
  * `.docker/config.json` does not. Used for the grant root and, in
  * `resolveWorkspacePath`, for everything under it.
  */
-export const FORBIDDEN_CHILD_SEGMENTS = new Set([
+const FORBIDDEN_CHILD_SEGMENTS = new Set([
   // The app's own stores: approvals, the roster, the grants. A bot that
-  // could edit these could approve itself.
-  ".useful-bot",
+  // could edit these could approve itself. This is the exact name only;
+  // `isForbiddenChildSegment` adds the dashed siblings (.useful-bot-dev,
+  // .useful-bot-dev-app), so go through it rather than `.has()`.
+  APP_STATE_DIR,
   // Shell startup files: a line planted in one runs in the owner's own
   // shell next time they open a terminal, outside every gate here.
   ".zshenv", ".zprofile", ".zshrc", ".zlogin", ".zlogout",
@@ -501,6 +607,11 @@ export const FORBIDDEN_CHILD_SEGMENTS = new Set([
   "id_ecdsa",
   "id_ed25519",
 ]);
+
+/** A segment that is a credential store or one of the app's own state folders. */
+export function isForbiddenChildSegment(lowered: string): boolean {
+  return FORBIDDEN_CHILD_SEGMENTS.has(lowered) || isAppStateSegment(lowered);
+}
 
 const FORBIDDEN_GRANT_SEGMENTS = new Set([
   ...FORBIDDEN_CHILD_SEGMENTS,
@@ -520,6 +631,10 @@ const FORBIDDEN_GRANT_SEGMENTS = new Set([
   "netrc",
   "cookies",
 ]);
+
+function isForbiddenGrantSegment(lowered: string): boolean {
+  return FORBIDDEN_GRANT_SEGMENTS.has(lowered) || isAppStateSegment(lowered);
+}
 
 function parseRecent(raw: unknown): ShellRecent {
   if (!raw || typeof raw !== "object") throw new Error("shell_recent_invalid");
@@ -563,7 +678,8 @@ export function parseShell(raw: unknown): ShellStore {
   if (rec.schemaVersion !== SHELL_SCHEMA) throw new Error("shell_schema");
   if (!Array.isArray(rec.bots) || !Array.isArray(rec.sections)) throw new Error("shell_shape");
   if (rec.recents !== undefined && !Array.isArray(rec.recents)) throw new Error("shell_recents");
-  const bots = rec.bots.map(parseBot);
+  const parsed = rec.bots.map(parseBot);
+  const bots = parsed.map((bot) => overlaySeed(bot, parsed));
   const sections = rec.sections.map(parseSection);
   const recents = (rec.recents ?? []).map(parseRecent);
   if (bots.length === 0) throw new Error("shell_empty");
@@ -592,8 +708,18 @@ export function parseShell(raw: unknown): ShellStore {
   };
 }
 
+const PROFILE_KEYS = ["name", "label", "description", "avatarShape", "avatarColor", "avatarImage"] as const;
+
 function touch(bot: ShellBot, at: string, patch: Partial<ShellBot>): ShellBot {
-  return { ...bot, ...patch, updatedAt: at };
+  // Every profile write bumps the revision the owner's profile card is bound
+  // to; a write that changes nothing does not.
+  const profileChanged = PROFILE_KEYS.some((key) => key in patch && patch[key] !== bot[key]);
+  return {
+    ...bot,
+    ...patch,
+    updatedAt: at,
+    ...(profileChanged ? { profileRevision: bot.profileRevision + 1 } : {}),
+  };
 }
 
 function uniqueName(store: ShellStore, base: string): string {
@@ -609,9 +735,48 @@ function nextOrder(store: ShellStore): number {
 }
 
 /**
- * A group member must be a real 1:1 bot: not the group itself, not the default
- * Useful Bot (which answers untargeted group turns), not another group, and not
- * a hidden bot. Order follows the caller so the roster stays stable.
+ * A profile card is current only while the bot still has the revision the
+ * card was raised against. A bot that is gone, or whose profile moved on, makes
+ * it stale, and confirming a stale card would overwrite newer text.
+ */
+export function profileCardIsCurrent(bot: Pick<ShellBot, "profileRevision"> | undefined, baseRevision: number): boolean {
+  return bot !== undefined && bot.profileRevision === baseRevision;
+}
+
+/**
+ * Whether the bot that raised a card may still have it applied: it must still
+ * exist and still hold the authority the proposal needs. Creating a bot or a
+ * group is the orchestrator's; a profile edit is the orchestrator's or the
+ * bot's own. A card with no recorded proposer is refused.
+ */
+export function proposerMayConfirm(
+  store: Pick<ShellStore, "bots">,
+  card: { kind: "createBot" | "createGroup" | "updateBotProfile"; proposerId?: string; botId?: string },
+): boolean {
+  const proposer = card.proposerId ? store.bots.find((bot) => bot.id === card.proposerId) : undefined;
+  if (!proposer) return false;
+  const orchestrator = proposer.kind === "bot" && proposer.id === orchestratorId(store);
+  if (card.kind === "updateBotProfile") return orchestrator || proposer.id === card.botId;
+  return orchestrator;
+}
+
+/**
+ * The bot with orchestrator authority: the default bot while it is present and
+ * visible, else the first visible 1:1 bot (the same rule the first-run flow
+ * lands on). Null only when no visible 1:1 bot exists. Every authority check
+ * (who may propose bots and groups, delete, hide, act on another bot) uses
+ * this one answer.
+ */
+export function orchestratorId(store: Pick<ShellStore, "bots">): string | null {
+  const visible = store.bots.filter((bot) => bot.kind === "bot" && !bot.hidden);
+  return visible.find((bot) => bot.id === DEFAULT_BOT_ID)?.id ?? visible[0]?.id ?? null;
+}
+
+/**
+ * A group member must be a real 1:1 bot: not the group itself, not the
+ * orchestrator (the default Useful Bot, which answers untargeted group turns),
+ * not another group, and not a hidden bot. Order follows the caller so the
+ * roster stays stable.
  */
 export function normalizeMembers(
   store: ShellStore,
@@ -619,10 +784,11 @@ export function normalizeMembers(
   selfId: string,
 ): string[] {
   const out: string[] = [];
+  const orchestrator = orchestratorId(store);
   for (const id of memberIds) {
     if (out.includes(id) || id === selfId) continue;
     const bot = store.bots.find((item) => item.id === id);
-    if (!bot || bot.kind !== "bot" || bot.id === DEFAULT_BOT_ID || bot.hidden) continue;
+    if (!bot || bot.kind !== "bot" || bot.id === orchestrator || bot.hidden) continue;
     out.push(id);
     if (out.length >= GROUP_MAX_MEMBERS) break;
   }
@@ -677,7 +843,7 @@ export function applyShellAction(
         name: uniqueName(store, requireName(action.name)),
         petname: action.petname !== undefined ? clip(action.petname, NAME_MAX) || null : null,
         label: clip(action.label ?? "", LABEL_MAX),
-        description: clip(action.description ?? "", DESCRIPTION_MAX),
+        description: checkDescription(action.description ?? ""),
         notify: false,
         pinned: false,
         hidden: false,
@@ -696,9 +862,11 @@ export function applyShellAction(
         avatarCustom: true,
         permission: "auto",
         workspace: null,
+        model: null,
+        profileRevision: 0,
       };
       return {
-        store: { ...store, selectedBotId: id, bots: [bot, ...store.bots] },
+        store: { ...store, selectedBotId: id, bots: withNewBot(store.bots, bot) },
         createdId: id,
       };
     }
@@ -713,7 +881,7 @@ export function applyShellAction(
         name: uniqueName(store, requireName(action.name)),
         petname: null,
         label: action.label !== undefined ? clip(action.label, LABEL_MAX) : "Group",
-        description: clip(action.description ?? "", DESCRIPTION_MAX),
+        description: checkDescription(action.description ?? ""),
         notify: false,
         pinned: false,
         hidden: false,
@@ -732,9 +900,11 @@ export function applyShellAction(
         avatarCustom: true,
         permission: "auto",
         workspace: null,
+        model: null,
+        profileRevision: 0,
       };
       return {
-        store: { ...store, selectedBotId: id, bots: [group, ...store.bots] },
+        store: { ...store, selectedBotId: id, bots: withNewBot(store.bots, group) },
         createdId: id,
       };
     }
@@ -753,7 +923,7 @@ export function applyShellAction(
       if (!name) throw new Error("shell_name_required");
       const patch: Partial<ShellBot> = { name };
       if (action.label !== undefined) patch.label = clip(action.label, LABEL_MAX);
-      if (action.description !== undefined) patch.description = clip(action.description, DESCRIPTION_MAX);
+      if (action.description !== undefined) patch.description = checkDescription(action.description);
       if (action.avatarShape !== undefined && isAvatarShape(action.avatarShape)) {
         patch.avatarShape = action.avatarShape;
         patch.avatarCustom = true;
@@ -801,7 +971,7 @@ export function applyShellAction(
           : null;
       }
       if (action.patch.label !== undefined) patch.label = clip(action.patch.label, LABEL_MAX);
-      if (action.patch.description !== undefined) patch.description = clip(action.patch.description, DESCRIPTION_MAX);
+      if (action.patch.description !== undefined) patch.description = checkDescription(action.patch.description);
       if (action.patch.notify !== undefined) patch.notify = action.patch.notify;
       if (action.patch.lastPreview !== undefined) {
         patch.lastPreview = clip(action.patch.lastPreview, PREVIEW_MAX);
@@ -1077,6 +1247,40 @@ export function applyShellAction(
     default:
       throw new Error("shell_action_unknown");
   }
+}
+
+/**
+ * Give every bot that has no selection the one passed in (the last pick as it
+ * stands now). Bots that already chose are untouched, so it is idempotent.
+ */
+export function freezeNullSelections(store: ShellStore, pick: ModelSelection): ShellStore {
+  if (!store.bots.some((bot) => bot.model === null)) return store;
+  return {
+    ...store,
+    bots: store.bots.map((bot) => (bot.model === null ? { ...bot, model: { ...pick } } : bot)),
+  };
+}
+
+/**
+ * Reset every bot pinned to one connection back to "inherit the default"
+ * (null). Used when the owner signs that connection out: the bot's chip then
+ * shows the new default instead of an unavailable model.
+ */
+export function clearConnectionSelections(store: ShellStore, connectionId: string): ShellStore {
+  if (!store.bots.some((bot) => bot.model?.connectionId === connectionId)) return store;
+  return {
+    ...store,
+    bots: store.bots.map((bot) => (bot.model?.connectionId === connectionId ? { ...bot, model: null } : bot)),
+  };
+}
+
+/** Set one bot's selection. Only that row changes, so a pick never moves another bot. */
+export function withBotSelection(store: ShellStore, botId: string, selection: ModelSelection): ShellStore {
+  if (!store.bots.some((bot) => bot.id === botId)) throw new Error("shell_bot_missing");
+  return {
+    ...store,
+    bots: store.bots.map((bot) => (bot.id === botId ? { ...bot, model: { ...selection } } : bot)),
+  };
 }
 
 export function selectedBot(store: ShellStore): ShellBot {

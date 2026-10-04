@@ -86,6 +86,7 @@ struct ComposerView: View {
 
     private var placeholder: String {
         if replying != nil { return "Reply…" }
+        if model.pendingRequests.contains(where: { !$0.options.isEmpty }) { return "Your message waits until you answer the card" }
         return bot.isGroup ? "Message this group. @name to direct one bot" : "Message \(bot.name)"
     }
 
@@ -427,8 +428,14 @@ struct ComposerView: View {
         } label: {
             // The model by name, then its effort, like the Providers page chip.
             HStack(spacing: 4) {
+                // A model that is gone stays named, struck through and muted:
+                // the chip never swaps in another model on its own. With no
+                // model named at all (nothing connected) it is a plain "Model".
+                let unavailable = model.composer?.available == false
+                    && ComposerView.chipLabel(model.composer?.modelLabel, max: 24) != nil
                 Text(ComposerView.chipLabel(model.composer?.modelLabel, max: 24) ?? "Model")
-                    .foregroundStyle(Theme.C.ink)
+                    .strikethrough(unavailable)
+                    .foregroundStyle(unavailable ? Theme.C.inkMuted : Theme.C.ink)
                     .lineLimit(1)
                 if let meta = model.composer?.chipMeta {
                     Text(meta)
@@ -449,7 +456,9 @@ struct ComposerView: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        if model.pending {
+        // Stop while the bot works, and while only sub-agents run and there is
+        // nothing typed to send.
+        if model.pending || (model.subagentsRunning && !canSend) {
             Button(action: model.cancel) {
                 ZStack {
                     Circle().fill(Theme.C.brand)
@@ -1087,11 +1096,13 @@ private struct ComposerModeMenu: View {
                 .frame(height: 1)
             MenuRowButton(action: { flyout = .model }) {
                 HStack {
-                    Text("Model")
+                    let named = ComposerView.chipLabel(composer.modelLabel) != nil
+                    Text(composer.available || !named ? "Model" : "Model unavailable")
                         .font(.system(size: 13))
                     Spacer(minLength: 0)
                     HStack(spacing: 2) {
                         Text(composer.modelLabel)
+                            .strikethrough(!composer.available && named)
                             .lineLimit(1)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11))

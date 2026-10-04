@@ -1,4 +1,5 @@
 import { RouterError } from "../errors.ts";
+import { dumpUpstreamBody } from "../payload-probe.ts";
 import { resetOf, usedLimitCode, usedLimitMessage, zaiResetOf } from "../retry-after.ts";
 
 /**
@@ -177,16 +178,26 @@ export function buildResponsesBody(
   if (!opts.chatgpt && typeof chatBody.max_tokens === "number") out.max_output_tokens = chatBody.max_tokens;
   if (typeof chatBody.reasoning_effort === "string") out.reasoning = { effort: chatBody.reasoning_effort };
   if (typeof chatBody.service_tier === "string") out.service_tier = chatBody.service_tier;
+  // Routes this chat's requests to the same cache. Set by the router per
+  // caller, session, connection and model; never derived from a secret.
+  if (typeof chatBody.prompt_cache_key === "string") out.prompt_cache_key = chatBody.prompt_cache_key;
   return out;
 }
 
-function responsesUsage(usage: unknown): { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null {
+function responsesUsage(usage: unknown): Record<string, unknown> | null {
   if (!isRecord(usage)) return null;
   if (typeof usage.input_tokens !== "number" || typeof usage.output_tokens !== "number") return null;
+  // Responses counts cached tokens inside input_tokens, the same as the chat shape.
+  const details = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : null;
+  const cached = typeof details?.cached_tokens === "number" ? details.cached_tokens : null;
+  const written = typeof details?.cache_write_tokens === "number" ? details.cache_write_tokens : null;
   return {
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,
     total_tokens: typeof usage.total_tokens === "number" ? usage.total_tokens : usage.input_tokens + usage.output_tokens,
+    ...(cached !== null || written !== null
+      ? { prompt_tokens_details: { ...(cached !== null ? { cached_tokens: cached } : {}), ...(written !== null ? { cache_write_tokens: written } : {}) } }
+      : {}),
   };
 }
 
@@ -552,6 +563,7 @@ export async function postResponses(input: {
   fetchImpl?: typeof fetch;
 }): Promise<Response> {
   const outgoing = buildResponsesBody(input.body, { model: input.model, chatgpt: input.chatgpt });
+  dumpUpstreamBody("openai-responses", input.model, outgoing);
   const url = `${input.baseUrl.replace(/\/$/, "")}/responses`;
   const res = await (input.fetchImpl ?? fetch)(url, {
     method: "POST",

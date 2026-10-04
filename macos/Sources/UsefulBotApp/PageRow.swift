@@ -218,8 +218,8 @@ final class PageThumbnails {
 
     private static let viewport = NSSize(width: 1280, height: 800)
     private static let cacheDir: URL? = FileManager.default
-        .urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent("ai.useful.bot/pages", isDirectory: true)
+        .urls(for: .cachesDirectory, in: .userDomainMask).first
+        .map { AppVariant.current.pagesCacheDirectory(caches: $0) }
 
     func thumbnail(path: String) async -> NSImage? {
         let attributes = try? FileManager.default.attributesOfItem(atPath: path)

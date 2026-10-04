@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { encodeSelectionHeader, SELECTION_HEADER, type ModelSelection } from "../../shared/session-selection.ts";
 import type { RouterIds } from "./router-identity.ts";
 
 /**
@@ -67,6 +68,13 @@ async function waitHint(response: Response): Promise<{ code: string | null; ms: 
 export interface RouterFetchOptions {
   /** Read on every attempt, so a cached provider follows the session's current turn. */
   ids: () => RouterIds;
+  /**
+   * The selection frozen for the turn in flight, read on every attempt so a
+   * retry and a 429 wait of minutes send the same one the first attempt did.
+   * Null (or no option) sends no header and the router uses the last pick:
+   * the reviewer, which has its own role, and a turn that froze nothing.
+   */
+  selection?: () => ModelSelection | null;
   authorization?: () => string;
   fetch?: FetchLike;
   sleep?: (ms: number, signal: AbortSignal | null | undefined) => Promise<void>;
@@ -94,6 +102,8 @@ export function routerFetch(options: RouterFetchOptions): FetchLike {
       headers.set("x-useful-session-id", ids.sessionId);
       headers.set("x-useful-turn-id", ids.turnId);
       headers.set("x-useful-request-id", randomUUID());
+      const selection = options.selection?.() ?? null;
+      if (selection) headers.set(SELECTION_HEADER, encodeSelectionHeader(selection));
       const response = await doFetch(input, { ...init, headers });
       if (response.status !== 429) return response;
       const hint = await waitHint(response);

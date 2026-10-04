@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
-import { activeBotId } from "../lib/active-bot.ts";
+import { callerOf, SUB_AGENT_BLOCKED } from "../lib/permission.ts";
+import { isSubAgent } from "../lib/active-bot.ts";
 import {
   appendAgentEvent,
   createProposal,
@@ -28,10 +29,10 @@ const KIND = z.enum(["mcp", "openapi"]);
  */
 export default defineTool({
   description:
-    "Ask the owner to connect an MCP server or OpenAPI document that is not in the Composio catalogue. Shows a card. Propose one server per turn, then end your turn. Prefer propose_connector when the app is in the catalogue.",
+    "Ask the owner to connect an MCP server or OpenAPI document outside the catalogue; shows a Connect server card. Use only a URL the owner gave or an official source documents, never a placeholder; ask for it when missing. Look for the official MCP server first, then an OpenAPI document. One server per turn, then end the turn. Prefer propose_connector for catalogue apps. Afterwards find_tools reaches MCP tools and connection_search OpenAPI ones.",
   inputSchema: z.object({
     kind: KIND,
-    url: z.string().min(8).max(2048),
+    url: z.string().min(8).max(2048).describe("The URL the owner gave or an official source documents. Never a placeholder."),
     name: z.string().min(1).max(80),
     description: z.string().min(3).max(400),
     authKind: AUTH,
@@ -40,6 +41,7 @@ export default defineTool({
     requestId: z.string().min(1).max(120).optional(),
   }),
   async execute(input, ctx) {
+    if (isSubAgent(ctx)) return SUB_AGENT_BLOCKED;
     let url: string;
     try {
       url = assertConnectionUrl(input.url);
@@ -65,7 +67,9 @@ export default defineTool({
     if (existing) return { status: "already_connected", id: existing.id, name: existing.name };
 
     const shell = readShell();
-    const botId = activeBotId(shell, ctx);
+    const who = await callerOf(shell, ctx);
+    if (!who.ok) return who.result;
+    const botId = who.caller.id;
     const threadId = threadIdFor(botId);
     const open = listPendingProposals(threadId).find(
       (item) => item.kind === "connectServer" && (item.phase === "proposed" || item.phase === "waiting"),

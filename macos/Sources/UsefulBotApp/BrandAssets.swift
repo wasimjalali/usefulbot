@@ -8,6 +8,7 @@ enum BrandAssets {
     struct AvatarColor: Decodable {
         let label: String
         let fill: String
+        var legacy: Bool? = nil
     }
 
     static let root: URL = {

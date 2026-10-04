@@ -234,6 +234,88 @@ import Testing
         #expect(usage.byModel.first?.id == "openai-gpt-5")
     }
 
+    @Test func decodesUsageBudgetsWithNoCeiling() throws {
+        let data = Data("""
+        {"observed_input_tokens":1,"observed_output_tokens":1,"requests":1,
+         "by_model":[],
+         "caps":{"requests24h":9007199254740991,"input24h":9007199254740991,"output24h":9007199254740991},
+         "budget":{"tokens":10000000000,"isDefault":false,"default":500000000,"min":1000000,"max":null,"step":1000000},
+         "requestBudget":{"requests":9007199254740991,"isDefault":false,"default":5000,"min":1,"max":null,"step":500}}
+        """.utf8)
+        let usage = try JSONDecoder().decode(UsagePayload.self, from: data)
+        #expect(usage.budget?.tokens == 10_000_000_000)
+        #expect(usage.budget?.max == nil)
+        #expect(usage.requestBudget?.requests == Int(Int64(9_007_199_254_740_991)))
+        #expect(usage.requestBudget?.min == 1)
+        #expect(usage.requestBudget?.max == nil)
+        #expect(usage.caps.input24h == 9_007_199_254_740_991)
+    }
+
+    @Test func decodesUsageFromAServerWithoutRequestBudget() throws {
+        let data = Data("""
+        {"observed_input_tokens":1,"observed_output_tokens":1,"requests":1,"by_model":[],
+         "caps":{"requests24h":4000,"input24h":5,"output24h":5},
+         "budget":{"tokens":30000000,"isDefault":true,"default":30000000,"min":1000000,"max":500000000,"step":1000000}}
+        """.utf8)
+        let usage = try JSONDecoder().decode(UsagePayload.self, from: data)
+        #expect(usage.budget?.max == 500_000_000)
+        #expect(usage.requestBudget == nil)
+    }
+
+    @Test func budgetEditParsingAcceptsLargeValuesAndNamesTheRule() throws {
+        // Tokens are typed in millions: "10000" is 10B, "3.5" is 3.5M.
+        #expect(try BudgetInput.tokens("10000", min: 1_000_000, max: nil).get() == 10_000_000_000)
+        #expect(try BudgetInput.tokens("3.5M", min: 1_000_000, max: nil).get() == 3_500_000)
+        #expect(try BudgetInput.tokens("1,000", min: 1_000_000, max: nil).get() == 1_000_000_000)
+        #expect(BudgetInput.tokens("0.5", min: 1_000_000, max: nil).errorMessage == "Has to be at least 1M tokens.")
+        #expect(BudgetInput.tokens("0", min: 1_000_000, max: nil).errorMessage == "Has to be at least 1M tokens.")
+        #expect(BudgetInput.tokens("abc", min: 1_000_000, max: nil).errorMessage == "Type the limit in millions, like 500 or 3.5.")
+        #expect(BudgetInput.tokens("-5", min: 1_000_000, max: nil).errorMessage == "Type the limit in millions, like 500 or 3.5.")
+        #expect(BudgetInput.tokens("99999999999999", min: 1_000_000, max: nil).errorMessage != nil, "past the safe integer is refused, not wrapped")
+        // Requests are whole numbers, grouped or plain.
+        #expect(try BudgetInput.requests("5,000", min: 1).get() == 5_000)
+        #expect(try BudgetInput.requests("1", min: 1).get() == 1)
+        #expect(BudgetInput.requests("0", min: 1).errorMessage == "Has to be at least 1 request.")
+        #expect(BudgetInput.requests("2.5", min: 1).errorMessage == "Type the request limit as a whole number.")
+        #expect(BudgetInput.requests("", min: 1).errorMessage == "Type the request limit as a whole number.")
+        #expect(BudgetInput.requests("99999999999999999999", min: 1).errorMessage != nil)
+    }
+
+    @Test func budgetAndMeterFormatting() {
+        #expect(BudgetInput.tokenLabel(500_000_000) == "500M")
+        #expect(BudgetInput.tokenLabel(1_000_000_000) == "1,000M")
+        #expect(BudgetInput.tokenLabel(10_000_000_000) == "10,000M")
+        #expect(BudgetInput.tokenLabel(3_500_000) == "3.5M")
+        #expect(BudgetInput.requestLabel(5_000) == "5,000")
+        // A budget lowered under what was used reads as full, never over or negative.
+        #expect(BudgetInput.meterFraction(used: 80, cap: 50) == 1)
+        #expect(BudgetInput.meterFraction(used: 0, cap: 50) == 0)
+        #expect(BudgetInput.meterFraction(used: 10, cap: 0) == 0)
+        #expect(BudgetInput.meterFraction(used: -5, cap: 50) == 0)
+        #expect(BudgetInput.meterFraction(used: 5, cap: Int(Int64(9_007_199_254_740_991))) > 0)
+        #expect(BudgetInput.tokenBudgetAboveDefault(tokens: 500_000_001, default: 500_000_000))
+        #expect(!BudgetInput.tokenBudgetAboveDefault(tokens: 500_000_000, default: 500_000_000))
+    }
+
+    @Test func requestUsageIsExact() {
+        #expect(BudgetInput.requestUsage(used: 0, cap: 12_345) == "0 of 12,345")
+        #expect(BudgetInput.requestUsage(used: 1_234, cap: 12_345) == "1,234 of 12,345")
+        #expect(BudgetInput.requestUsage(used: 7, cap: 0) == "7")
+    }
+
+    @Test func budgetMessagesStayPerFieldAndSurvivePolls() {
+        var messages = BudgetMessages()
+        messages.set(.requests, "Has to be at least 1 request.")
+        #expect(messages.message(for: .requests) == "Has to be at least 1 request.")
+        #expect(messages.message(for: .tokens) == nil)
+        #expect(messages.current == "Has to be at least 1 request.")
+        messages.set(.tokens, "Type the limit in millions, like 500 or 3.5.")
+        messages.clear(.requests)
+        #expect(messages.current == "Type the limit in millions, like 500 or 3.5.")
+        messages.clear(.tokens)
+        #expect(messages.current == nil)
+    }
+
     @Test func decodesStatus() throws {
         let data = Data("""
         {"ok":true,"eve":"available","operator":{"name":"Wasim","initials":"WA"},

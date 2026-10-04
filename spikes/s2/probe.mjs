@@ -26,13 +26,14 @@ function b64url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
-function signJwt(secret, sub) {
+function signJwt(secret, sub, botId = "probe-bot") {
   const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const now = Math.floor(Date.now() / 1000);
   const payload = b64url(JSON.stringify({
     sub,
     iss: "useful-bot",
     aud: "useful-bot",
+    botId,
     iat: now,
     exp: now + 3600,
   }));

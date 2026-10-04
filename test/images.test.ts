@@ -19,7 +19,9 @@ import {
 } from "../shared/providers.ts";
 import { generateImage } from "../router/src/upstreams/images.ts";
 import listModels from "../agent/tools/list_models.ts";
-import { modelContext } from "../agent/instructions/model.ts";
+import { ensureTurnSnapshot } from "../agent/lib/turn-snapshot.ts";
+import { renderContext } from "../shared/context-blocks.ts";
+import { readShell } from "../shared/shell-io.ts";
 import { RouterError } from "../router/src/errors.ts";
 import { setConnectionLookup } from "../shared/connection-url.ts";
 import { IMAGE_BYTES_MAX } from "../shared/images-store.ts";
@@ -190,9 +192,26 @@ test("list_models shows chat and image models and the bot knows its model", asyn
     const onlyChat = await listModels.execute({ kind: "chat" } as never, {} as never) as Record<string, unknown>;
     assert.equal("image" in onlyChat, false);
 
-    const context = modelContext() ?? "";
-    assert.match(context, /runs on .*\(openai\/gpt-4\.1-mini\) through OpenRouter/);
-    assert.match(context, /generate_image draws with .*google\/gemini-3\.1-flash-image/);
+    // The turn's own snapshot names the model and image model, and list_models
+    // inside the same turn reports the same ones.
+    const previousShell = process.env.UB_SHELL_PATH;
+    process.env.UB_SHELL_PATH = join(dir, "shell.json");
+    readShell();
+    try {
+      const ctx = { session: { id: "sess-img", turn: { id: "turn-1" }, auth: { current: { attributes: { botId: "bot-useful" } } } } };
+      const snapshot = await ensureTurnSnapshot(ctx, "turn-1");
+      assert.equal(snapshot?.status, "ok");
+      const context = snapshot?.status === "ok" ? renderContext(snapshot.context) : "";
+      assert.match(context, /Model: .*\(openai\/gpt-4\.1-mini\) via OpenRouter/);
+      assert.match(context, /generate_image uses .*\(google\/gemini-3\.1-flash-image\)/);
+      const inTurn = await listModels.execute({ kind: "chat" } as never, ctx as never) as { current: { chat: { id: string; provider: string }; image: { id: string } } };
+      assert.equal(inTurn.current.chat.id, "openai/gpt-4.1-mini");
+      assert.equal(inTurn.current.chat.provider, "OpenRouter");
+      assert.equal(inTurn.current.image.id, "google/gemini-3.1-flash-image");
+    } finally {
+      if (previousShell === undefined) delete process.env.UB_SHELL_PATH;
+      else process.env.UB_SHELL_PATH = previousShell;
+    }
   });
 });
 
