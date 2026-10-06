@@ -14,6 +14,10 @@ import {
 import { pumpConnects } from "../../../../../shared/connect-flow.ts";
 import { pumpConnections } from "../../../../../shared/connection-flow.ts";
 import { seedDefaultConnections } from "../../../../../shared/connections-store.ts";
+import { dropLegacyDeviceFlowFile } from "../../../../../shared/provider-oauth.ts";
+
+/** The removed Copilot sign-in's pending file is dropped on the first tick of a start (UB-015). */
+let legacyDeviceFlowDropped = false;
 
 /**
  * Handoff pump and routine scheduler. The sending agent tool only queues a
@@ -82,6 +86,11 @@ export async function POST(request: Request) {
   // teardown that failed before a key was revoked would otherwise wait for one
   // to come back before it healed.
   const swept = sweepOrphanStateIfDue();
+  // Housekeeping like the sweep, so it also runs while no agent credential is set.
+  if (!legacyDeviceFlowDropped) {
+    legacyDeviceFlowDropped = true;
+    dropLegacyDeviceFlowFile();
+  }
   if (!agentsEnabled()) {
     return NextResponse.json({ ok: false, error: "agent_credential_missing", swept: swept.length }, { status: 503 });
   }

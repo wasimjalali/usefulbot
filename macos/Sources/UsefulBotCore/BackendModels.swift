@@ -656,6 +656,17 @@ public struct ConnectionPublic: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+extension ConnectionPublic {
+    /// Why nothing is connected, when the only connections left were turned
+    /// off by their vendor: the first one's own sentence. Nil when something
+    /// usable is connected or nothing was turned off.
+    public static func retiredReason(connected: [ConnectionPublic], retired: [ConnectionPublic]) -> String? {
+        guard connected.isEmpty,
+              let sentence = retired.compactMap(\.lastError).first(where: { !$0.isEmpty }) else { return nil }
+        return sentence
+    }
+}
+
 /// One reasoning effort choice on a role.
 public struct RoleEffortOption: Codable, Equatable, Sendable {
     public let id: String
@@ -701,6 +712,8 @@ public struct RolePublic: Codable, Equatable, Sendable {
     public var effortLabel: String?
     public var efforts: [RoleEffortOption]
     public var models: [RoleModelOption]
+    /// Why the saved choice can't run (a turned-off route's sentence); nil when it can.
+    public var unavailable: String?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -713,11 +726,12 @@ public struct RolePublic: Codable, Equatable, Sendable {
         effortLabel = try? c.decodeIfPresent(String.self, forKey: .effortLabel)
         efforts = (try? c.decode([RoleEffortOption].self, forKey: .efforts)) ?? []
         models = (try? c.decode([RoleModelOption].self, forKey: .models)) ?? []
+        unavailable = try? c.decodeIfPresent(String.self, forKey: .unavailable)
     }
 
     enum CodingKeys: String, CodingKey {
         case connectionId, connectionLabel, connectionIcon, modelId, modelLabel
-        case effort, effortLabel, efforts, models
+        case effort, effortLabel, efforts, models, unavailable
     }
 }
 
@@ -728,6 +742,8 @@ public struct RolePublic: Codable, Equatable, Sendable {
 public struct ProvidersPayload: Decodable, Equatable, Sendable {
     public var catalog: [CatalogPublic]
     public var connections: [ConnectionPublic]
+    /// Connections on a route the vendor doesn't allow Useful Bot on (status `retired`, `lastError` is the message). Shown and removable, never used; empty from an older server.
+    public var retired: [ConnectionPublic]
     public var defaultRole: RolePublic?
     public var reviewerRole: RolePublic?
     public var imageRole: RolePublic?
@@ -742,6 +758,7 @@ public struct ProvidersPayload: Decodable, Equatable, Sendable {
         notice = try? c.decodeIfPresent(String.self, forKey: .notice)
         catalog = (try? c.decode([CatalogPublic].self, forKey: .catalog)) ?? []
         connections = (try? c.decode([ConnectionPublic].self, forKey: .connections)) ?? []
+        retired = (try? c.decode([ConnectionPublic].self, forKey: .retired)) ?? []
         if let roles = try? c.nestedContainer(keyedBy: RoleKeys.self, forKey: .roles) {
             defaultRole = try? roles.decodeIfPresent(RolePublic.self, forKey: .default)
             reviewerRole = try? roles.decodeIfPresent(RolePublic.self, forKey: .reviewer)
@@ -757,7 +774,7 @@ public struct ProvidersPayload: Decodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case catalog, connections, roles, composer, providers, activeProviderId, notice
+        case catalog, connections, retired, roles, composer, providers, activeProviderId, notice
     }
 
     enum RoleKeys: String, CodingKey { case `default`, reviewer, image }

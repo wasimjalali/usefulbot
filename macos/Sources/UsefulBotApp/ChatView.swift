@@ -1094,16 +1094,16 @@ struct ChatView: View {
                     .frame(width: 64, height: 64)
                     .padding(.bottom, 6)
                     .accessibilityHidden(true)
-                Text("Connect a model to start")
+                Text(model.noModelRetiredSentence == nil ? "Connect a model to start" : "Your connection was turned off")
                     .font(.system(size: DesignTokens.FontSize.emptyTitle, weight: .semibold))
                     .tracking(DesignTokens.Tracking.tight * DesignTokens.FontSize.emptyTitle)
                     .foregroundStyle(Theme.C.ink)
-                Text("Use a subscription you already pay for, or an API key.")
+                Text(model.noModelRetiredSentence ?? "Use a subscription you already pay for, or an API key.")
                     .font(.system(size: DesignTokens.FontSize.emptyBody))
                     .foregroundStyle(Theme.C.inkMuted)
                     .multilineTextAlignment(.center)
                 NativeButton("Connect a provider", kind: .primary) {
-                    if let connectModel { connectModel.reopen() } else { model.openAppSettings(.providers) }
+                    if model.noModelRetiredSentence == nil, let connectModel { connectModel.reopen() } else { model.openAppSettings(.providers) }
                 }
                 .padding(.top, 6)
                 .accessibilityIdentifier("no-model-connect")
@@ -1197,12 +1197,12 @@ struct ChatView: View {
             // Not over an empty chat: its middle already asks for the same.
             if noModel, model.hasThreadContent || model.pending || bot.isGroup {
                 HStack(spacing: 12) {
-                    Text("Connect a model to start chatting.")
+                    Text(model.noModelRetiredSentence == nil ? "Connect a model to start chatting." : "Your connection was turned off. See Providers.")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.C.ink)
                     Spacer(minLength: 0)
                     NativeButton("Connect", kind: .primary, small: true) {
-                        if let connectModel { connectModel.reopen() } else { model.openAppSettings(.providers) }
+                        if model.noModelRetiredSentence == nil, let connectModel { connectModel.reopen() } else { model.openAppSettings(.providers) }
                     }
                     .accessibilityIdentifier("no-model-connect")
                 }

@@ -938,12 +938,14 @@ public actor BackendClient {
     }
 
     /// A failed `/api/providers` write as the error the app shows. A removed
-    /// connection that left pinned bots behind carries the server's message,
-    /// not a bare code, because the code alone reads as "nothing happened".
+    /// connection that left pinned bots behind, and a write on a route the
+    /// vendor turned off, carry the server's message, not a bare code, because
+    /// the code alone reads as "nothing happened".
     static func providersFailure(status: Int, data: Data) -> BackendError {
         let decoded = try? JSONDecoder().decode(ProvidersErrorResponse.self, from: data)
-        if decoded?.error == "connection_removed_bots_pinned", let message = decoded?.message, !message.isEmpty {
-            return .providerNotice(code: "connection_removed_bots_pinned", message: message)
+        if let code = decoded?.error, code == "connection_removed_bots_pinned" || code == "provider_route_retired",
+           let message = decoded?.message, !message.isEmpty {
+            return .providerNotice(code: code, message: message)
         }
         return failure(status: status, code: decoded?.error, fallback: "provider_failed", typed: BackendError.provider)
     }
@@ -960,8 +962,7 @@ public actor BackendClient {
             return request
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            let decoded = try? JSONDecoder().decode(ProvidersErrorResponse.self, from: data)
-            throw Self.failure(status: http.statusCode, code: decoded?.error, fallback: "provider_failed", typed: BackendError.provider)
+            throw Self.providersFailure(status: http.statusCode, data: data)
         }
         guard let decoded = try? JSONDecoder().decode(DeviceFlowStart.self, from: data) else {
             throw BackendError.decoding
@@ -1591,6 +1592,13 @@ public actor BackendClient {
            Self.refusalCode(in: data) == "model_selection_unavailable" {
             throw BackendError.modelSelectionUnavailable
         }
+        // The bot's connection is on a route its vendor doesn't allow in Useful
+        // Bot (turned off). The proxy says why in the route's own sentence.
+        if let http = response as? HTTPURLResponse, http.statusCode == 409,
+           Self.refusalCode(in: data) == "provider_route_retired",
+           let message = Self.refusalMessage(in: data) {
+            throw BackendError.providerNotice(code: "provider_route_retired", message: message)
+        }
         // The proxy refuses a picture for a model that cannot look at it
         // before the turn exists, so the draft and its files come back.
         if let http = response as? HTTPURLResponse, http.statusCode == 400,
@@ -1631,6 +1639,14 @@ public actor BackendClient {
             throw BackendError.sessionEnded
         }
         try Self.expectOK(data, response)
+    }
+
+    /// The sentence of a refusal body: a top-level `message`, or `error: { message }`.
+    static func refusalMessage(in data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let message = object["message"] as? String, !message.isEmpty { return message }
+        if let error = object["error"] as? [String: Any], let message = error["message"] as? String, !message.isEmpty { return message }
+        return nil
     }
 
     /// The code of a refusal body, whichever shape carries it: a top-level

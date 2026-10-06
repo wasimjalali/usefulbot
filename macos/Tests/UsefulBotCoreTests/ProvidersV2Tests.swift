@@ -104,6 +104,37 @@ import Testing
         #expect(connection.fields.isEmpty)
     }
 
+    @Test func retiredConnectionsDecodeApartFromLiveOnes() throws {
+        let sentence = "Z.ai only allows the GLM Coding Plan in its supported coding tools, so Useful Bot can't use it. Connect a Z.ai API key instead, then disconnect this one."
+        let payload = try decode("""
+        {"connections":[{"id":"opencode-go:plan","status":"ok"}],
+         "retired":[{"id":"zai:plan","providerId":"zai","mode":"plan","status":"retired","lastError":"\(sentence)"}]}
+        """)
+        #expect(payload.connections.map(\.id) == ["opencode-go:plan"])
+        let retired = try #require(payload.retired.first)
+        #expect(retired.status == "retired")
+        #expect(retired.lastError == sentence)
+        // A server from before the retirement sends none.
+        #expect(try decode(#"{"connections":[]}"#).retired.isEmpty)
+    }
+
+    @Test func aUserWhoseOnlyConnectionWasTurnedOffSeesWhy() throws {
+        let sentence = "Z.ai only allows the GLM Coding Plan in its supported coding tools, so Useful Bot can't use it. Connect a Z.ai API key instead, then disconnect this one."
+        let payload = try decode("""
+        {"connections":[{"id":"opencode-go:plan","status":"ok"}],
+         "retired":[{"id":"zai:plan","providerId":"zai","mode":"plan","status":"retired","lastError":"\(sentence)"}]}
+        """)
+        let alone = try decode("""
+        {"connections":[],
+         "retired":[{"id":"zai:plan","providerId":"zai","mode":"plan","status":"retired","lastError":"\(sentence)"}]}
+        """)
+        #expect(ConnectionPublic.retiredReason(connected: alone.connections, retired: alone.retired) == sentence)
+        // Something usable is connected: the generic empty state never applies, so no reason is offered.
+        #expect(ConnectionPublic.retiredReason(connected: payload.connections, retired: payload.retired) == nil)
+        // Nothing connected and nothing turned off: the plain "connect a model" copy.
+        #expect(ConnectionPublic.retiredReason(connected: [], retired: []) == nil)
+    }
+
     @Test func decodesTheDeviceFlowStart() throws {
         let flow = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
         {"ok":true,"pollId":"p1","userCode":"ABCD-1234",
@@ -185,5 +216,23 @@ import Testing
         // Any other code keeps its plain shape, and a bare pinned code without a message does too.
         #expect(BackendClient.providersFailure(status: 400, data: Data("{\"error\":\"provider_key\"}".utf8)) == .provider("provider_key"))
         #expect(BackendClient.providersFailure(status: 500, data: Data("{\"error\":\"connection_removed_bots_pinned\"}".utf8)) == .provider("connection_removed_bots_pinned"))
+    }
+
+    @Test func aWriteOnATurnedOffRouteKeepsTheServerSentence() {
+        let sentence = "Z.ai only allows the GLM Coding Plan in its supported coding tools, so Useful Bot can't use it. Connect a Z.ai API key instead, then disconnect this one."
+        let body = Data(#"{"ok":false,"error":"provider_route_retired","message":"\#(sentence)"}"#.utf8)
+        let error = BackendClient.providersFailure(status: 409, data: body)
+        #expect(error == .providerNotice(code: "provider_route_retired", message: sentence))
+        #expect(error.errorDescription == sentence)
+        // Without a message it stays the plain code.
+        #expect(BackendClient.providersFailure(status: 409, data: Data(#"{"error":"provider_route_retired"}"#.utf8)) == .provider("provider_route_retired"))
+    }
+
+    @Test func aReviewerRoleOnATurnedOffRouteDecodesItsReason() throws {
+        let json = Data(#"{"connectionId":"zai:plan","connectionLabel":"Z.ai","modelId":"glm-5.3","modelLabel":"GLM 5.3","unavailable":"Turned off."}"#.utf8)
+        let role = try JSONDecoder().decode(RolePublic.self, from: json)
+        #expect(role.unavailable == "Turned off.")
+        let live = try JSONDecoder().decode(RolePublic.self, from: Data(#"{"connectionId":"opencode-go:plan","modelId":"x"}"#.utf8))
+        #expect(live.unavailable == nil)
     }
 }

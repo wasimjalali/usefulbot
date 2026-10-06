@@ -166,16 +166,16 @@ test("model listing sends the catalogue key header and extra headers", async () 
   await fetchProviderModelIds("https://token-plan-sgp.xiaomimimo.com/v1", "tp-key-12345678", fetchImpl, "api-key");
   assert.equal(calls[0]?.headers["api-key"], "tp-key-12345678");
   assert.equal(calls[0]?.headers.authorization, undefined);
-  // Copilot lists with its editor headers next to the bearer token.
+  // Extra static headers ride next to the bearer token.
   await fetchProviderModelIds(
-    "https://api.githubcopilot.com",
-    "ghu-token-12345678",
+    "https://example.test/v1",
+    "tok-12345678",
     fetchImpl,
     "bearer",
-    { "X-GitHub-Api-Version": "2026-06-01", "Openai-Intent": "conversation-edits" },
+    { "X-Extra": "1" },
   );
-  assert.equal(calls[1]?.headers.authorization, "Bearer ghu-token-12345678");
-  assert.equal(calls[1]?.headers["X-GitHub-Api-Version"], "2026-06-01");
+  assert.equal(calls[1]?.headers.authorization, "Bearer tok-12345678");
+  assert.equal(calls[1]?.headers["X-Extra"], "1");
   // x-api-key vendors keep their header shape.
   await fetchProviderModelIds("https://api.anthropic.com/v1", "sk-ant-12345678", fetchImpl, "x-api-key");
   assert.equal(calls[2]?.headers["x-api-key"], "sk-ant-12345678");

@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { isGateError, requireOwner } from "../../../../lib/desktop-gate";
 import { apiError, errorCode, rateLimited, readJson } from "../../../../lib/api-guard";
-import { providerMode } from "../../../../../shared/provider-catalog.ts";
+import { oauthStartVerdict } from "../../../../lib/providers-write";
 import { startChatGptSignIn } from "../../../../../shared/chatgpt-signin.ts";
-import { startDeviceFlow } from "../../../../../shared/provider-oauth.ts";
 
 export const runtime = "nodejs";
 
@@ -25,41 +24,30 @@ export async function POST(request: Request) {
   }
   try {
     const providerId = typeof body.providerId === "string" ? body.providerId : "";
-    // Only providers with a sign-in entry accept this route.
-    const mode = providerMode(providerId, "oauth");
-    if (mode.signIn === "chatgpt") {
-      // Browser flow: the app opens the authorize URL, the loopback callback
-      // route finishes the sign-in and the poll reports it.
-      const started = startChatGptSignIn({
-        newAccount: body.newAccount === true,
-        ...(typeof body.clientId === "string" ? { clientId: body.clientId } : {}),
-        ...(typeof body.retryClientId === "string" ? { retryClientId: body.retryClientId } : {}),
-      });
-      return NextResponse.json({
-        ok: true,
-        pollId: started.pollId,
-        flow: "browser",
-        userCode: "",
-        verificationUrl: started.authorizeUrl,
-        verificationUrlComplete: null,
-        expiresAt: started.expiresAt,
-        intervalMs: started.intervalMs,
-        account: started.account,
-        accounts: started.accounts,
-        reusesSaved: started.reusesSaved,
-        clientId: started.clientId,
-      });
-    }
-    const pending = await startDeviceFlow(providerId);
+    // A retired route, an unknown provider and one with no sign-in entry are refused here (UB-015).
+    const verdict = oauthStartVerdict(providerId);
+    if (verdict.status === 409) return NextResponse.json({ ok: false, error: verdict.error, message: verdict.message }, { status: 409 });
+    if (verdict.status === 400) return NextResponse.json({ ok: false, error: verdict.error }, { status: 400 });
+    // Browser flow: the app opens the authorize URL, the loopback callback
+    // route finishes the sign-in and the poll reports it.
+    const started = startChatGptSignIn({
+      newAccount: body.newAccount === true,
+      ...(typeof body.clientId === "string" ? { clientId: body.clientId } : {}),
+      ...(typeof body.retryClientId === "string" ? { retryClientId: body.retryClientId } : {}),
+    });
     return NextResponse.json({
       ok: true,
-      pollId: pending.pollId,
-      flow: "device",
-      userCode: pending.userCode,
-      verificationUrl: pending.verificationUrl,
-      verificationUrlComplete: pending.verificationUrlComplete,
-      expiresAt: pending.expiresAt,
-      intervalMs: pending.intervalMs,
+      pollId: started.pollId,
+      flow: "browser",
+      userCode: "",
+      verificationUrl: started.authorizeUrl,
+      verificationUrlComplete: null,
+      expiresAt: started.expiresAt,
+      intervalMs: started.intervalMs,
+      account: started.account,
+      accounts: started.accounts,
+      reusesSaved: started.reusesSaved,
+      clientId: started.clientId,
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: errorCode(err) }, { status: 400 });

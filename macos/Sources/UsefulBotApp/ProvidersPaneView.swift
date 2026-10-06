@@ -35,10 +35,10 @@ struct ProvidersPaneView: View {
                         .foregroundStyle(Theme.C.inkMuted)
                 } else if !model.providerCatalog.isEmpty {
                     settingsGroup {
-                        ForEach(model.providerConnections) { connection in
+                        ForEach(model.providerRows) { connection in
                             connectionRow(connection)
                         }
-                        connectRow(last: true, hasRows: !model.providerConnections.isEmpty)
+                        connectRow(last: true, hasRows: !model.providerRows.isEmpty)
                     }
                 }
             }
@@ -46,7 +46,7 @@ struct ProvidersPaneView: View {
             section("Task models") {
                 VStack(alignment: .leading, spacing: 24) {
                     settingsGroup {
-                        let showsImage = !(model.imageRole?.models.isEmpty ?? true)
+                        let showsImage = !(model.imageRole?.models.isEmpty ?? true) || model.imageRole?.unavailable != nil
                         roleRow(
                             role: "default",
                             title: "Default model",
@@ -55,7 +55,8 @@ struct ProvidersPaneView: View {
                             last: !showsImage
                         )
                         // The row appears only while a connected provider
-                        // actually serves image generation.
+                        // actually serves image generation, or a saved image
+                        // choice was turned off (it shows the reason).
                         if showsImage {
                             roleRow(
                                 role: "image",
@@ -96,10 +97,14 @@ struct ProvidersPaneView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Theme.C.ink)
                     .lineLimit(1)
-                Text(connection.accountLabel.map { "\(connection.kindLabel) · \($0)" } ?? connection.kindLabel)
+                // A turned-off route says why, in the server's own words.
+                Text(connection.status == "retired"
+                     ? (connection.lastError ?? "Turned off")
+                     : (connection.accountLabel.map { "\(connection.kindLabel) · \($0)" } ?? connection.kindLabel))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.C.inkMuted)
-                    .lineLimit(1)
+                    .lineLimit(connection.status == "retired" ? 4 : 1)
+                    .fixedSize(horizontal: false, vertical: connection.status == "retired")
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
@@ -127,8 +132,10 @@ struct ProvidersPaneView: View {
     }
 
     private func statusDot(_ status: String) -> some View {
-        let color: Color = status == "ok" ? Theme.C.success : (status == "expired" ? Theme.C.warning : Theme.C.danger)
-        let label = status == "ok" ? "Connected" : (status == "expired" ? "Expired" : "Error")
+        // A turned-off route isn't a failure: muted, not the Error red.
+        let color: Color = status == "ok" ? Theme.C.success
+            : (status == "expired" ? Theme.C.warning : (status == "retired" ? Theme.C.inkFaint : Theme.C.danger))
+        let label = status == "ok" ? "Connected" : (status == "expired" ? "Expired" : (status == "retired" ? "Turned off" : "Error"))
         return Circle()
             .fill(color)
             .frame(width: 8, height: 8)
@@ -250,7 +257,7 @@ struct ProvidersPaneView: View {
 
     private var menuConnection: ConnectionPublic? {
         guard openCard?.kind == .menu, let id = openCard?.key else { return nil }
-        return model.providerConnections.first { $0.id == id }
+        return model.providerRows.first { $0.id == id }
     }
 
     private var menuEntry: CatalogPublic? {
@@ -349,7 +356,8 @@ struct ProvidersPaneView: View {
                 Text(title)
                     .font(.system(size: 14))
                     .foregroundStyle(Theme.C.ink)
-                Text(sub)
+                // A turned-off route's own sentence replaces the usual line.
+                Text(detail?.unavailable ?? sub)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.C.inkMuted)
             }
@@ -394,7 +402,8 @@ struct ProvidersPaneView: View {
                 ProviderMark(icon: detail.connectionIcon, monogram: chipMonogram(detail: detail), size: 22)
                 Text(detail.modelLabel.isEmpty ? "Model" : detail.modelLabel)
                     .font(.system(size: 13))
-                    .foregroundStyle(Theme.C.ink)
+                    .strikethrough(detail.unavailable != nil)
+                    .foregroundStyle(detail.unavailable != nil ? Theme.C.inkMuted : Theme.C.ink)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .regular))
@@ -415,13 +424,14 @@ struct ProvidersPaneView: View {
             RoundedRectangle(cornerRadius: DesignTokens.Radius.action, style: .continuous)
                 .strokeBorder(Theme.C.edge, lineWidth: 1)
         )
-        .disabled(model.providerBusy == "role-\(role)")
+        // An unavailable role with nothing to pick would open an empty list; its row says what to do.
+        .disabled(model.providerBusy == "role-\(role)" || (detail.unavailable != nil && detail.models.isEmpty))
         .accessibilityIdentifier("role-\(role)-model")
     }
 
     private func chipMonogram(detail: RolePublic) -> String {
         if let id = detail.connectionId,
-           let connection = model.providerConnections.first(where: { $0.id == id }) {
+           let connection = model.providerRows.first(where: { $0.id == id }) {
             return connection.monogram
         }
         return "?"

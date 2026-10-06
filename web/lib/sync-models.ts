@@ -1,7 +1,7 @@
-import { keyRejected, refreshProviderModels } from "../../shared/live-models.ts";
+import { keyRejected, mergeExtrasIntoCached, refreshProviderModels } from "../../shared/live-models.ts";
 import { providerMode, type AuthMode, type ProviderMode } from "../../shared/provider-catalog.ts";
 import { accessTokenFor } from "../../shared/provider-oauth.ts";
-import { isLegacyChatGptCredential, type ProviderStore } from "../../shared/providers.ts";
+import { accountKey, isLegacyChatGptCredential, type ProviderStore } from "../../shared/providers.ts";
 
 function substituteFields(baseUrl: string, fields: Record<string, string>): string {
   return baseUrl.replace(/\{(\w+)\}/g, (_, name: string) => fields[name] ?? "");
@@ -46,7 +46,8 @@ async function refreshOne(store: ProviderStore, id: string, force: boolean): Pro
   let headers: Record<string, string>;
   if (conn) {
     mode = providerMode(conn.providerId, conn.mode);
-    if (!mode.listsModels) return;
+    // A retired route is never called, not even to list models (UB-015).
+    if (mode.retired || !mode.listsModels) return;
     if (conn.credential.kind === "none" && conn.mode !== "local") return;
     // A sign-in from the old Codex route is not sent anywhere.
     if (isLegacyChatGptCredential(conn.providerId, conn.mode, conn.credential)) return;
@@ -58,7 +59,12 @@ async function refreshOne(store: ProviderStore, id: string, force: boolean): Pro
     } else if (conn.credential.kind === "oauth") {
       const auth = accessTokenFor(conn.providerId, conn.credential);
       // An expired ChatGPT token would only fail; the cached list stays until a chat call refreshes it.
-      if (conn.providerId === "openai" && auth.expired) return;
+      // The models the vendor omits still join that list: no fetch, and no token refresh here, which
+      // could race the router's own and trip refresh_token_reused.
+      if (conn.providerId === "openai" && auth.expired) {
+        mergeExtrasIntoCached(id, mode.unlistedModels ?? []);
+        return;
+      }
       key = auth.token;
       headers = { ...headers, ...auth.headers };
     }
@@ -91,6 +97,8 @@ async function refreshOne(store: ProviderStore, id: string, force: boolean): Pro
     headers,
     query,
     imagesPath,
+    extraModels: mode.unlistedModels,
+    account: conn ? accountKey(conn.credential) : null,
     force: force || Boolean(running),
   });
   const job: Promise<unknown> = (running ? running.job.catch(() => undefined).then(run) : run()).finally(() => {
@@ -113,7 +121,7 @@ export async function keyRejectedFor(
 ): Promise<boolean> {
   if (mode === "local" || mode === "oauth") return false;
   const def = providerMode(providerId, mode);
-  if (!def.listsModels) return false;
+  if (def.retired || !def.listsModels) return false;
   let baseUrl = substituteFields(def.baseUrl, fields);
   if (providerId === "opencode-go" && process.env.UB_OPENCODE_GO_BASE) baseUrl = process.env.UB_OPENCODE_GO_BASE;
   return keyRejected(baseUrl, key, fetch, def.keyHeader, { ...(def.headers ?? {}) }, def.modelsQuery ?? {});
