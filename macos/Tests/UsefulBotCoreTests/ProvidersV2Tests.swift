@@ -117,6 +117,63 @@ import Testing
         #expect(flow.intervalMs == 2000)
     }
 
+    @Test func theDeviceFlowStartDefaultsToDeviceAndReadsTheBrowserFlow() throws {
+        let older = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
+        {"ok":true,"pollId":"p1","userCode":"ABCD-1234","verificationUrl":"https://example.com/device"}
+        """.utf8))
+        #expect(older.flow == "device")
+        let browser = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
+        {"ok":true,"pollId":"p2","flow":"browser","userCode":"",
+         "verificationUrl":"https://auth.openai.com/api/accounts/authorize?x=1",
+         "verificationUrlComplete":null,"expiresAt":900000,"intervalMs":2000}
+        """.utf8))
+        #expect(older.account == nil)
+        #expect(older.accounts.isEmpty)
+        #expect(!older.reusesSaved)
+        let saved = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
+        {"ok":true,"pollId":"p4","flow":"browser","account":"a@example.com","reusesSaved":true,
+         "accounts":[{"clientId":"c1","label":"a@example.com"},{"clientId":"c2","label":"b@example.com"}],
+         "userCode":"","verificationUrl":"https://auth.openai.com/x"}
+        """.utf8))
+        #expect(saved.reusesSaved)
+        #expect(saved.clientId == nil)
+        #expect(older.clientId == nil)
+        let withClient = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
+        {"ok":true,"pollId":"p5","flow":"browser","clientId":"c2","userCode":"","verificationUrl":"https://auth.openai.com/x"}
+        """.utf8))
+        #expect(withClient.clientId == "c2")
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: false, retryClientId: "c9")["retryClientId"] as? String == "c9")
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: false)["retryClientId"] == nil)
+        #expect(saved.accounts == [SavedChatGptAccount(clientId: "c1", label: "a@example.com"), SavedChatGptAccount(clientId: "c2", label: "b@example.com")])
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: false, clientId: "c2")["clientId"] as? String == "c2")
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: false)["clientId"] == nil)
+        #expect(browser.account == nil)
+        let continued = try JSONDecoder().decode(DeviceFlowStart.self, from: Data("""
+        {"ok":true,"pollId":"p3","flow":"browser","account":"me@example.com","userCode":"","verificationUrl":"https://auth.openai.com/x"}
+        """.utf8))
+        #expect(continued.account == "me@example.com")
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: false)["newAccount"] == nil)
+        #expect(BackendClient.startOAuthBody(providerId: "openai", newAccount: true)["newAccount"] as? Bool == true)
+        #expect(browser.flow == "browser")
+        #expect(browser.userCode.isEmpty)
+        #expect(browser.verificationUrl.hasPrefix("https://auth.openai.com/"))
+    }
+
+    @Test func readsTheAccountLabelAndTheNoticeWhenPresent() throws {
+        let older = try decode("""
+        {"catalog":[],"connections":[{"id":"openai:oauth","status":"ok"}]}
+        """)
+        #expect(older.connections.first?.accountLabel == nil)
+        #expect(older.notice == nil)
+        let newer = try decode("""
+        {"catalog":[],"notice":"chatgpt_revoke_unconfirmed",
+         "connections":[{"id":"openai:oauth","status":"expired","accountLabel":"me@example.com"}]}
+        """)
+        #expect(newer.connections.first?.accountLabel == "me@example.com")
+        #expect(newer.connections.first?.status == "expired")
+        #expect(newer.notice == "chatgpt_revoke_unconfirmed")
+    }
+
     @Test func aRemovedConnectionWithPinnedBotsKeepsTheServerMessage() {
         let body = Data("""
         {"ok":false,"error":"connection_removed_bots_pinned","message":"The connection could not be removed because some bots that name it could not be reset. Try again."}

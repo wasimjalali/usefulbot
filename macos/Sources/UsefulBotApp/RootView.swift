@@ -72,8 +72,14 @@ struct RootView: View {
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
                     .zIndex(1)
             }
+            if model.showChatGptPlanWelcome {
+                ChatGptPlanWelcomeDialog(onClose: { model.showChatGptPlanWelcome = false })
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
         }
         .animation(Theme.ease(0.3), value: firstRun.active)
+        .animation(.easeOut(duration: DesignTokens.Motion.overlay), value: model.showChatGptPlanWelcome)
         .environment(\.starterBotId, firstRun.landingBotId(model.store))
         .environment(\.connectModel, firstRun)
         .environment(\.noModelPreview, firstRun.previewsNoModel)
@@ -486,6 +492,49 @@ struct ConfirmDialog: View {
                         .accessibilityIdentifier("dialog-cancel")
                     NativeButton(confirmLabel, kind: danger ? .danger : .primary, small: true, action: onConfirm)
                         .accessibilityIdentifier("dialog-confirm")
+                }
+                .padding(.top, 20)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+    }
+}
+
+/// Shown once after the first ChatGPT sign-in, in first run or the Providers pane.
+struct ChatGptPlanWelcomeDialog: View {
+    let onClose: () -> Void
+
+    var body: some View {
+        NativeDialog(maxWidth: DesignTokens.Control.dialogConfirmWidth, ariaLabel: "ChatGPT plan", closeRow: false, onClose: onClose) {
+            VStack(alignment: .leading, spacing: 0) {
+                ProviderMark(icon: "openai", monogram: "C", size: 22)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.C.surface, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DesignTokens.Radius.sm, style: .continuous)
+                            .strokeBorder(Theme.C.edge, lineWidth: 1)
+                    )
+                    .padding(.top, 20)
+                Text("You're using your ChatGPT plan")
+                    .font(.system(size: DesignTokens.FontSize.dialogTitle, weight: .semibold))
+                    .foregroundStyle(Theme.C.ink)
+                    .padding(.top, 14)
+                Text("Eligible requests in Useful Bot use your ChatGPT plan. You can manage usage in ChatGPT settings.")
+                    .font(.system(size: DesignTokens.FontSize.dialogBody))
+                    .lineSpacing(6)
+                    .foregroundStyle(Theme.C.inkMuted)
+                    .padding(.top, 8)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    NativeButton("Manage usage", kind: .secondary, small: true) {
+                        if let url = URL(string: "https://chatgpt.com/settings/usage") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .accessibilityIdentifier("chatgpt-welcome-manage-usage")
+                    NativeButton("Got it", kind: .primary, small: true, action: onClose)
+                        .accessibilityIdentifier("chatgpt-welcome-got-it")
                 }
                 .padding(.top, 20)
             }

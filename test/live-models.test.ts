@@ -181,8 +181,13 @@ test("model listing sends the catalogue key header and extra headers", async () 
   assert.equal(calls[2]?.headers["x-api-key"], "sk-ant-12345678");
 });
 
-test("the ChatGPT Codex list is read by slug with hidden models left out", async () => {
-  // Shape of GET chatgpt.com/backend-api/codex/models on 2026-09-19.
+test("only slug-shaped rows need visibility list; id rows drop just hide", () => {
+  assert.deepEqual(parseModelList({ models: [{ slug: "a" }, { slug: "b", visibility: "list" }, { slug: "c", visibility: "hide" }] }), ["b"]);
+  assert.deepEqual(parseModelList({ data: [{ id: "x", visibility: "private" }, { id: "y", visibility: "hide" }, { id: "z" }] }), ["x", "z"]);
+});
+
+test("the ChatGPT list is read by slug and keeps only the rows with visibility list", async () => {
+  // Shape of the ChatGPT model list (docs: token-sharing-open-source/models-and-inference).
   const body = {
     models: [
       {
@@ -215,8 +220,7 @@ test("the ChatGPT Codex list is read by slug with hidden models left out", async
   const mode = providerMode("openai", "oauth");
   const ids = await fetchProviderModelIds(mode.baseUrl, "token-12345678", fetchImpl, "bearer", {}, mode.modelsQuery);
   assert.deepEqual(ids, ["gpt-5.6-sol", "gpt-6-astra"]);
-  // The list is filtered by client_version and 400s without it.
-  assert.equal(urls[0], "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0");
+  assert.equal(urls[0], "https://api.openai.com/v1/models");
   const path = join(mkdtempSync(join(tmpdir(), "ub-models-codex-")), "models-cache.json");
   await refreshProviderModels({
     providerId: "openai:oauth",

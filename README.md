@@ -90,7 +90,7 @@ open "macos/dist/Useful Bot.app"
 
 The web service is the API the app calls, on `http://127.0.0.1:4320` (no browser UI; `/` returns a status). Chat needs eve as well (`service.mjs eve`) after the Go key is in Keychain. Sleeping the Mac is downtime.
 
-Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in with a device code (ChatGPT through Codex, GitHub Copilot) or take a coding-plan key (OpenCode Go, GLM Coding Plan, Kimi Code, Qwen Coding Plan, MiniMax and MiMo token plans, Command Code). API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model and the reviewer model with their reasoning level.
+Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in through the browser or a device code, or take a coding-plan key. ChatGPT uses OpenAI's official [Sign in with ChatGPT for open-source apps](https://developers.openai.com/siwc/token-sharing-open-source): Continue with ChatGPT opens the browser, the sign-in returns to the web service at `http://127.0.0.1:<web port>/auth/callback`, and turns run on the public Responses API with the user's plan (manage usage at chatgpt.com/settings/usage). The issued client id and this Mac's host id live in `chatgpt-signin.json` next to the providers store; a sign-in made by an older version through the Codex route shows Expired and needs one fresh sign-in. GitHub Copilot signs in with a device code. Coding-plan rows take a key (OpenCode Go, GLM Coding Plan, Kimi Code, Qwen Coding Plan, MiniMax and MiMo token plans, Command Code). API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model and the reviewer model with their reasoning level.
 
 ## Chat layout
 
@@ -212,9 +212,9 @@ locally; delete the file to force a refresh.
 
 The agent reaches apps through four tools. `connector_search` finds tool slugs
 for a use case in the connected apps. `connector_execute` runs one. A read runs
-at once; a write shows an approval card in auto and runs without one in full
-access; a destructive action (delete, remove, archive, revoke) always shows a
-card; read only refuses writes. The card carries the app, the tool and every
+at once; a write or a destructive action (delete, remove, archive, revoke)
+shows an approval card in auto and runs without one in full access; read only
+refuses writes. The card carries the app, the tool and every
 argument, hashed like a shell line, so what is approved is exactly what runs.
 
 A bot can also ask for an app it doesn't have yet. `connector_catalog` searches

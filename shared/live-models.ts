@@ -101,9 +101,8 @@ export function parseModelList(raw: unknown): string[] {
 }
 
 /**
- * OpenAI shaped rows carry `id`. The ChatGPT Codex list carries `slug`
- * instead and marks internal models (auto review, reserve) with
- * `visibility: "hide"`, which the Codex picker leaves out too.
+ * OpenAI shaped rows carry `id`. The ChatGPT list carries `slug` instead and
+ * marks the models a picker shows with `visibility: "list"`.
  */
 function rowsOf(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw;
@@ -115,7 +114,7 @@ function rowsOf(raw: unknown): unknown[] {
 }
 
 /**
- * Facts the vendor's own list states about each model: the ChatGPT Codex list
+ * Facts the vendor's own list states about each model: the ChatGPT list
  * carries display_name, context_window, input_modalities and the reasoning
  * levels the model takes. OpenAI shaped lists carry none of these, so their
  * rows come back empty and models.dev plus the name guess fill in.
@@ -207,7 +206,11 @@ function idsFromRows(rows: unknown[]): string[] {
     if (typeof row === "string" && row.trim()) ids.push(row.trim());
     if (!row || typeof row !== "object") continue;
     const rec = row as { id?: unknown; slug?: unknown; visibility?: unknown };
-    if (rec.visibility === "hide") continue;
+    // The ChatGPT list is slug shaped and marks what a picker shows with
+    // visibility "list" (docs: token-sharing-open-source/models-and-inference).
+    // Any other list keeps the old rule: only "hide" is left out.
+    const slugShaped = typeof rec.slug === "string" && typeof rec.id !== "string";
+    if (slugShaped ? rec.visibility !== "list" : rec.visibility === "hide") continue;
     const id = typeof rec.id === "string" ? rec.id : rec.slug;
     if (typeof id === "string" && id.trim()) ids.push(id.trim());
   }

@@ -16,6 +16,7 @@ import {
   setProviderKey,
   setRole,
   updateProviderStore,
+  type Credential,
   type ProviderId,
   type ProviderStore,
 } from "../../shared/providers.ts";
@@ -183,6 +184,22 @@ export function applyProvidersPut(body: ProvidersPutBody): { store: ProviderStor
 }
 
 /** The DELETE error when resetting the bots that name a removed connection failed twice; the connection stays. */
+/**
+ * The delete, plus the ChatGPT sign-in it actually removed: captured inside the
+ * same store transaction, so a refresh or sign-in that lands around the delete
+ * can't make the caller revoke a credential that was not the one deleted.
+ */
+export function applyProvidersDeleteCapturing(
+  body: { connectionId?: unknown; providerId?: unknown },
+): { store: ProviderStore; removedChatGpt: Credential | null } {
+  let removedChatGpt: Credential | null = null;
+  const store = applyProvidersDelete(body, (current, next) => {
+    const before = current.connections["openai:oauth"]?.credential;
+    if (before && !next.connections["openai:oauth"]) removedChatGpt = before;
+  });
+  return { store, removedChatGpt };
+}
+
 export const CONNECTION_REMOVED_BOTS_PINNED =
   "The connection could not be removed because some bots that name it could not be reset. Try again.";
 
@@ -197,7 +214,10 @@ export const CONNECTION_REMOVED_BOTS_PINNED =
  * the roster exactly as it was, and the error is raised before the providers
  * write, so nothing is left half done.
  */
-export function applyProvidersDelete(body: { connectionId?: unknown; providerId?: unknown }): ProviderStore {
+export function applyProvidersDelete(
+  body: { connectionId?: unknown; providerId?: unknown },
+  onRemoved?: (current: ProviderStore, next: ProviderStore) => void,
+): ProviderStore {
   return updateProviderStore((current) => {
     let next: ProviderStore;
     if (typeof body.connectionId === "string" && body.connectionId) {
@@ -209,6 +229,7 @@ export function applyProvidersDelete(body: { connectionId?: unknown; providerId?
       throw new Error("invalid");
     }
     const removed = Object.keys(current.connections).filter((id) => !next.connections[id]);
+    onRemoved?.(current, next);
     if (removed.length > 0) {
       // One write for all ids: two writes could land the first and fail the
       // second, leaving some bots reset and the connections still there.

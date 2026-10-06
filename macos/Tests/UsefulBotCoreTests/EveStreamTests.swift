@@ -275,6 +275,14 @@ import Testing
         let past = Int(Date().addingTimeInterval(-86_400).timeIntervalSince1970)
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_usage_limit resets_at=\(past)").reason
             == "Your plan's usage limit for this model is used up. Pick another model to keep going.")
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_usage_limit").reason
+            == "You've reached the ChatGPT plan limit for Useful Bot. Manage usage at chatgpt.com/settings/usage, or pick another model.")
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_unavailable").reason
+            == "Couldn't reach ChatGPT just now. Send again in a moment.")
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_not_permitted").reason
+            == "ChatGPT didn't allow this request from Useful Bot. Check Useful Bot in ChatGPT settings, or pick another model.")
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_not_eligible").reason
+            == "This ChatGPT account can't use its plan in Useful Bot. Pick another model.")
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_usage_not_included").reason
             == "Your plan doesn't include this model. Pick another model.")
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_quota_exhausted").reason

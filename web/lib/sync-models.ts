@@ -1,7 +1,7 @@
 import { keyRejected, refreshProviderModels } from "../../shared/live-models.ts";
 import { providerMode, type AuthMode, type ProviderMode } from "../../shared/provider-catalog.ts";
 import { accessTokenFor } from "../../shared/provider-oauth.ts";
-import type { ProviderStore } from "../../shared/providers.ts";
+import { isLegacyChatGptCredential, type ProviderStore } from "../../shared/providers.ts";
 
 function substituteFields(baseUrl: string, fields: Record<string, string>): string {
   return baseUrl.replace(/\{(\w+)\}/g, (_, name: string) => fields[name] ?? "");
@@ -48,6 +48,8 @@ async function refreshOne(store: ProviderStore, id: string, force: boolean): Pro
     mode = providerMode(conn.providerId, conn.mode);
     if (!mode.listsModels) return;
     if (conn.credential.kind === "none" && conn.mode !== "local") return;
+    // A sign-in from the old Codex route is not sent anywhere.
+    if (isLegacyChatGptCredential(conn.providerId, conn.mode, conn.credential)) return;
     baseUrl = substituteFields(mode.baseUrl, conn.fields);
     if (conn.providerId === "opencode-go" && env.UB_OPENCODE_GO_BASE) baseUrl = env.UB_OPENCODE_GO_BASE;
     headers = { ...(mode.headers ?? {}) };
@@ -55,6 +57,8 @@ async function refreshOne(store: ProviderStore, id: string, force: boolean): Pro
       key = conn.credential.key;
     } else if (conn.credential.kind === "oauth") {
       const auth = accessTokenFor(conn.providerId, conn.credential);
+      // An expired ChatGPT token would only fail; the cached list stays until a chat call refreshes it.
+      if (conn.providerId === "openai" && auth.expired) return;
       key = auth.token;
       headers = { ...headers, ...auth.headers };
     }

@@ -6,6 +6,8 @@ import {
   connectionId,
   parseConnectionId,
 } from "../../../../../../shared/provider-catalog.ts";
+import { activeUsable } from "../../../../../lib/providers-write";
+import { cancelChatGptSignIn, isChatGptPollId, pollChatGptSignIn } from "../../../../../../shared/chatgpt-signin.ts";
 import { cancelDeviceFlow, pollDeviceFlow } from "../../../../../../shared/provider-oauth.ts";
 import {
   composerState,
@@ -19,28 +21,6 @@ import {
 } from "../../../../../../shared/providers.ts";
 
 export const runtime = "nodejs";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-/** Connected means a credential, or a local server that needs none. */
-function connectionUsable(store: ProviderStore, id: string): boolean {
-  const conn = store.connections[id];
-  if (!conn) return false;
-  return conn.credential.kind !== "none" || conn.mode === "local";
-}
-
-/**
- * The chat connection is usable when the stored active connection carries a
- * credential. A missing or Go-plan entry falls back to the implicit env key.
- */
-function activeUsable(store: ProviderStore): boolean {
-  const id = store.activeConnectionId;
-  if (id && connectionUsable(store, id)) return true;
-  if (id && id !== "opencode-go:plan") return false;
-  return Boolean(process.env.UB_OPENCODE_GO_KEY);
-}
 
 function legacyActiveId(store: ProviderStore): string | null {
   if (!store.activeConnectionId) return null;
@@ -81,6 +61,20 @@ export async function POST(request: Request, context: { params: Promise<{ pollId
   }
   const { pollId } = await context.params;
   try {
+    if (isChatGptPollId(pollId)) {
+      // The loopback callback route already wrote the credential; this only
+      // reports how the attempt ended.
+      const result = pollChatGptSignIn(pollId);
+      // An attempt settles complete only after the callback stored the credential.
+      if (result.status === "complete") return NextResponse.json({ ...payload(readProviderStore()), status: "complete" });
+      return NextResponse.json({
+        ok: true,
+        status: result.status,
+        intervalMs: 1000,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.retryClientId ? { retryClientId: result.retryClientId } : {}),
+      });
+    }
     const result = await pollDeviceFlow(pollId);
     if (result.status === "complete" && result.credential) {
       const { providerId, credential } = result;
@@ -111,7 +105,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ poll
   }
   const { pollId } = await context.params;
   try {
-    cancelDeviceFlow(pollId);
+    if (isChatGptPollId(pollId)) cancelChatGptSignIn(pollId);
+    else cancelDeviceFlow(pollId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ ok: false, error: errorCode(err) }, { status: 400 });

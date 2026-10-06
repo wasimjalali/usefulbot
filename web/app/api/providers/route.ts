@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isGateError, requireOwner } from "../../../lib/desktop-gate";
 import { apiError, errorCode, rateLimited, readJson } from "../../../lib/api-guard";
 import { keyRejectedFor, syncProviderModels } from "../../../lib/sync-models";
+import { cancelPendingChatGptSignIn, revokeChatGptCredential } from "../../../../shared/chatgpt-signin.ts";
 import { connectionId, parseConnectionId } from "../../../../shared/provider-catalog.ts";
 import { readShell } from "../../../../shared/shell-io.ts";
 import type { ShellBot } from "../../../../shared/shell-store.ts";
@@ -14,7 +15,7 @@ import {
   type ProviderStore,
 } from "../../../../shared/providers.ts";
 import {
-  applyProvidersDelete,
+  applyProvidersDeleteCapturing,
   CONNECTION_REMOVED_BOTS_PINNED,
   applyProvidersPut,
   isStringRecord,
@@ -129,9 +130,21 @@ export async function DELETE(request: Request) {
     return apiError(err) ?? NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   }
   try {
-    const store = applyProvidersDelete(body);
+    // Signing out of ChatGPT: first drop any sign-in still pending, so a
+    // callback mid-exchange is refused and cannot bring the connection back.
+    // Then delete, and only once the connection is gone end the renewable
+    // session (best effort, bounded). A failed delete revokes nothing. The
+    // saved account registrations stay for the next sign-in.
+    if (body.connectionId === "openai:oauth" || body.providerId === "openai") cancelPendingChatGptSignIn();
+    // The credential that was really removed, captured inside the delete's own
+    // store transaction, is the one revoked.
+    const { store, removedChatGpt: held } = applyProvidersDeleteCapturing(body);
+    let notice: "chatgpt_revoke_unconfirmed" | undefined;
+    if (held && held.kind === "oauth" && held.clientId && held.refreshToken) {
+      if (!(await revokeChatGptCredential(held))) notice = "chatgpt_revoke_unconfirmed";
+    }
     await syncProviderModels(store, { force: true });
-    return NextResponse.json(payload(store));
+    return NextResponse.json({ ...payload(store), ...(notice ? { notice } : {}) });
   } catch (err) {
     if (err instanceof Error && err.message === CONNECTION_REMOVED_BOTS_PINNED) {
       return NextResponse.json(

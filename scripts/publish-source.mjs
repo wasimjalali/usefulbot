@@ -27,6 +27,12 @@ const EXCLUDE = [
   /^evals\/.*\.(png|jpe?g|webp|gif|mp4|mov)$/i,
   // Its process list names another private project on the owner's Mac.
   /^evals\/results\/2026-09-26-perf-check-1156-7dfbcbc\/report\.json$/,
+  // UB-001 launch-video plan and council: private until the launch video
+  // ships (owner, 2026-10-06), then all four entries come off this list together.
+  /^docs\/plan\/UB-001-research\.md$/,
+  /^docs\/plan\/UB-001-FINAL-PLAN\.md$/,
+  /^evals\/results\/2026-10-05-ub001-council\//,
+  /^evals\/results\/2026-10-05-ub001-council\.md$/,
 ];
 
 const { values } = parseArgs({

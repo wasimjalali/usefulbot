@@ -464,7 +464,8 @@ test("the router follows the picked model's connection across three providers, t
     accessToken: "chatgpt-access",
     refreshToken: "chatgpt-refresh",
     expiresAt: Date.now() + 3_600_000,
-    accountId: "acct_123",
+    accountId: null,
+    clientId: "oaiapp_123",
   });
   store = setActiveConnection(store, "opencode-go:plan", env);
 
@@ -486,13 +487,13 @@ test("the router follows the picked model's connection across three providers, t
     assert.equal(resolved.fallback, false, pick);
     assert.equal(resolved.credential, store.connections[resolved.connection.id]!.credential, pick);
   }
-  // The ChatGPT turn carries the sign-in's token and account, at the Codex base URL.
+  // The ChatGPT turn carries the sign-in's token and issued client, at the public Responses base URL.
   store = pickComposerModel(store, "openai:oauth::gpt-6-astra", env);
   const chatgpt = resolveUpstream(store, "workhorse", env);
-  assert.equal(chatgpt.baseUrl, "https://chatgpt.com/backend-api/codex");
+  assert.equal(chatgpt.baseUrl, "https://api.openai.com/v1");
   assert.equal(chatgpt.keyHeader, "bearer");
   assert.equal(chatgpt.credential.kind, "oauth");
-  assert.equal(chatgpt.credential.kind === "oauth" ? chatgpt.credential.accountId : null, "acct_123");
+  assert.equal(chatgpt.credential.kind === "oauth" ? chatgpt.credential.clientId : null, "oaiapp_123");
   assert.equal(chatgpt.opencodeSession, false);
   // A bare model id keeps the connection.
   store = pickComposerModel(store, "gpt-5.6-luna", env);

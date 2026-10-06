@@ -1285,6 +1285,12 @@ private struct FailureRow: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                if copy.contains(TurnFailure.chatgptUsageHost) {
+                    NativeButton("Manage usage", kind: .secondary, small: true) {
+                        if let url = URL(string: TurnFailure.chatgptUsageURL) { NSWorkspace.shared.open(url) }
+                    }
+                    .accessibilityIdentifier("failure-manage-usage")
+                }
                 if retryable {
                     NativeButton(buttonTitle, kind: .secondary, small: true, enabled: canRetry, action: retry)
                         .accessibilityIdentifier("failure-retry")

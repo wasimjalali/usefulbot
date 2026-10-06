@@ -1,11 +1,12 @@
-// Probe the ChatGPT Codex inference endpoint with the stored sign-in.
+// Probe the Sign in with ChatGPT inference route (https://api.openai.com/v1/responses)
+// with the stored sign-in.
 //
 //   node --experimental-strip-types scripts/probe-chatgpt.mjs [--model gpt-5.5] [--variant name]
 //
 // Sends one tiny turn in several request shapes and prints the status and the
 // first bytes of each answer, so a change in what the backend accepts shows up
-// as a status, not as a bot that "did not answer". The access token and the
-// account id never reach stdout.
+// as a status, not as a bot that "did not answer". The access token never
+// reaches stdout.
 import { readProviderStore } from "../shared/providers.ts";
 import { accessTokenFor } from "../shared/provider-oauth.ts";
 import { providerMode } from "../shared/provider-catalog.ts";
@@ -23,11 +24,15 @@ if (!conn || conn.credential.kind !== "oauth") {
   console.error("no ChatGPT sign-in stored (openai:oauth)");
   process.exit(2);
 }
+if (!conn.credential.clientId) {
+  console.error("the stored ChatGPT sign-in is from the old Codex route (no client id); sign in again in Useful Bot");
+  process.exit(2);
+}
 const auth = accessTokenFor("openai", conn.credential);
-const secrets = [auth.token, conn.credential.accountId ?? ""].filter(Boolean);
+const secrets = [auth.token, conn.credential.refreshToken ?? "", conn.credential.idToken ?? ""].filter(Boolean);
 const redact = (text) => secrets.reduce((acc, s) => acc.split(s).join("<redacted>"), text);
 
-console.log(`token expired: ${auth.expired}; expiresAt: ${conn.credential.expiresAt ? new Date(conn.credential.expiresAt).toISOString() : "null"}; accountId present: ${Boolean(conn.credential.accountId)}`);
+console.log(`token expired: ${auth.expired}; expiresAt: ${conn.credential.expiresAt ? new Date(conn.credential.expiresAt).toISOString() : "null"}; client id present: ${Boolean(conn.credential.clientId)}`);
 
 const mode = providerMode("openai", "oauth");
 const picked = store.activeConnectionId === "openai:oauth" ? store.selectedModel : null;
@@ -46,12 +51,12 @@ const chatBody = {
   ],
 };
 
-// What the router sends since the fix.
+// What the router sends.
 const router = buildResponsesBody(chatBody, { model, chatgpt: true });
 const variants = {
-  // The shape the router sends now (post-fix).
+  // The shape the router sends now.
   router,
-  // The shape the router sent before the fix: no instructions, max_output_tokens set.
+  // An old shape: no instructions, max_output_tokens set.
   "old-router": (() => { const b = { ...router, max_output_tokens: 4096 }; delete b.instructions; return b; })(),
   // One change each, to pin down which field the backend refuses.
   "no-instructions": (() => { const b = { ...router }; delete b.instructions; return b; })(),
@@ -67,7 +72,6 @@ for (const [name, body] of Object.entries(variants)) {
     "content-type": "application/json",
     "user-agent": "useful-bot/1.0",
     authorization: `Bearer ${auth.token}`,
-    ...auth.headers,
   };
   const started = Date.now();
   let status = "n/a";

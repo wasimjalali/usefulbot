@@ -1,0 +1,21 @@
+{"ev":"app_init","pid":94836,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139979248327666}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"initial_selection","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139979729789958}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"ready","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139979823486416}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"publish_done","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139979851457166}
+{"blocks":7,"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"landed","events":71,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","source":"disk_snapshot","t":139979906934333}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"responsive","landedAt":139979906934333,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","stallMaxMs":1.270292,"t":139980927482708}
+{"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"step","index":1,"label":"cold_no_snapshot_replies","name":"Perf Long Replies","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139982428671041}
+{"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"select_start","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139982429099875}
+{"baselineRows":0,"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"replay_first_event","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139982556582500}
+{"ev":"prewarm_start","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139982894075625}
+{"ev":"prewarm_end","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139982901272166}
+{"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"replay_done","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139983547624916}
+{"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"publish_done","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139983547841250}
+{"blocks":27,"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"landed","events":9172,"fromCache":false,"fromSnapshot":false,"reason":"settled","rows":26,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","source":"none","t":139983709411208}
+{"bot":"138d4df8-b55a-4225-b7f7-bd539e7ecca4","ev":"responsive","landedAt":139983709411208,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","stallMaxMs":2.6117499999999998,"t":139984742845375}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139986324774458}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"select_start","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139986325329583}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"publish_done","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139986486130541}
+{"blocks":7,"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"landed","events":71,"fromCache":true,"fromSnapshot":true,"reason":"settled","rows":6,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","source":"stash_snapshot","t":139986548795500}
+{"bot":"26e518cf-2917-4ffe-b93d-a19878c137f4","ev":"responsive","landedAt":139986548795500,"run":"cold-cold_no_snapshot_replies-5-d09b76a0","stallMaxMs":1.605583,"t":139987576630833}
+{"ev":"quit","run":"cold-cold_no_snapshot_replies-5-d09b76a0","t":139990624588750}

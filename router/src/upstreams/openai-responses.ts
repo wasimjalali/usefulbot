@@ -3,7 +3,8 @@ import { dumpUpstreamBody } from "../payload-probe.ts";
 import { resetOf, usedLimitCode, usedLimitMessage, zaiResetOf } from "../retry-after.ts";
 
 /**
- * openai-responses protocol (ChatGPT Codex backend): translate the router's
+ * openai-responses protocol (the public Responses API, also the Sign in with
+ * ChatGPT route at https://api.openai.com/v1): translate the router's
  * chat-completions request into a Responses request at {baseUrl}/responses,
  * then translate the answer back to chat-completions shape so the rest of
  * the router (usage parsing, idle timers, [DONE] checks) keeps working.
@@ -32,8 +33,15 @@ function toResponsesContent(parts: unknown[]): Array<Record<string, unknown>> {
   });
 }
 
+/**
+ * The namespace every function tool goes into on the ChatGPT route (docs,
+ * token-sharing-open-source/preview-limitations: "Group function/custom tools
+ * in namespaces"). A replayed function_call names the same namespace.
+ */
+export const CHATGPT_TOOL_NAMESPACE = "useful_bot";
+
 /** Chat messages (incl. system, tools, tool results) to Responses input. */
-export function toResponsesInput(messages: unknown): Array<Record<string, unknown>> {
+export function toResponsesInput(messages: unknown, namespace?: string): Array<Record<string, unknown>> {
   if (!Array.isArray(messages)) {
     throw new RouterError({ status: 502, type: "upstream_error", code: "upstream_protocol_error", message: "upstream_protocol_error" });
   }
@@ -59,6 +67,7 @@ export function toResponsesInput(messages: unknown): Array<Record<string, unknow
         out.push({
           type: "function_call",
           call_id: call.id,
+          ...(namespace ? { namespace } : {}),
           name: call.function.name,
           arguments: typeof call.function.arguments === "string" ? call.function.arguments : "{}",
         });
@@ -99,9 +108,8 @@ function toResponsesToolChoice(choice: unknown): unknown {
 }
 
 /**
- * The Codex CLI always sends `instructions`, so a turn with no system message
- * still carries one. The backend accepted a request without it on 2026-09-19;
- * what it refuses is `max_output_tokens` and `stream: false`.
+ * The ChatGPT route takes the system prompt as `instructions`, so a turn with
+ * no system message still carries one.
  */
 export const DEFAULT_INSTRUCTIONS = "You are a helpful assistant.";
 
@@ -118,11 +126,10 @@ function textOnly(content: unknown): string | null {
 }
 
 /**
- * The ChatGPT Codex backend takes the system prompt as `instructions`, the way
- * the Codex CLI sends it, not as a system row in `input`. The leading run of
+ * The ChatGPT route takes the system prompt as `instructions`, not as a system
+ * row in `input` (explicit system items are rejected). The leading run of
  * system messages becomes `instructions`; a system message later in the
- * history keeps its place as a `developer` row, which is the role the Codex
- * CLI uses for mid-conversation guidance on this backend.
+ * history keeps its place as a `developer` row.
  */
 export function splitChatGptInstructions(messages: unknown): { instructions: string; messages: unknown[] } {
   if (!Array.isArray(messages)) {
@@ -149,12 +156,11 @@ export function splitChatGptInstructions(messages: unknown): { instructions: str
 /**
  * The router's chat body (post applyReasoning) to a Responses request.
  *
- * `chatgpt` is the Codex backend behind a ChatGPT sign-in. It is stricter
- * than the Responses API on api.openai.com: `store` must be false, the call
- * must stream, `instructions` must be present and non-empty, and
- * `max_output_tokens` is refused (the Codex CLI never sends it). Every
- * ChatGPT turn used to fail on the last two before a model ran, and the
- * router reported the 400 as a bare upstream_protocol_error.
+ * `chatgpt` is the Sign in with ChatGPT route on api.openai.com. It is
+ * stricter than a plain API-key call (docs: token-sharing-open-source/
+ * preview-limitations): `store` must be false, the call must stream,
+ * `instructions` must be present and non-empty, `max_output_tokens` and
+ * `service_tier` are refused, and function tools go in one namespace.
  */
 export function buildResponsesBody(
   chatBody: Record<string, unknown>,
@@ -169,15 +175,25 @@ export function buildResponsesBody(
     out.include = ["reasoning.encrypted_content"];
     const split = splitChatGptInstructions(chatBody.messages);
     out.instructions = split.instructions;
-    out.input = toResponsesInput(split.messages);
+    out.input = toResponsesInput(split.messages, CHATGPT_TOOL_NAMESPACE);
   } else {
     out.input = toResponsesInput(chatBody.messages);
   }
-  if (chatBody.tools !== undefined) out.tools = toResponsesTools(chatBody.tools);
-  if (chatBody.tool_choice !== undefined) out.tool_choice = toResponsesToolChoice(chatBody.tool_choice);
+  if (chatBody.tools !== undefined) {
+    const tools = toResponsesTools(chatBody.tools);
+    // The ChatGPT route takes no empty namespace: with no tools, none is set.
+    if (!opts.chatgpt) out.tools = tools;
+    else if (tools.length > 0) {
+      out.tools = [{ type: "namespace", name: CHATGPT_TOOL_NAMESPACE, description: "Useful Bot tools.", tools }];
+    }
+  }
+  // The ChatGPT route takes no tool_choice without tools.
+  if (chatBody.tool_choice !== undefined && (!opts.chatgpt || out.tools !== undefined)) {
+    out.tool_choice = toResponsesToolChoice(chatBody.tool_choice);
+  }
   if (!opts.chatgpt && typeof chatBody.max_tokens === "number") out.max_output_tokens = chatBody.max_tokens;
   if (typeof chatBody.reasoning_effort === "string") out.reasoning = { effort: chatBody.reasoning_effort };
-  if (typeof chatBody.service_tier === "string") out.service_tier = chatBody.service_tier;
+  if (!opts.chatgpt && typeof chatBody.service_tier === "string") out.service_tier = chatBody.service_tier;
   // Routes this chat's requests to the same cache. Set by the router per
   // caller, session, connection and model; never derived from a secret.
   if (typeof chatBody.prompt_cache_key === "string") out.prompt_cache_key = chatBody.prompt_cache_key;
@@ -376,6 +392,10 @@ function applyResponsesEvent(state: ResponsesStreamState, event: Record<string, 
     if (used) {
       error.code = used;
       error.message = usedLimitMessage(used, (inner ? resetOf(inner) : undefined) ?? zaiResetOf(code, said));
+    } else if (code === "subscription_sharing_usage_unavailable" || code === "subscription_sharing_user_unavailable") {
+      // Temporary on the plan-sharing side: the retryable code, same as one refused up front.
+      error.code = "upstream_unavailable";
+      error.message = "upstream_unavailable";
     }
     state.enqueue(`data: ${JSON.stringify({ error })}\n\n`);
     return "error";
@@ -575,7 +595,7 @@ export async function postResponses(input: {
   if (!res.ok) return res;
   if (outgoing.stream === true) {
     const translated = await translateResponsesStream(res, input.model);
-    // The caller did not stream; the ChatGPT backend made this call stream anyway.
+    // The caller did not stream; the ChatGPT route made this call stream anyway.
     return input.body.stream === true ? translated : collectChatCompletion(translated, input.model);
   }
   let raw: unknown;
