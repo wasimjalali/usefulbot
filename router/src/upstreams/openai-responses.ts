@@ -94,7 +94,11 @@ function toResponsesTools(tools: unknown): Array<Record<string, unknown>> {
     const out: Record<string, unknown> = { type: "function", name: tool.function.name };
     if (typeof tool.function.description === "string") out.description = tool.function.description;
     if (tool.function.parameters !== undefined) out.parameters = tool.function.parameters;
-    if (typeof tool.function.strict === "boolean") out.strict = tool.function.strict;
+    // A Chat Completions tool with no `strict` is non-strict, while the
+    // Responses API attempts strict mode when `strict` is left out, which
+    // makes every optional field required: the model then fills them with
+    // filler (`list_bots` got botId " " and "*"). Keep the chat meaning.
+    out.strict = typeof tool.function.strict === "boolean" ? tool.function.strict : false;
     return out;
   });
 }
@@ -276,7 +280,16 @@ interface ResponsesStreamState {
   toolCount: number;
   errored: boolean;
   enqueue: (line: string) => void;
+  onRefusal?: ModelRefusalHook;
 }
+
+/**
+ * Called for a plan-sharing refusal that can be about the model
+ * (subscription_sharing_unsupported_capability with `param` model or absent,
+ * subscription_sharing_user_not_eligible). A string answer replaces the
+ * error code the app sees; null leaves the usual mapping.
+ */
+export type ModelRefusalHook = (refusal: { code: string; param: string | null }) => string | null;
 
 function chunk(state: ResponsesStreamState, delta: Record<string, unknown>): void {
   if (!state.started) {
@@ -388,8 +401,14 @@ function applyResponsesEvent(state: ResponsesStreamState, event: Record<string, 
     // refused up front, so the app names it the same way.
     const code = typeof error.code === "string" ? error.code : "";
     const said = typeof inner?.message === "string" ? inner.message : "";
-    const used = usedLimitCode(typeof error.type === "string" ? error.type : "", code, said);
-    if (used) {
+    const replaced = state.onRefusal && (code === "subscription_sharing_unsupported_capability" || code === "subscription_sharing_user_not_eligible")
+      ? state.onRefusal({ code, param: typeof inner?.param === "string" ? inner.param : null })
+      : null;
+    const used = replaced ? null : usedLimitCode(typeof error.type === "string" ? error.type : "", code, said);
+    if (replaced) {
+      error.code = replaced;
+      error.message = replaced;
+    } else if (used) {
       error.code = used;
       error.message = usedLimitMessage(used, (inner ? resetOf(inner) : undefined) ?? zaiResetOf(code, said));
     } else if (code === "subscription_sharing_usage_unavailable" || code === "subscription_sharing_user_unavailable") {
@@ -404,7 +423,7 @@ function applyResponsesEvent(state: ResponsesStreamState, event: Record<string, 
 }
 
 /** Vendor SSE to chat.completion.chunk SSE, ending in [DONE] or an error. */
-export async function translateResponsesStream(upstream: Response, model: string): Promise<Response> {
+export async function translateResponsesStream(upstream: Response, model: string, onRefusal?: ModelRefusalHook): Promise<Response> {
   const created = Math.floor(Date.now() / 1000);
   if (!upstream.body) return new Response(DONE, { status: upstream.status, headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
   const reader = upstream.body.getReader();
@@ -420,6 +439,7 @@ export async function translateResponsesStream(upstream: Response, model: string
         tools: new Map(),
         toolCount: 0,
         errored: false,
+        onRefusal,
         enqueue: (line: string) => controller.enqueue(new TextEncoder().encode(line)),
       };
       let buffered = "";
@@ -581,6 +601,7 @@ export async function postResponses(input: {
   headers: Record<string, string>;
   signal: AbortSignal;
   fetchImpl?: typeof fetch;
+  onRefusal?: ModelRefusalHook;
 }): Promise<Response> {
   const outgoing = buildResponsesBody(input.body, { model: input.model, chatgpt: input.chatgpt });
   dumpUpstreamBody("openai-responses", input.model, outgoing);
@@ -594,7 +615,7 @@ export async function postResponses(input: {
   });
   if (!res.ok) return res;
   if (outgoing.stream === true) {
-    const translated = await translateResponsesStream(res, input.model);
+    const translated = await translateResponsesStream(res, input.model, input.onRefusal);
     // The caller did not stream; the ChatGPT route made this call stream anyway.
     return input.body.stream === true ? translated : collectChatCompletion(translated, input.model);
   }

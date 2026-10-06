@@ -5,11 +5,14 @@ import { applyReasoning, modelOption, modelSeesImages } from "../../../shared/mo
 import { rewrapThinkHistory, stripEarlierReasoning, usesInlineThink } from "../inline-think.ts";
 import { UpstreamRefusalError } from "../circuit.ts";
 import type { ModelSelection } from "../../../shared/session-selection.ts";
-import { catalogFor } from "../../../shared/live-models.ts";
+import { catalogFor, listedForAccount } from "../../../shared/live-models.ts";
+import { providerMode } from "../../../shared/provider-catalog.ts";
 import { UNKNOWN_WINDOW_TOKENS } from "../../../shared/policy.ts";
 import {
   readProviderStore,
   recordConnectionError,
+  recordUnavailableModelFor,
+  accountKey,
   isLegacyChatGptCredential,
   resolveUpstream,
   setOAuthCredential,
@@ -50,6 +53,17 @@ export function upstreamConfigError(error: unknown): RouterError {
       type: "invalid_request_error",
       code: "model_selection_unavailable",
       message: "model_selection_unavailable",
+    });
+  }
+  // The route was turned off by its vendor's terms (UB-015). The message is the
+  // sentence the owner reads, so it travels with the code. 4xx like the pick
+  // refusal above: nothing to retry, nothing for a circuit to count.
+  if (thrownCode === "provider_route_retired") {
+    return new RouterError({
+      status: 422,
+      type: "invalid_request_error",
+      code: "provider_route_retired",
+      message: `provider_route_retired: ${raw}`,
     });
   }
   const known = raw === "upstream_credential_missing"
@@ -376,6 +390,13 @@ export async function completeUpstream(input: {
   const model = resolved.model;
   const option = modelOption(resolved.connection.id, model, catalogFor(resolved.connection.id));
   const sees = modelSeesImages(option);
+  // Whether the vendor's own list names this model, read now: the cache can
+  // change before a refusal comes back (see dropUnlistedModel).
+  // Only a list fetched for the account that sends counts: the cache is per
+  // connection and can still hold another saved account's list after a switch.
+  // Without a match the model reads as unlisted, so a refusal drops it for the
+  // sending account (and only the merged GPT-6 ids are ever dropped).
+  let listedAtDispatch = listedForAccount(resolved.connection.id, model, accountKey(credential));
   // eve compacts at 75% of the model's window (agent/lib/model-window.ts reads
   // the same catalog), so the output cap keeps to the last tenth: a prompt at
   // the threshold plus a full answer still fits a small model's window.
@@ -442,6 +463,11 @@ export async function completeUpstream(input: {
         body: sendBody,
         headers,
         signal: input.signal,
+        onRefusal: resolved.providerId === "openai"
+          ? ({ code, param }) => (refusalAboutModel(code, param) && dropUnlistedModel(resolved.connection.id, model, credential, listedAtDispatch)
+            ? CHATGPT_MODEL_NOT_IN_PLAN
+            : null)
+          : undefined,
       });
     }
     if (resolved.protocol === "anthropic-messages") {
@@ -468,7 +494,14 @@ export async function completeUpstream(input: {
     try {
       await response.body?.cancel();
     } catch { /* the retry carries on regardless */ }
+    const before = credential;
     credential = await renewedCredential(resolved.connection.id, resolved.providerId, credential);
+    // The renewed credential can belong to another saved account (the owner
+    // switched meanwhile). The listed snapshot belongs to the account that
+    // sends, so it is taken again for that one; the same account keeps it.
+    if (accountKey(credential) !== accountKey(before)) {
+      listedAtDispatch = listedForAccount(resolved.connection.id, model, accountKey(credential));
+    }
     response = await dispatch();
   }
   // A server that rejects stream_options (400, or 422 from strict schema
@@ -506,7 +539,17 @@ export async function completeUpstream(input: {
     // Every 403 on this route is a policy refusal (account not eligible, region,
     // plan sharing off), never an expired sign-in: that is a 401. The body only
     // tells which kind it is.
-    const code = await chatGptErrorCode(response) === "subscription_sharing_user_not_eligible"
+    const refused = await chatGptError(response);
+    if (refused.code === "subscription_sharing_user_not_eligible" && dropUnlistedModel(resolved.connection.id, model, credential, listedAtDispatch)) {
+      throw new UpstreamRefusalError({
+        status: 403,
+        type: "permission_error",
+        code: CHATGPT_MODEL_NOT_IN_PLAN,
+        message: CHATGPT_MODEL_NOT_IN_PLAN,
+        retryable: false,
+      });
+    }
+    const code = refused.code === "subscription_sharing_user_not_eligible"
       ? "upstream_chatgpt_not_eligible"
       : "upstream_chatgpt_not_permitted";
     throw new UpstreamRefusalError({
@@ -516,6 +559,20 @@ export async function completeUpstream(input: {
       message: code,
       retryable: false,
     });
+  }
+  if (response.status === 400 && chatGptRoute) {
+    // The documented model refusal. Any other 400 (a tool or input type the
+    // plan route lacks, a bad request) keeps the generic path below.
+    const refused = await chatGptError(response.clone());
+    if (refused.code === "subscription_sharing_unsupported_capability" && refusalAboutModel(refused.code, refused.param) && dropUnlistedModel(resolved.connection.id, model, credential, listedAtDispatch)) {
+      throw new UpstreamRefusalError({
+        status: 400,
+        type: "invalid_request_error",
+        code: CHATGPT_MODEL_NOT_IN_PLAN,
+        message: CHATGPT_MODEL_NOT_IN_PLAN,
+        retryable: false,
+      });
+    }
   }
   if (response.status === 503 && chatGptRoute) {
     // Plan sharing could not check usage or the user: temporary, not the
@@ -565,18 +622,74 @@ export async function completeUpstream(input: {
 
 const REFUSAL_BODY_BYTES = 4096;
 
-/** `error.code` of a JSON error body, else a top-level `detail` string; null when neither is there. */
-async function chatGptErrorCode(response: Response): Promise<string | null> {
+/** `error.code` and `error.param` of a JSON error body; the code falls back to a top-level `detail` string. Null when absent. */
+async function chatGptError(response: Response): Promise<{ code: string | null; param: string | null }> {
   try {
     const parsed = JSON.parse(await readPrefix(response, REFUSAL_BODY_BYTES)) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed || typeof parsed !== "object") return { code: null, param: null };
     const body = parsed as { error?: unknown; detail?: unknown };
-    const inner = body.error && typeof body.error === "object" ? (body.error as { code?: unknown }).code : undefined;
-    if (typeof inner === "string") return inner;
-    return typeof body.detail === "string" ? body.detail : null;
+    const error = body.error && typeof body.error === "object" ? body.error as { code?: unknown; param?: unknown } : null;
+    const param = typeof error?.param === "string" ? error.param : null;
+    if (typeof error?.code === "string") return { code: error.code, param };
+    return { code: typeof body.detail === "string" ? body.detail : null, param };
   } catch {
-    return null;
+    return { code: null, param: null };
   }
+}
+
+async function chatGptErrorCode(response: Response): Promise<string | null> {
+  return (await chatGptError(response)).code;
+}
+
+/** The code the app maps to "Your ChatGPT plan can't use <model>" (EveStream.swift). */
+export const CHATGPT_MODEL_NOT_IN_PLAN = "upstream_chatgpt_model_not_in_plan";
+
+/**
+ * Whether a plan-sharing refusal is about the model itself: the documented
+ * unsupported capability (model, tool or input type) names the model or says
+ * nothing, and an ineligible account is refused on every model it tries
+ * (docs: token-sharing-open-source/errors-and-recovery).
+ */
+export function refusalAboutModel(code: string | null, param: string | null): boolean {
+  if (code === "subscription_sharing_user_not_eligible") return true;
+  return code === "subscription_sharing_unsupported_capability" && (param === null || param === "model");
+}
+
+/**
+ * UB-016. A ChatGPT plan can run a model the vendor list omits, and only a
+ * real turn says whether this account may. When this refused model is one the
+ * app merged in (not a row the vendor listed), drop it from the menu of the
+ * account that sent the request, and say so (true). A listed model, another
+ * connection or a credential with no account id is never touched. The drop is
+ * keyed by the held credential, so an account switch while the call ran still
+ * records it for the account that was refused and leaves the one now stored
+ * alone. Whether the vendor listed the model is the answer at dispatch
+ * (listedAtDispatch), not the cache at refusal time: another account's refresh
+ * can rewrite the cache while the call runs. It is skipped when no ChatGPT sign-in is stored any more, and when
+ * the held account signed out (signedOutAccounts) even if another account has
+ * signed in since.
+ * The store is written under its lock.
+ */
+function dropUnlistedModel(connectionId: string, model: string, held: Credential, listedAtDispatch: boolean): boolean {
+  if (connectionId !== "openai:oauth") return false;
+  if (!providerMode("openai", "oauth").unlistedModels?.some((extra) => extra.id === model)) return false;
+  if (listedAtDispatch) return false;
+  const account = accountKey(held);
+  if (!account) return false;
+  try {
+    updateProviderStore((store) => {
+      // An account that signed out (and has not signed in since) is not saved:
+      // its sign-out cleared this list, so a late refusal must not restore it.
+      if (store.signedOutAccounts?.includes(account)) return store;
+      const current = store.connections[connectionId]?.credential;
+      if (!current || current.kind !== "oauth") return store;
+      return recordUnavailableModelFor(store, account, model);
+    });
+  } catch (error) {
+    // The turn still fails with the plan message; the next one asks again.
+    console.error(`[useful-bot] chatgpt model drop was not stored: ${error instanceof Error && /^[\w.-]{1,60}$/.test(error.message) ? error.message : "store_write_failed"}`);
+  }
+  return true;
 }
 const REFUSAL_MESSAGE_CHARS = 200;
 

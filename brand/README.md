@@ -123,3 +123,17 @@ Open `brand/preview.html` to see the system: the mark, the logo, the app icon at
 `useful-bot-<size>.png` is square and named by raster pixels. `black` and `white` mean an opaque canvas of that colour; `mark` and `mark-inverse` are transparent. `-inverse` always means the black head. Editable sources live in `source/`; generated files live in their usage folders.
 
 Never recolor the logo head (avatar tints are for bots only), stretch it, rotate it, crop into the circle, change the glasses, eyes or smile, add a body, outline or shadow, or place busy imagery behind it. Keep the aspect ratio and the clear space.
+
+## Tagline and copy
+
+Locked by the owner on 2026-10-06. Use each line verbatim in its place; don't write a new tagline or paraphrase one.
+
+| Place | Copy |
+| --- | --- |
+| Social bios (X, LinkedIn, when the accounts exist), GitHub repo descriptions, README top line | Useful Bot is the free, open-source alternative to Grok Bot. Your own team of AI bots on your computer, on the AI plan you already pay for. |
+| Website title, og:title | Useful Bot: a team of AI bots on your computer |
+| Website meta description, og:description, JSON-LD | A free, open-source app that runs a team of AI bots on your computer, with the ChatGPT plan you already pay for, an API key or a local model. |
+| Website hero | Pill "Available on macOS"; headline "Meet [logo] Useful Bot"; line "Your own team of AI bots on your computer. Use the ChatGPT plan you already pay for, an API key or a local model." |
+| App welcome screen | Your own team of AI bots, on your computer. Use the AI plan you already pay for. |
+
+Grok Bot is named only in the bio line. It stays off the website and out of the app. Never claim "no limits": the user's provider plan has its own limits.

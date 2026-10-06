@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { parseConnectionId, providerMode, type KeyHeader } from "./provider-catalog.ts";
+import { parseConnectionId, providerMode, type KeyHeader, type UnlistedModel } from "./provider-catalog.ts";
 import { EFFORTS, isEffortId, mergeLiveModels, modelsFor, type EffortId, type ModelMeta, type ModelOption } from "./models.ts";
 import { statePath } from "./stack.ts";
 
@@ -19,7 +19,11 @@ const CACHE_SCHEMA = 3;
 
 type CacheFile = {
   schemaVersion: typeof CACHE_SCHEMA;
-  providers: Record<string, { fetchedAt: number; models: ModelOption[] }>;
+  /**
+   * `account` is the saved ChatGPT account (accountKey) the list was fetched
+   * for. The list is that account's own, so another account never reads it as fresh.
+   */
+  providers: Record<string, { fetchedAt: number; models: ModelOption[]; account?: string }>;
   /** models.dev facts per provider, keyed by the provider's model id. */
   meta?: { fetchedAt: number; providers: Record<string, Record<string, ModelMeta>> };
 };
@@ -76,6 +80,17 @@ export function writeModelsCache(cache: CacheFile, path = modelsCachePath()): vo
 
 export function cachedModels(providerId: string, path = modelsCachePath()): ModelOption[] {
   return readModelsCache(path).providers[providerId]?.models ?? [];
+}
+
+/**
+ * Whether the vendor's own list, fetched for exactly this account, names the
+ * model as a listed row. A cache from another account (or one with no account
+ * recorded) says nothing about this one, so it answers false.
+ */
+export function listedForAccount(connectionId: string, model: string, account: string | null, path = modelsCachePath()): boolean {
+  const entry = readModelsCache(path).providers[connectionId];
+  if (!entry || !account || entry.account !== account) return false;
+  return entry.models.some((row) => row.id === model && !row.unlisted);
 }
 
 /**
@@ -371,6 +386,34 @@ function metaKeyFor(providerId: string, override?: string | null): string | null
   }
 }
 
+/**
+ * The cached list with the models the vendor omits merged in, for a refresh
+ * that could not fetch (expired token, network, an empty answer). The merged
+ * list is stored under the OLD fetchedAt: the menu shows the models at once and
+ * the next refresh still sees the list as stale and refetches. No fetch, no
+ * token refresh. Null when there is no cached list to merge into (the static
+ * fallback is not the vendor's list and must not become one).
+ */
+export function mergeExtrasIntoCached(providerId: string, extras: UnlistedModel[], path = modelsCachePath()): ModelOption[] | null {
+  const current = readModelsCache(path).providers[providerId];
+  if (!current?.models?.length) return null;
+  const missing = extras.filter((extra) => !current.models.some((row) => row.id === extra.id));
+  if (missing.length === 0) return current.models;
+  const rows = mergeLiveModels(providerId, missing.map((extra) => extra.id), Object.fromEntries(missing.map((extra) => [extra.id, { label: extra.label }])));
+  const merged = [...current.models, ...rows.map((row) => ({ ...row, unlisted: true }))];
+  try {
+    // Re-read: only the entry this call saw is replaced, a newer one from an overlapping refresh wins.
+    const latest = readModelsCache(path);
+    if (latest.providers[providerId]?.fetchedAt === current.fetchedAt) {
+      latest.providers[providerId] = { ...current, models: merged };
+      writeModelsCache(latest, path);
+    }
+  } catch (err) {
+    console.error(`[models] unlisted rows for ${providerId} were not stored`, err);
+  }
+  return merged;
+}
+
 export async function refreshProviderModels(input: {
   providerId: string;
   baseUrl: string;
@@ -381,6 +424,10 @@ export async function refreshProviderModels(input: {
   /** The vendor's image model list, merged into the list (OpenRouter's images/models). */
   imagesPath?: string;
   modelsDevId?: string | null;
+  /** Models the vendor runs but its list omits; merged after the fetch, a listed row for the same id wins. */
+  extraModels?: UnlistedModel[];
+  /** The saved account the request is made as (accountKey); the list is stored as that account's. */
+  account?: string | null;
   force?: boolean;
   path?: string;
   fetchImpl?: typeof fetch;
@@ -388,11 +435,20 @@ export async function refreshProviderModels(input: {
   const path = input.path ?? modelsCachePath();
   const cache = readModelsCache(path);
   const current = cache.providers[input.providerId];
-  const fresh = current && Date.now() - current.fetchedAt < CACHE_TTL_MS && current.models.length > 0;
+  // A list cached before the unlisted models existed (1.1.2) lacks them: it
+  // is stale however young, so the first refresh after the update refetches.
+  // A list fetched for another account (or before accounts were recorded) is
+  // stale for this one however young: it refetches on the next sync.
+  const fresh = current && Date.now() - current.fetchedAt < CACHE_TTL_MS && current.models.length > 0
+    && (current.account ?? null) === (input.account ?? null)
+    && (input.extraModels ?? []).every((extra) => current.models.some((row) => row.id === extra.id));
   if (!input.force && fresh) return current.models;
+  // The list could not be fetched (expired token, network, an empty answer):
+  // the last good list stays, with the models the vendor omits merged in.
+  const keepLast = (): ModelOption[] => mergeExtrasIntoCached(input.providerId, input.extraModels ?? [], path) ?? modelsFor(input.providerId);
   try {
     const listed = await fetchProviderModels(input.baseUrl, input.key, input.fetchImpl, input.keyHeader, input.headers, input.query);
-    if (listed.ids.length === 0) return current?.models?.length ? current.models : modelsFor(input.providerId);
+    if (listed.ids.length === 0) return keepLast();
     if (input.imagesPath) {
       // The image list is a separate call. If it fails, the chat list still
       // lands and the image rows from the last good refresh stay with all
@@ -421,21 +477,27 @@ export async function refreshProviderModels(input: {
       for (const [id, meta] of Object.entries(images.meta)) listed.meta[id] = { ...listed.meta[id], ...meta };
     }
     const ids = [...new Set(listed.ids)];
+    const extras = (input.extraModels ?? []).filter((extra) => !ids.includes(extra.id));
+    ids.push(...extras.map((extra) => extra.id));
     const metaKey = metaKeyFor(input.providerId, input.modelsDevId);
     const catalogMeta = metaKey ? await modelMetaFor(metaKey, path, input.fetchImpl) : {};
     // The vendor's own facts win over models.dev, field by field.
     const meta: Record<string, ModelMeta> = {};
     for (const id of ids) meta[id] = { ...catalogMeta[id], ...listed.meta[id] };
+    for (const extra of extras) meta[extra.id] = { label: extra.label, ...meta[extra.id] };
     const models = mergeLiveModels(input.providerId, ids, meta);
+    for (const model of models) {
+      if (extras.some((extra) => extra.id === model.id)) model.unlisted = true;
+    }
     // The fetch awaited above can overlap a refresh for a different provider,
     // so the snapshot taken before the await is stale by write time. Re-read
     // the cache and set only this provider's entry, or the write would clobber
     // the models the overlapping refresh just stored.
     const latest = readModelsCache(path);
-    latest.providers[input.providerId] = { fetchedAt: Date.now(), models };
+    latest.providers[input.providerId] = { fetchedAt: Date.now(), models, ...(input.account ? { account: input.account } : {}) };
     writeModelsCache(latest, path);
     return models;
   } catch {
-    return current?.models?.length ? current.models : modelsFor(input.providerId);
+    return keepLast();
   }
 }

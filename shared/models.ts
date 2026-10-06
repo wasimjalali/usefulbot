@@ -23,6 +23,8 @@ export type ModelOption = {
   imageGen?: boolean;
   /** Aspect ratios the image endpoint takes for this model ("16:9", ...); absent when unknown. */
   aspectRatios?: string[];
+  /** Merged in by the app (provider-catalog unlistedModels), not listed by the vendor: the first refusal may drop it. */
+  unlisted?: boolean;
 };
 
 /** Catalog facts about one model that the live list cannot tell on its own. */

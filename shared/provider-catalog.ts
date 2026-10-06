@@ -4,17 +4,27 @@ export type AuthMode = "oauth" | "plan" | "api" | "local";
 export type Protocol = "openai-chat" | "openai-responses" | "anthropic-messages";
 export type KeyHeader = "bearer" | "x-api-key" | "api-key";
 
-export interface OAuthDeviceConfig {
-  kind: "device-code";
-  clientId: string;
-  deviceUrl: string;
-  tokenUrl: string;
-  scopes: string;
-  /** github-copilot: the OAuth token is exchanged for a short-lived Copilot token before use. */
-  exchangeUrl?: string;
-  /** Extra headers the vendor requires on every inference call (Copilot editor headers). */
-  headers?: Record<string, string>;
+export interface UnlistedModel {
+  id: string;
+  label: string;
 }
+
+/**
+ * GPT-6 models a ChatGPT plan runs through Sign in with ChatGPT although
+ * GET /v1/models doesn't list them (UB-016). OpenAI's docs call that list "a
+ * catalog, not an entitlement check; a successfully completed inference turn
+ * verifies access":
+ * https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
+ * Live turns on a Plus plan completed on all three, see
+ * evals/results/2026-10-06-chatgpt-model-catalog.md. A listed row for the same
+ * id wins. The first refusal for an account drops the model from that
+ * account's menu (router/src/upstreams/opencode.ts).
+ */
+export const CHATGPT_UNLISTED_MODELS: UnlistedModel[] = [
+  { id: "gpt-6.1-sol", label: "GPT-6.1-Sol" },
+  { id: "gpt-6-sol", label: "GPT-6-Sol" },
+  { id: "gpt-6-luna", label: "GPT-6-Luna" },
+];
 
 export interface ProviderMode {
   mode: AuthMode;
@@ -33,9 +43,14 @@ export interface ProviderMode {
   hint: string;
   /** Extra text fields the connect sheet must collect (Cloudflare account id, custom base URL). */
   fields?: Array<{ id: string; label: string; placeholder: string; secret?: boolean }>;
-  oauth?: OAuthDeviceConfig;
   /** openai: Sign in with ChatGPT (browser authorization code flow) instead of a device flow. */
   signIn?: "chatgpt";
+  /**
+   * Models the plan runs that the vendor's /models list leaves out. They are
+   * merged into the live list and checked on first use (shared/live-models.ts,
+   * router/src/upstreams/opencode.ts).
+   */
+  unlistedModels?: UnlistedModel[];
   /** Default model per alias when nothing is selected yet. */
   defaults: { workhorse: string; reviewer: string };
   /**
@@ -49,10 +64,18 @@ export interface ProviderMode {
   images?: { models: string[]; path?: string; listPath?: string };
   /** models.dev provider key used for context window / modality facts (shared/live-models.ts). null when models.dev has no entry. */
   modelsDevId: string | null;
-  /** Extra static headers on inference calls (OpenRouter attribution, Copilot editor headers). */
+  /** Extra static headers on inference calls (OpenRouter attribution). */
   headers?: Record<string, string>;
   /** opencode-go only: send x-opencode-session. */
   opencodeSession?: boolean;
+  /**
+   * The vendor doesn't allow Useful Bot on this route (UB-015). The mode stays
+   * in the catalogue so a connection stored before the retirement is still
+   * recognised, shown with this message and removable, but it is never offered
+   * for connecting, never listed in a picker and never called. `message` is
+   * what the owner reads in Providers and in a refused turn.
+   */
+  retired?: { message: string };
 }
 
 export interface ProviderDef {
@@ -93,6 +116,7 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         // and .../models-and-inference. The flow lives in
         // shared/chatgpt-signin.ts; inference is the public Responses API.
         signIn: "chatgpt",
+        unlistedModels: CHATGPT_UNLISTED_MODELS,
         // Checked against the live ChatGPT model list on 2026-09-19 (GPT-5.6
         // Sol, Terra and Luna, GPT-6 Astra, GPT-5.5). Only the fallback until
         // the live list lands; the live list overrides these.
@@ -133,35 +157,14 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         keyHeader: "bearer",
         listsModels: true,
         keyUrl: null,
-        hint: "GitHub Copilot subscription through GitHub sign in.",
-        // Verified against the opencode primary source (anomalyco/opencode,
-        // packages/opencode/src/plugin/github-copilot/copilot.ts, fetched Sep 2026):
-        // device flow POST https://github.com/login/device/code with
-        // {client_id, scope}, poll POST https://github.com/login/oauth/access_token
-        // with the device_code grant, client id Ov23li8tweQw6odWQebz, scope
-        // read:user. The resulting GitHub token is sent directly as the Bearer
-        // token to https://api.githubcopilot.com (models via GET /models), with
-        // headers Openai-Intent, x-initiator, X-GitHub-Api-Version and
-        // X-Interaction-Id. No token exchange call exists in that source.
-        oauth: {
-          kind: "device-code",
-          clientId: "Ov23li8tweQw6odWQebz",
-          deviceUrl: "https://github.com/login/device/code",
-          tokenUrl: "https://github.com/login/oauth/access_token",
-          scopes: "read:user",
-          // UNVERIFIED: the copilot_internal exchange is reported dead (404) for
-          // individual users and the source above skips it, so slice 3 must send
-          // the GitHub token directly unless the exchange proves to work.
-          exchangeUrl: "https://api.github.com/copilot_internal/v2/token",
+        hint: "",
+        // Removed 2026-10-06: the copilot_internal sign-in is undocumented, and
+        // GitHub's only formal third-party route is the Copilot SDK.
+        retired: {
+          message: "GitHub doesn't support this Copilot sign-in in Useful Bot, so it's been turned off. Pick another provider.",
         },
-        // Both ids appear in that same source (UTILITY_MODELS list).
-        // UNVERIFIED: not checked against the models.dev github-copilot entry here.
         defaults: { workhorse: "gpt-5.4-mini", reviewer: "gpt-5.4" },
         modelsDevId: "github-copilot",
-        headers: {
-          "X-GitHub-Api-Version": "2026-06-01",
-          "Openai-Intent": "conversation-edits",
-        },
       },
     ],
     reasoning: { param: "none", levels: [] },
@@ -205,6 +208,9 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         listsModels: true,
         keyUrl: "https://z.ai/manage-apikey/apikey-list",
         hint: "GLM Coding Plan key from the Z.ai console.",
+        retired: {
+          message: "Z.ai only allows the GLM Coding Plan in its supported coding tools, so Useful Bot can't use it. Connect a Z.ai API key instead, then disconnect this one.",
+        },
         // UNVERIFIED: exact plan model ids are not confirmed against the
         // models.dev zai-coding-plan entry here. The live list overrides these.
         defaults: { workhorse: "glm-5.3-flash", reviewer: "glm-5.3" },
@@ -287,6 +293,9 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         listsModels: true,
         keyUrl: "https://modelstudio.console.alibabacloud.com/?tab=model#/api-key",
         hint: "Coding Plan key from Alibaba ModelStudio.",
+        retired: {
+          message: "Alibaba only allows the Qwen Coding Plan in interactive coding tools, so Useful Bot can't use it. Connect a Qwen (DashScope) API key instead, then disconnect this one.",
+        },
         // UNVERIFIED: exact plan model ids are not confirmed against the
         // models.dev alibaba-coding-plan entry here.
         defaults: { workhorse: "qwen3.6-flash", reviewer: "qwen3.7-max" },
@@ -403,15 +412,15 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         mode: "plan",
         label: "Command Code",
         kindLabel: "Subscription",
-        // UNVERIFIED: the digests report https://api.commandcode.ai/provider/v1
-        // (chat at /provider/v1/chat/completions). Shipped per the contract row.
-        // Fix the base if the live list or a 404 says otherwise.
-        baseUrl: "https://api.commandcode.ai/v1",
+        // Documented at https://commandcode.ai/docs/provider: chat at
+        // /provider/v1/chat/completions and the live list at /provider/v1/models,
+        // Bearer key. "Every plan except the Go plan has API access."
+        baseUrl: "https://api.commandcode.ai/provider/v1",
         protocol: "openai-chat",
         keyHeader: "bearer",
         listsModels: true,
         keyUrl: "https://commandcode.ai/settings/keys",
-        hint: "Provider key from Command Code Studio.",
+        hint: "Command Code key (every plan except Go).",
         // UNVERIFIED: no models.dev entry exists, and plan model ids are unknown.
         defaults: { workhorse: "deepseek-v3", reviewer: "deepseek-r1" },
         modelsDevId: null,
@@ -740,6 +749,14 @@ export function providerMode(id: string, mode: AuthMode): ProviderMode {
   const row = def.modes.find((entry) => entry.mode === mode);
   if (!row) throw new Error("provider_mode_unknown");
   return row;
+}
+
+/** The owner-facing message of a retired route, or null when the connection id names a live (or unknown) route. */
+export function retiredRouteMessage(id: string): string | null {
+  const sep = id.lastIndexOf(":");
+  if (sep <= 0) return null;
+  const def = PROVIDER_CATALOG.find((entry) => entry.id === id.slice(0, sep));
+  return def?.modes.find((entry) => entry.mode === id.slice(sep + 1))?.retired?.message ?? null;
 }
 
 export function connectionId(providerId: string, mode: AuthMode): string {

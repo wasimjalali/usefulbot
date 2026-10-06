@@ -194,7 +194,7 @@ final class FirstRunController: ObservableObject {
 /// rows themselves, their names, logos and modes come from the server's
 /// catalogue; this only picks the order.
 enum FirstRunCatalog {
-    static let featuredSubscriptions = ["openai:oauth", "github-copilot:oauth", "opencode-go:plan"]
+    static let featuredSubscriptions = ["openai:oauth", "minimax:plan", "opencode-go:plan"]
     static let featuredKeys = ["anthropic:api", "openai:api", "openrouter:api"]
 
     struct Lists {
@@ -479,7 +479,7 @@ private struct WelcomePage: View {
                     .font(.system(size: 30, weight: .semibold))
                     .tracking(DesignTokens.Tracking.heading * 30)
                     .foregroundStyle(Theme.C.ink)
-                Text("A team of AI helpers that works on your Mac. Your chats and keys are stored here.")
+                Text("Your own team of AI bots, on your computer. Use the AI plan you already pay for.")
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.C.inkMuted)
                     .multilineTextAlignment(.center)
@@ -937,7 +937,7 @@ private struct SignInPage: View {
     }
 
     private var link: String? {
-        if previewing { return entry.providerId == "github-copilot" ? "https://github.com/login/device" : "https://auth.openai.com/api/accounts/authorize" }
+        if previewing { return "https://auth.openai.com/api/accounts/authorize" }
         if let pending { return pending.verificationUrlComplete ?? pending.verificationUrl }
         return signedIn ? lastLink : nil
     }

@@ -10,6 +10,7 @@ import { botComposer } from "../../../../shared/session-selection.ts";
 import {
   composerState,
   legacyProviders,
+  ProviderRouteRetiredError,
   publicProviders,
   readProviderStore,
   type ProviderStore,
@@ -108,6 +109,9 @@ export async function PUT(request: Request) {
     await syncProviderModels(store, { force: true, alsoAwait: written });
     return NextResponse.json(payload(store, answeredFor));
   } catch (err) {
+    if (err instanceof ProviderRouteRetiredError) {
+      return NextResponse.json({ ok: false, error: err.code, message: err.message }, { status: 409 });
+    }
     const code = errorCode(err);
     return NextResponse.json({ ok: false, error: code }, { status: code === "shell_bot_missing" ? 404 : 400 });
   }

@@ -1,6 +1,6 @@
 # Useful Bot
 
-A team of AI bots that lives on your Mac.
+Useful Bot is the free, open-source alternative to Grok Bot. Your own team of AI bots on your computer, on the AI plan you already pay for.
 
 Give each bot one job: writing, research, your inbox or your files. They run on the model you already
 pay for, work in the apps you connect and ask before they touch anything you haven't allowed.
@@ -16,7 +16,7 @@ runs. Each keeps its own chat, instructions and memory, and can hand work to ano
 
 ![The new chat picker: New Bot, Create group chat and a list of bots with their jobs.](site/public/shots/bots.png)
 
-**Bring the model you already pay for.** Sign in with ChatGPT or GitHub Copilot, add a coding plan or
+**Bring the model you already pay for.** Sign in with ChatGPT, add a coding plan or
 an API key, or point it at a model running on your own Mac. Pick the model per chat.
 
 ![Model settings with connected providers.](site/public/shots/models.png)
@@ -36,7 +36,7 @@ cleanup, and it runs on schedule. Try it first with Test run. Web search is buil
 | | |
 |---|---|
 | Works on | macOS 14 or later, Apple silicon |
-| Models | ChatGPT, GitHub Copilot, Claude, Gemini, OpenRouter and more, or a local model |
+| Models | ChatGPT, Claude, Gemini, OpenRouter and more, or a local model |
 | Stays on your Mac | Your chats, bots, memory and the files they make |
 | Leaves your Mac | What you ask goes to the model provider you connect, and to the apps a bot uses for you |
 | Tracking | None. No analytics, no crash reports, no ads |
@@ -90,7 +90,7 @@ open "macos/dist/Useful Bot.app"
 
 The web service is the API the app calls, on `http://127.0.0.1:4320` (no browser UI; `/` returns a status). Chat needs eve as well (`service.mjs eve`) after the Go key is in Keychain. Sleeping the Mac is downtime.
 
-Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in through the browser or a device code, or take a coding-plan key. ChatGPT uses OpenAI's official [Sign in with ChatGPT for open-source apps](https://developers.openai.com/siwc/token-sharing-open-source): Continue with ChatGPT opens the browser, the sign-in returns to the web service at `http://127.0.0.1:<web port>/auth/callback`, and turns run on the public Responses API with the user's plan (manage usage at chatgpt.com/settings/usage). The issued client id and this Mac's host id live in `chatgpt-signin.json` next to the providers store; a sign-in made by an older version through the Codex route shows Expired and needs one fresh sign-in. GitHub Copilot signs in with a device code. Coding-plan rows take a key (OpenCode Go, GLM Coding Plan, Kimi Code, Qwen Coding Plan, MiniMax and MiMo token plans, Command Code). API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model and the reviewer model with their reasoning level.
+Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in through the browser, or take a coding-plan key. ChatGPT uses OpenAI's official [Sign in with ChatGPT for open-source apps](https://developers.openai.com/siwc/token-sharing-open-source): Continue with ChatGPT opens the browser, the sign-in returns to the web service at `http://127.0.0.1:<web port>/auth/callback`, and turns run on the public Responses API with the user's plan (manage usage at chatgpt.com/settings/usage). The issued client id and this Mac's host id live in `chatgpt-signin.json` next to the providers store; a sign-in made by an older version through the Codex route shows Expired and needs one fresh sign-in. Coding-plan rows take a key (OpenCode Go, Kimi Code, MiniMax and MiMo token plans, Command Code on any plan except Go). GitHub Copilot, the GLM Coding Plan and the Qwen Coding Plan are not offered because their vendors don't allow them in third-party apps; a connection made before that is shown as turned off, refuses turns with the reason and can be removed (`retired` in the catalogue). Z.ai and Qwen work with an API key. API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model and the reviewer model with their reasoning level.
 
 ## Chat layout
 

@@ -281,6 +281,8 @@ import Testing
             == "Couldn't reach ChatGPT just now. Send again in a moment.")
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_not_permitted").reason
             == "ChatGPT didn't allow this request from Useful Bot. Check Useful Bot in ChatGPT settings, or pick another model.")
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_model_not_in_plan").reason
+            == "Your ChatGPT plan can't use this model in Useful Bot. Pick another model.")
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_chatgpt_not_eligible").reason
             == "This ChatGPT account can't use its plan in Useful Bot. Pick another model.")
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "upstream_usage_not_included").reason

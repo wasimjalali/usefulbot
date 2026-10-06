@@ -126,6 +126,37 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
         }
     }
 
+    @Test func aSendOnATurnedOffRouteSurfacesThatRoutesOwnSentence() async throws {
+        let sentence = "Alibaba only allows the Qwen Coding Plan in interactive coding tools, so Useful Bot can't use it. Connect a Qwen (DashScope) API key instead, then disconnect this one."
+        SwitchStub.handler = { [self] request, _ in
+            if request.url?.path == "/api/auth/session" {
+                return respond(200, #"{"ok":true,"csrfToken":"t"}"#, to: request.url!)
+            }
+            return respond(409, #"{"ok":false,"error":"provider_route_retired","message":"\#(sentence)"}"#, to: request.url!)
+        }
+        let client = try makeClient()
+        do {
+            _ = try await client.send(botId: "b", sessionId: nil, message: "hi")
+            Issue.record("expected a refusal")
+        } catch let error as BackendError {
+            #expect(error == .providerNotice(code: "provider_route_retired", message: sentence))
+            #expect(error.errorDescription == sentence)
+        }
+    }
+
+    @Test func aTurnTheRouterRefusedOnATurnedOffRouteReadsItsSentence() {
+        let sentence = "GitHub doesn't support this Copilot sign-in in Useful Bot, so it's been turned off. Pick another provider."
+        #expect(TurnFailure(code: "provider_route_retired", detail: "provider_route_retired: \(sentence)").message == sentence)
+        // Wrapped in eve's own message and a JSON tail.
+        let wrapped = #"Failed after 1 attempt. Last error: {"error":{"code":"provider_route_retired","message":"provider_route_retired: \#(sentence)"}}"#
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: wrapped).message == sentence)
+        // An escaped apostrophe cuts the text at the backslash: a half sentence is never shown.
+        let escaped = #"{"error":{"code":"provider_route_retired","message":"provider_route_retired: GitHub doesn\u0027t support this Copilot sign-in."}}"#
+        #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: escaped).message == "Useful Bot can't use this provider connection any more. Pick another model.")
+        // No sentence in the text: still an honest plain line, never a generic failure.
+        #expect(TurnFailure(code: "provider_route_retired", detail: "").message == "Useful Bot can't use this provider connection any more. Pick another model.")
+    }
+
     // MARK: the stale-answer guard
 
     @Test func aSaveForBotAThatLandsAfterTheMoveToBotBLeavesBsChipAlone() throws {

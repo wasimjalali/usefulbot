@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Useful Bot | A team of AI bots on your Mac</title>
-    <meta name="description" content="A native Mac app for a team of AI bots. Give each one a job, use the model you already pay for and connect the apps you work in. Chats are stored on your Mac." />
+    <title>Useful Bot: a team of AI bots on your computer</title>
+    <meta name="description" content="A free, open-source app that runs a team of AI bots on your computer, with the ChatGPT plan you already pay for, an API key or a local model." />
     <meta name="theme-color" content="#f8f8f8" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -14,15 +14,15 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Useful Bot" />
     <meta property="og:locale" content="en_GB" />
-    <meta property="og:title" content="Useful Bot | A team of AI bots on your Mac" />
-    <meta property="og:description" content="A native Mac app for a team of AI bots. Give each one a job, use the model you already pay for and connect the apps you work in." />
+    <meta property="og:title" content="Useful Bot: a team of AI bots on your computer" />
+    <meta property="og:description" content="A free, open-source app that runs a team of AI bots on your computer, with the ChatGPT plan you already pay for, an API key or a local model." />
     <meta property="og:url" content="https://bot.usefulbuild.com/" />
     <meta property="og:image" content="https://bot.usefulbuild.com/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Useful Bot: the white bot head with glasses on black." />
     <meta name="twitter:card" content="summary_large_image" />
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://bot.usefulbuild.com/#app","name":"Useful Bot","url":"https://bot.usefulbuild.com/","applicationCategory":"ProductivityApplication","operatingSystem":"macOS 14 or later, Apple Silicon","description":"A native Mac app for a team of AI bots that use the model provider you connect.","downloadUrl":"https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg","publisher":{"@type":"Organization","@id":"https://usefulbuild.com/#organization","name":"Useful Build","url":"https://usefulbuild.com/"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://bot.usefulbuild.com/#app","name":"Useful Bot","url":"https://bot.usefulbuild.com/","applicationCategory":"ProductivityApplication","operatingSystem":"macOS 14 or later, Apple Silicon","description":"A free, open-source app that runs a team of AI bots on your computer, with the ChatGPT plan you already pay for, an API key or a local model.","downloadUrl":"https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg","publisher":{"@type":"Organization","@id":"https://usefulbuild.com/#organization","name":"Useful Build","url":"https://usefulbuild.com/"}}</script>
     <script>document.documentElement.classList.add("has-js");</script>
     <style>
 @font-face { font-family: "Geist"; src: url("/fonts/geist-variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
@@ -98,10 +98,13 @@ header.nav[data-scrolled="true"] { border-color: var(--rule); }
   background-size: 96px 96px; background-position: center -1px;
   -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 30%, transparent 62%); mask-image: linear-gradient(to bottom, #000 0, #000 30%, transparent 62%); }
 .hero-inner { position: relative; width: min(100%, 1248px); margin-inline: auto; padding: 80px 24px 0; }
-h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight: 500; line-height: 0.98; letter-spacing: -0.045em; text-wrap: balance; }
-.hero-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: start; margin-top: 34px; }
+.hero-inner { text-align: center; }
+.pill { display: inline-block; margin: 0 0 22px; padding: 6px 14px; border: 1px solid #333; border-radius: 999px; color: var(--night-muted); font-size: 13.5px; line-height: 1.3; }
+h1 { margin: 0 auto; font-size: clamp(38px, 6.4vw, 92px); font-weight: 500; line-height: 1.04; letter-spacing: -0.045em; text-wrap: balance; }
+.h1-tile { display: inline-block; width: 0.86em; height: 0.86em; margin: 0 0.06em; border-radius: 0.2em; vertical-align: -0.1em; }
+.hero-row { display: block; margin-top: 30px; }
 .hero-row > * { min-width: 0; }
-.lede { max-width: 46ch; margin: 0; color: #bdbdbd; font-size: 18px; line-height: 1.55; text-wrap: pretty; }
+.lede { max-width: 52ch; margin: 26px auto 0; color: #bdbdbd; font-size: 18px; line-height: 1.55; text-wrap: pretty; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; }
 .facts { margin: 18px 0 0; color: #8a8a8a; font-size: 13.5px; line-height: 1.5; }
 .stage { position: relative; margin-top: 64px; }
@@ -133,7 +136,11 @@ h1 { max-width: 13em; margin: 0; font-size: clamp(40px, 6vw, 84px); font-weight:
 .hero-row .cmd-head { margin-top: 0; }
 .dark ::selection { background: #3a3a3a; color: #fafafa; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-html:not([data-release="soon"]) .hero-row > div { display: flex; flex-direction: column; }
+html:not([data-release="soon"]) .hero-row > div { display: flex; flex-direction: column; align-items: center; }
+.hero-row .when-live { display: flex; flex-direction: column; align-items: center; width: 100%; text-align: center; }
+.hero-row .cmd { width: min(100%, 680px); text-align: left; }
+.hero-row .actions { justify-content: center; }
+.hero-row .cmd-note { max-width: 56ch; text-wrap: balance; }
 html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-top: 18px; }
 .cmd-head { margin: 22px 0 0; color: var(--night-ink); font-size: 15px; font-weight: 500; }
 .cmd-head + .cmd { margin-top: 10px; }
@@ -280,9 +287,10 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
         <div class="sheet">
           <div class="sheet-grid" aria-hidden="true"></div>
           <div class="hero-inner">
-            <h1 data-rise style="--i:0">A team of AI bots that lives on your Mac.</h1>
+            <p class="pill when-live" data-rise style="--i:0">Available on macOS</p>
+            <h1 data-rise style="--i:0">Meet <img class="h1-tile" src="/brand/useful-bot-logo.svg" alt="" width="64" height="64" /> Useful Bot</h1>
+            <p class="lede" data-rise style="--i:1">Your own team of AI bots on your computer. Use the ChatGPT plan you already pay for, an API key or a local model.</p>
             <div class="hero-row" data-rise style="--i:1">
-              <p class="lede">Give each bot one job: writing, research, your inbox or your files. They run on the model you already pay for, work in the apps you connect and ask before they touch anything you haven't allowed.</p>
               <div>
                 <div class="actions">
                   <span class="btn btn-light btn-soon when-soon">Coming soon</span>
@@ -328,7 +336,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
             <div class="ch-copy">
               <span class="n">02</span>
               <h3>Bring the model you already pay for.</h3>
-              <p>Sign in with ChatGPT or GitHub Copilot, add a coding plan or an API key, or point it at a model running on your own Mac. Pick the model per chat.</p>
+              <p>Sign in with ChatGPT, add a coding plan or an API key, or point it at a model running on your own Mac. Pick the model per chat.</p>
             </div>
             <figure class="shot">
               <div class="frame"><img alt="Useful Bot's model settings with connected providers." src="/shots/models.png" width="1710" height="1267" loading="lazy" decoding="async" /></div>
@@ -366,7 +374,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
             </div>
             <ul class="spec">
               <li><span>Works on</span><strong>macOS 14 or later, Apple silicon</strong></li>
-              <li><span>Models</span><strong>ChatGPT, GitHub Copilot, Claude, Gemini, OpenRouter and more, or a local model</strong></li>
+              <li><span>Models</span><strong>ChatGPT, Claude, Gemini, OpenRouter and more, or a local model</strong></li>
               <li><span>Stays on your Mac</span><strong>Your chats, bots, memory and the files they make</strong></li>
               <li><span>Leaves your Mac</span><strong>What you ask goes to the model provider you connect, and to the apps a bot uses for you</strong></li>
               <li><span>Tracking</span><strong>None. No analytics, no crash reports, no ads</strong></li>
@@ -383,7 +391,7 @@ html:not([data-release="soon"]) .hero-row > div > .actions { order: 2; margin-to
         <div class="wrap">
           <img class="cta-mark" src="/brand/useful-bot-logo.svg" alt="" width="64" height="64" />
           <div class="cta-layout">
-            <h2>Put a team of bots on your Mac.</h2>
+            <h2>Put a team of AI bots on your computer.</h2>
             <div>
               <p class="when-live">Install the app, connect a model and make your first bot. It takes a couple of minutes.</p>
               <p class="when-soon">The first release is on its way. Come back here for the download.</p>

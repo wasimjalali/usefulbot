@@ -39,7 +39,8 @@ import { removeSessionGrant, upsertSessionGrant } from "../../shared/workspace-s
 import { bindSession, resolveSessionBot } from "../../shared/session-bindings.ts";
 import { DESCRIPTION_MAX, freezeNullSelections, GENERALIST_SEED_V2, recordSessionLineage, type ShellBot } from "../../shared/shell-store.ts";
 import { botSelection, type ModelSelection } from "../../shared/session-selection.ts";
-import { effectiveDefault, readProviderStore, selectionAvailability, type ProviderStore } from "../../shared/providers.ts";
+import { retiredRouteMessage } from "../../shared/provider-catalog.ts";
+import { effectiveDefault, ProviderRouteRetiredError, readProviderStore, selectionAvailability, type ProviderStore } from "../../shared/providers.ts";
 import { eveOrigin } from "../../shared/stack.ts";
 import {
   admission,
@@ -281,6 +282,10 @@ export function ensureBotSelections(providerStore: ProviderStore = readProviderS
  * Pure of eve: the caller answers with it before any fetch to eve.
  */
 export function modelSelectionRefusal(bot: ShellBot, store: ProviderStore): Response | null {
+  const retired = retiredRouteMessage(botSelection(bot, store).connectionId);
+  if (retired) {
+    return Response.json({ ok: false, error: "provider_route_retired", message: retired }, { status: 409 });
+  }
   if (botSelectionUsable(bot, store)) return null;
   return Response.json(
     {
@@ -831,6 +836,9 @@ async function runEveTurn(
     const freshStore = readProviderStore();
     const freshShell = readShell();
     const live = freshShell.bots.find((item) => item.id === bot.id) ?? bot;
+    // A retired route's own sentence is the failure the owner reads.
+    const retired = retiredRouteMessage(botSelection(live, freshStore).connectionId);
+    if (retired) throw new ProviderRouteRetiredError(retired);
     if (!botSelectionUsable(live, freshStore)) throw new Error("model_selection_unavailable");
     if (descriptionTooLong(live)) throw new Error("description_too_long");
     if (!admitTurn(live, freshShell, freshStore, hiddenChars, intoSession).ok) throw new Error("context_too_large");
@@ -1123,6 +1131,7 @@ async function pumpOnce(limit: number): Promise<{
       if (message === "claim_lost") return;
       // Neither a gone model nor a refused size is fixed by trying again.
       const modelGone = message === "model_selection_unavailable"
+        || err instanceof ProviderRouteRetiredError
         || message === "context_too_large"
         || message === "description_too_long";
       const shown = message === "model_selection_unavailable"

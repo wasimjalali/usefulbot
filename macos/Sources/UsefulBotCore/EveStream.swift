@@ -291,8 +291,25 @@ public struct TurnFailure: Codable, Equatable, Sendable {
     public static let chatgptUsageHost = "chatgpt.com/settings/usage"
     public static let chatgptUsageURL = "https://" + chatgptUsageHost
 
+    /// The router refuses a turn on a turned-off route with
+    /// `provider_route_retired: <the route's sentence>`; this reads the sentence back out of the failure text.
+    static func retiredRouteSentence(_ text: String) -> String? {
+        guard let range = text.range(of: "provider_route_retired:") else { return nil }
+        let rest = text[range.upperBound...].drop { $0 == " " }
+        let sentence = rest.prefix { $0 != "\"" && $0 != "\n" && $0 != "\\" }
+        let trimmed = sentence.trimmingCharacters(in: .whitespaces)
+        // Cut at an escape (a JSON-escaped apostrophe, say) it is a half
+        // sentence: only one that ends like a sentence is shown.
+        guard let last = trimmed.last, ".!?".contains(last) else { return nil }
+        return trimmed
+    }
+
     public var reason: String? {
         let haystack = "\(code) \(detail)".lowercased()
+        if haystack.contains("provider_route_retired") {
+            return Self.retiredRouteSentence(detail) ?? Self.retiredRouteSentence(code)
+                ?? "Useful Bot can't use this provider connection any more. Pick another model."
+        }
         // The bot's own pick is gone (its connection was removed or
         // disconnected). Nothing was substituted, so the owner chooses.
         if haystack.contains("model_selection_unavailable") {
@@ -303,6 +320,9 @@ public struct TurnFailure: Codable, Equatable, Sendable {
         }
         if haystack.contains("upstream_unavailable") {
             return "Couldn't reach ChatGPT just now. Send again in a moment."
+        }
+        if haystack.contains("upstream_chatgpt_model_not_in_plan") {
+            return "Your ChatGPT plan can't use this model in Useful Bot. Pick another model."
         }
         if haystack.contains("upstream_chatgpt_not_permitted") {
             return "ChatGPT didn't allow this request from Useful Bot. Check Useful Bot in ChatGPT settings, or pick another model."

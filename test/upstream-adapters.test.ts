@@ -130,6 +130,7 @@ test("responses request maps chat fields, tools and images", () => {
       name: "get_weather",
       description: "Get the weather",
       parameters: { type: "object", properties: { location: { type: "string" } } },
+      strict: false,
     }],
   });
   const plain = buildResponsesBody({ ...CHAT_BODY }, { model: "gpt-5.4-mini", chatgpt: false });
@@ -144,6 +145,7 @@ test("responses request maps chat fields, tools and images", () => {
     name: "get_weather",
     description: "Get the weather",
     parameters: { type: "object", properties: { location: { type: "string" } } },
+    strict: false,
   });
   assert.equal((plain.input as Array<Record<string, unknown>>)[2].namespace, undefined);
 });
@@ -612,4 +614,13 @@ test("a length stop after a tool call becomes a tool step; plain text keeps leng
   const plain = { choices: [{ index: 0, message: { role: "assistant", content: "cut" }, finish_reason: "length" }] };
   settleCompletion(plain);
   assert.equal(plain.choices[0].finish_reason, "length");
+});
+
+test("responses tools stay non-strict unless the chat tool says strict", () => {
+  // Responses attempts strict mode when `strict` is missing, which forces
+  // every optional argument; a chat tool without it must arrive non-strict.
+  const strictTool = { type: "function", function: { name: "pick", parameters: { type: "object", properties: {} }, strict: true } };
+  const out = buildResponsesBody({ ...CHAT_BODY, tools: [...CHAT_BODY.tools, strictTool] }, { model: "gpt-6-astra", chatgpt: true });
+  const inner = ((out.tools as Array<Record<string, unknown>>)[0].tools) as Array<Record<string, unknown>>;
+  assert.deepEqual(inner.map((tool) => [tool.name, tool.strict]), [["get_weather", false], ["pick", true]]);
 });
