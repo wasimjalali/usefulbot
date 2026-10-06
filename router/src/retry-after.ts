@@ -49,9 +49,13 @@ const MAX_RESET_S = 400 * 24 * 3600;
  * used up, or null when it is an ordinary rate limit. Read from the error's
  * `type` and `code` the way OpenAI's own Codex client reads them
  * (codex-rs/codex-api/src/api_bridge.rs), plus the documented shapes of the
- * other vendors in the catalog: Kimi (platform.kimi.ai/docs/api/errors) and Z.ai.
+ * other vendors in the catalog: Kimi (platform.kimi.ai/docs/api/errors) and Z.ai,
+ * and the ChatGPT plan-sharing codes OpenAI documents for Sign in with ChatGPT.
  */
 export function usedLimitCode(type: string, code: string, message = ""): string | null {
+  // Sign in with ChatGPT (docs: token-sharing-open-source/errors-and-recovery).
+  if (code === "subscription_sharing_usage_limit_exceeded") return "upstream_chatgpt_usage_limit";
+  if (code === "subscription_sharing_user_not_eligible") return "upstream_chatgpt_not_eligible";
   if (type === "usage_limit_reached") return "upstream_usage_limit";
   if (type === "usage_not_included") return "upstream_usage_not_included";
   if (type === "insufficient_quota" || QUOTA_CODES.has(code)) return "upstream_quota_exhausted";

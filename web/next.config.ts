@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   turbopack: { root: repoRoot },
   outputFileTracingRoot: repoRoot,
+  // The sign-in callback's query holds the authorization code and state, so
+  // Next's request log never prints it. The pattern is tested against
+  // request.url: the path with its query string (node_modules/next/dist/
+  // server/dev/log-requests.js).
+  logging: { incomingRequests: { ignore: [/^\/auth\/callback(?:[?#]|$)/] } },
 };
 
 export default nextConfig;

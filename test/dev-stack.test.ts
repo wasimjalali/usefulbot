@@ -27,6 +27,7 @@ import { connectionsPath } from "../shared/connections-store.ts";
 import { connectionToolsPath } from "../shared/connection-tools-store.ts";
 import { oauthPendingPath } from "../shared/mcp-oauth.ts";
 import { providerPendingPath } from "../shared/provider-oauth.ts";
+import { chatGptSignInPath } from "../shared/chatgpt-signin.ts";
 import { cataloguePath } from "../shared/composio-catalogue.ts";
 import { limitsPath } from "../shared/limits-store.ts";
 import { defaultOwnerPath } from "../agent/lib/session-owners.ts";
@@ -73,7 +74,7 @@ const STORE_OVERRIDES = [
   "UB_WEB_SESSIONS_PATH", "UB_HANDOFF_DIR", "UB_MEMORY_ROOT", "UB_WIDGETS_DIR", "UB_IMAGES_DIR",
   "UB_MEDIA_INDEX_PATH", "UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH", "UB_CONNECTORS_PATH", "UB_CONNECTIONS_PATH",
   "UB_CONNECTION_TOOLS_PATH", "UB_OAUTH_PENDING_PATH", "UB_PROVIDER_OAUTH_PATH", "UB_CATALOGUE_PATH", "UB_LIMITS_PATH",
-  "UB_SESSION_OWNERS_PATH", "UB_ROUTER_DB", "UB_ROUTER_CONFIG",
+  "UB_SESSION_OWNERS_PATH", "UB_CHATGPT_SIGNIN_PATH", "UB_ROUTER_DB", "UB_ROUTER_CONFIG",
 ];
 const STACK_VARS = [
   "UB_STACK", "UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_EVE_PORT", "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR",
@@ -147,6 +148,7 @@ const STORES: Array<{ name: string; path: () => string; tail: string; override: 
   { name: "connection-tools-store", path: () => connectionToolsPath(), tail: "connection-tools.json", override: "UB_CONNECTION_TOOLS_PATH" },
   { name: "mcp-oauth", path: () => oauthPendingPath(), tail: "connections-oauth.json", override: "UB_OAUTH_PENDING_PATH" },
   { name: "provider-oauth", path: () => providerPendingPath(), tail: "provider-oauth.json", override: "UB_PROVIDER_OAUTH_PATH" },
+  { name: "chatgpt-signin", path: () => chatGptSignInPath(), tail: "chatgpt-signin.json", override: "UB_CHATGPT_SIGNIN_PATH" },
   { name: "composio-catalogue", path: () => cataloguePath(), tail: "composio-catalogue.json", override: "UB_CATALOGUE_PATH" },
   { name: "limits-store", path: () => limitsPath(), tail: "limits.json", override: "UB_LIMITS_PATH" },
   { name: "session bindings", path: () => defaultSessionOwnersPath(), tail: "session-owners.json", override: "UB_SESSION_OWNERS_PATH" },

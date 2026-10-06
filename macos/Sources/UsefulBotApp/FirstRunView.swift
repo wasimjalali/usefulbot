@@ -924,13 +924,20 @@ private struct SignInPage: View {
         return pending
     }
 
+    /// ChatGPT signs in through the browser, no code. Before the start answer
+    /// arrives the provider id decides, so the page never flashes a code card.
+    private var isBrowserFlow: Bool {
+        if let pending { return pending.flow == "browser" }
+        return entry.providerId == "openai"
+    }
+
     private var code: String? {
         if previewing { return "K7QD-M2XP" }
         return pending?.userCode ?? (signedIn ? lastCode : nil)
     }
 
     private var link: String? {
-        if previewing { return entry.providerId == "github-copilot" ? "https://github.com/login/device" : "https://auth.openai.com/codex/device" }
+        if previewing { return entry.providerId == "github-copilot" ? "https://github.com/login/device" : "https://auth.openai.com/api/accounts/authorize" }
         if let pending { return pending.verificationUrlComplete ?? pending.verificationUrl }
         return signedIn ? lastLink : nil
     }
@@ -940,9 +947,15 @@ private struct SignInPage: View {
     }
 
     private var ended: String? {
-        if previewing { return previewExpired ? "The code expired before sign-in finished." : nil }
+        if previewing {
+            guard previewExpired else { return nil }
+            return isBrowserFlow ? "The sign-in expired before it finished." : "The code expired before sign-in finished."
+        }
         guard model.oauthDone, let error = model.oauthError else { return nil }
-        return error.localizedCaseInsensitiveContains("expired") ? "The code expired before sign-in finished." : error
+        if error.localizedCaseInsensitiveContains("expired") {
+            return isBrowserFlow ? "The sign-in expired before it finished." : "The code expired before sign-in finished."
+        }
+        return error
     }
 
     var body: some View {
@@ -957,13 +970,19 @@ private struct SignInPage: View {
                         .foregroundStyle(Theme.C.ink)
                         .accessibilityAddTraits(.isHeader)
                 }
-                Text("Your browser opens \(host). Sign in there and enter this code. Useful Bot never sees your password.")
+                Text(isBrowserFlow
+                     ? "Continue with ChatGPT to sign in and approve Useful Bot in your browser. Useful Bot never sees your password."
+                     : "Your browser opens \(host). Sign in there and enter this code. Useful Bot never sees your password.")
                     .font(.system(size: 14))
                     .lineSpacing(3)
                     .foregroundStyle(Theme.C.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            codeCard
+            if isBrowserFlow {
+                browserCard
+            } else {
+                codeCard
+            }
             status
         }
         .stepFrame()
@@ -992,13 +1011,17 @@ private struct SignInPage: View {
         }
     }
 
-    private func restart() {
+    private func restart(newAccount: Bool = false, clientId: String? = nil) {
         if previewing {
             previewExpired = false
             start()
             return
         }
-        Task { await model.startOAuth(providerId: entry.providerId, label: entry.label) }
+        if newAccount || clientId != nil {
+            Task { await model.startOAuth(providerId: entry.providerId, label: entry.label, newAccount: newAccount, clientId: clientId) }
+        } else {
+            Task { await model.retryOAuth(providerId: entry.providerId, label: entry.label) }
+        }
     }
 
     /// The spinner morphs into a check, then Continue fades in.
@@ -1007,6 +1030,32 @@ private struct SignInPage: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + (reduceMotion ? 0.1 : 0.3)) {
             withAnimation(Theme.ease(0.26)) { continueShown = true }
         }
+    }
+
+    private var browserCard: some View {
+        VStack(spacing: 14) {
+            ContinueWithChatGPTButton(enabled: link != nil && !signedIn && ended == nil) {
+                if !previewing, let link, let url = URL(string: link) { NSWorkspace.shared.open(url) }
+            }
+            if let pending, !signedIn, ended == nil, pending.account != nil || pending.reusesSaved {
+                if let account = pending.account {
+                    Text("Continues as \(account).")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.inkMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                UseDifferentAccountControl(
+                    accounts: pending.accounts, currentClientId: pending.clientId,
+                    onPick: { restart(clientId: $0) },
+                    onAddNew: { restart(newAccount: true) }
+                )
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity)
+        .background(Theme.C.sunken, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
+        .opacity(signedIn ? 0.6 : 1)
     }
 
     private var codeCard: some View {
@@ -1055,20 +1104,28 @@ private struct SignInPage: View {
                     .foregroundStyle(Theme.C.danger)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                NativeButton("Get a new code", kind: .secondary, small: true, action: restart)
-                    .accessibilityIdentifier("first-run-new-code")
+                if model.oauthOffersNewAccount, isBrowserFlow {
+                    UseDifferentAccountControl(
+                        accounts: pending?.accounts ?? [], currentClientId: pending?.clientId, afterError: true, kind: .secondary,
+                        onPick: { restart(clientId: $0) },
+                        onAddNew: { restart(newAccount: true) }
+                    )
+                } else {
+                    NativeButton(isBrowserFlow ? "Try again" : "Get a new code", kind: .secondary, small: true) { restart() }
+                        .accessibilityIdentifier("first-run-new-code")
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Theme.C.dangerSoft, in: RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
             .transition(.opacity)
-        } else if code == nil, !previewing, let error = model.providersError {
+        } else if (isBrowserFlow ? link == nil : code == nil), !previewing, let error = model.providersError {
             HStack(spacing: 12) {
                 Text(error)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.C.danger)
                 Spacer(minLength: 0)
-                NativeButton("Try again", kind: .secondary, small: true, action: restart)
+                NativeButton("Try again", kind: .secondary, small: true) { restart() }
             }
         } else {
             VStack(alignment: .leading, spacing: 16) {
@@ -1085,7 +1142,7 @@ private struct SignInPage: View {
                             .opacity(signedIn ? 1 : 0)
                     }
                     .frame(width: 20, height: 20)
-                    Text("Waiting for you to finish in the browser")
+                    Text(isBrowserFlow ? "Waiting for the browser" : "Waiting for you to finish in the browser")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.C.inkMuted)
                         .opacity(signedIn ? 0 : 1)

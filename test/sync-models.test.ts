@@ -16,7 +16,7 @@ test("every connected provider gets its live list, not only the active one", asy
     const url = String(input);
     urls.push(url);
     if (url.startsWith("https://models.dev/")) return new Response("{}");
-    if (url.includes("chatgpt.com")) return new Response(JSON.stringify({ models: [{ slug: "gpt-6-astra", visibility: "list" }] }));
+    if (url === "https://api.openai.com/v1/models") return new Response(JSON.stringify({ models: [{ slug: "gpt-6-astra", visibility: "list" }] }));
     return new Response(JSON.stringify({ data: [{ id: "kimi-k3" }] }));
   }) as typeof fetch;
   try {
@@ -31,14 +31,74 @@ test("every connected provider gets its live list, not only the active one", asy
           providerId: "openai",
           mode: "oauth",
           fields: {},
-          credential: { kind: "oauth", accessToken: "token-12345678", refreshToken: null, expiresAt: null, accountId: "acct" },
+          credential: { kind: "oauth", accessToken: "token-12345678", refreshToken: null, expiresAt: null, accountId: null, clientId: "oaiapp_test" },
         },
       },
     } as unknown as ProviderStore;
     await syncProviderModels(store, { force: true, alsoAwait: "openai:oauth" });
-    assert.equal(urls.some((url) => url === "https://chatgpt.com/backend-api/codex/models?client_version=99.0.0"), true);
+    assert.equal(urls.some((url) => url === "https://api.openai.com/v1/models"), true);
     assert.deepEqual(catalogFor("openai:oauth", path).map((item) => item.id), ["gpt-6-astra"]);
     assert.deepEqual(catalogFor("opencode-go:plan", path).map((item) => item.id), ["kimi-k3"]);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.UB_MODELS_CACHE_PATH;
+  }
+});
+
+test("a ChatGPT sign-in from the old Codex route is skipped: no list call with its token", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "ub-sync-legacy-")), "models-cache.json");
+  process.env.UB_MODELS_CACHE_PATH = path;
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    urls.push(String(input));
+    return new Response("{}");
+  }) as typeof fetch;
+  try {
+    const store = {
+      activeConnectionId: "openai:oauth",
+      connections: {
+        "openai:oauth": {
+          id: "openai:oauth",
+          providerId: "openai",
+          mode: "oauth",
+          fields: {},
+          credential: { kind: "oauth", accessToken: "codex-token-12345678", refreshToken: "r", expiresAt: null, accountId: "acct" },
+        },
+      },
+    } as unknown as ProviderStore;
+    await syncProviderModels(store, { force: true, alsoAwait: "openai:oauth" });
+    assert.equal(urls.some((url) => url.startsWith("https://api.openai.com/")), false);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.UB_MODELS_CACHE_PATH;
+  }
+});
+
+test("a ChatGPT sign-in whose access token is expired makes no list call", async () => {
+  const path = join(mkdtempSync(join(tmpdir(), "ub-sync-expired-")), "models-cache.json");
+  process.env.UB_MODELS_CACHE_PATH = path;
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    urls.push(String(input));
+    return new Response("{}");
+  }) as typeof fetch;
+  try {
+    const store = {
+      activeConnectionId: "openai:oauth",
+      connections: {
+        "openai:oauth": {
+          id: "openai:oauth",
+          providerId: "openai",
+          mode: "oauth",
+          fields: {},
+          credential: { kind: "oauth", accessToken: "token-12345678", refreshToken: "r", expiresAt: Date.now() - 1000, accountId: null, clientId: "oaiapp_test" },
+        },
+      },
+    } as unknown as ProviderStore;
+    await syncProviderModels(store, { force: true, alsoAwait: "openai:oauth" });
+    assert.equal(urls.some((url) => url.startsWith("https://api.openai.com/")), false);
   } finally {
     globalThis.fetch = realFetch;
     delete process.env.UB_MODELS_CACHE_PATH;

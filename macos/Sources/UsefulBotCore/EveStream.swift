@@ -287,6 +287,10 @@ public struct TurnFailure: Codable, Equatable, Sendable {
     /// turn's row read the same.
     public static let modelSelectionUnavailableCopy = "This bot's model isn't available any more. Pick another model below."
 
+    /// The ChatGPT usage page: the copy names the host, the failure row's button matches on it.
+    public static let chatgptUsageHost = "chatgpt.com/settings/usage"
+    public static let chatgptUsageURL = "https://" + chatgptUsageHost
+
     public var reason: String? {
         let haystack = "\(code) \(detail)".lowercased()
         // The bot's own pick is gone (its connection was removed or
@@ -296,6 +300,18 @@ public struct TurnFailure: Codable, Equatable, Sendable {
         }
         if haystack.contains("model_unavailable") {
             return "The provider doesn't offer this model right now. Pick another model."
+        }
+        if haystack.contains("upstream_unavailable") {
+            return "Couldn't reach ChatGPT just now. Send again in a moment."
+        }
+        if haystack.contains("upstream_chatgpt_not_permitted") {
+            return "ChatGPT didn't allow this request from Useful Bot. Check Useful Bot in ChatGPT settings, or pick another model."
+        }
+        if haystack.contains("upstream_chatgpt_usage_limit") {
+            return "You've reached the ChatGPT plan limit for Useful Bot. Manage usage at \(Self.chatgptUsageHost), or pick another model."
+        }
+        if haystack.contains("upstream_chatgpt_not_eligible") {
+            return "This ChatGPT account can't use its plan in Useful Bot. Pick another model."
         }
         if haystack.contains("upstream_auth_failed") || haystack.contains("upstream_credential_missing") {
             return "Sign-in to the model provider expired. Reconnect it in Settings."

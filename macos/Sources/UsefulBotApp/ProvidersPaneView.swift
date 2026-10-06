@@ -96,10 +96,11 @@ struct ProvidersPaneView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Theme.C.ink)
                     .lineLimit(1)
-                Text(connection.kindLabel)
+                Text(connection.accountLabel.map { "\(connection.kindLabel) · \($0)" } ?? connection.kindLabel)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.C.inkMuted)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
             Spacer(minLength: 0)
             statusDot(connection.status)
@@ -272,6 +273,28 @@ struct ProvidersPaneView: View {
                             .foregroundStyle(Theme.C.ink)
                             .frame(width: 16)
                         Text("Edit")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.C.ink)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 40)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if let connection = menuConnection, connection.id == "openai:oauth" {
+                MenuRowButton(action: {
+                    openCard = nil
+                    if let url = URL(string: "https://chatgpt.com/settings/usage") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chart.bar")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.C.ink)
+                            .frame(width: 16)
+                        Text("Manage usage")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.C.ink)
                         Spacer(minLength: 0)
@@ -679,22 +702,31 @@ struct KeySheetView: View {
 private struct OAuthSheetView: View {
     @EnvironmentObject private var model: AppModel
     let onClose: () -> Void
+    /// The flow clears the moment sign-in finishes, while the sheet is still
+    /// fading out: it keeps showing the last flow instead of an empty card.
+    @State private var lastShown: OAuthPending?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let pending = model.oauth {
+            if let pending = model.oauth ?? lastShown {
                 Text(pending.label)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.C.ink)
-                Text("Open the sign-in page and type this code.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.C.inkMuted)
-                Text(pending.userCode)
-                    .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                    .tracking(4)
-                    .foregroundStyle(Theme.C.ink)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
+                if pending.flow == "browser" {
+                    Text("Continue with ChatGPT to sign in and approve Useful Bot in your browser.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.C.inkMuted)
+                } else {
+                    Text("Open the sign-in page and type this code.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.C.inkMuted)
+                    Text(pending.userCode)
+                        .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                        .tracking(4)
+                        .foregroundStyle(Theme.C.ink)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                }
                 if let error = model.oauthError {
                     Text(error)
                         .font(.system(size: 13))
@@ -703,6 +735,19 @@ private struct OAuthSheetView: View {
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
                     if model.oauthDone {
+                        if pending.flow == "browser" {
+                            if model.oauthOffersNewAccount {
+                                UseDifferentAccountControl(
+                                    accounts: pending.accounts, currentClientId: pending.clientId, afterError: true, kind: .secondary,
+                                    onPick: { id in Task { await model.startOAuth(providerId: pending.providerId, label: pending.label, clientId: id) } },
+                                    onAddNew: { Task { await model.startOAuth(providerId: pending.providerId, label: pending.label, newAccount: true) } }
+                                )
+                            } else {
+                                NativeButton("Try again", kind: .secondary) {
+                                    Task { await model.retryOAuth(providerId: pending.providerId, label: pending.label) }
+                                }
+                            }
+                        }
                         NativeButton("Close", kind: .secondary) {
                             Task { await model.cancelOAuth() }
                         }
@@ -710,19 +755,44 @@ private struct OAuthSheetView: View {
                         NativeButton("Cancel", kind: .secondary) {
                             Task { await model.cancelOAuth() }
                         }
-                        NativeButton("Open sign-in page", kind: .primary) {
-                            let link = pending.verificationUrlComplete ?? pending.verificationUrl
-                            if let url = URL(string: link), !link.isEmpty {
-                                NSWorkspace.shared.open(url)
+                        if pending.flow == "browser" {
+                            ContinueWithChatGPTButton {
+                                if let url = URL(string: pending.verificationUrl), !pending.verificationUrl.isEmpty {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        } else {
+                            NativeButton("Open sign-in page", kind: .primary) {
+                                let link = pending.verificationUrlComplete ?? pending.verificationUrl
+                                if let url = URL(string: link), !link.isEmpty {
+                                    NSWorkspace.shared.open(url)
+                                }
                             }
                         }
+                    }
+                }
+                if pending.flow == "browser", !model.oauthDone, pending.account != nil || pending.reusesSaved {
+                    // Stacked: side by side, a long email squeezed both lines.
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let account = pending.account {
+                            Text("Continues as \(account).")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.C.inkMuted)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        UseDifferentAccountControl(
+                            accounts: pending.accounts, currentClientId: pending.clientId,
+                            onPick: { id in Task { await model.startOAuth(providerId: pending.providerId, label: pending.label, clientId: id) } },
+                            onAddNew: { Task { await model.startOAuth(providerId: pending.providerId, label: pending.label, newAccount: true) } }
+                        )
                     }
                 }
                 if !model.oauthDone {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text("Waiting for approval")
+                        Text(pending.flow == "browser" ? "Waiting for the browser" : "Waiting for approval")
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.C.inkMuted)
                         Spacer(minLength: 0)
@@ -734,6 +804,10 @@ private struct OAuthSheetView: View {
         .frame(width: 384)
         .background(Theme.C.surface)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.dialog, style: .continuous))
+        .onAppear { if let pending = model.oauth { lastShown = pending } }
+        .onChange(of: model.oauth) { _, next in
+            if let next { lastShown = next }
+        }
     }
 }
 

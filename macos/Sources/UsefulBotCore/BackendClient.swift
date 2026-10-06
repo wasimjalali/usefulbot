@@ -950,13 +950,13 @@ public actor BackendClient {
 
     /// Start a device flow for one OAuth provider. Answers with what the
     /// device sheet shows.
-    public func startOAuth(providerId: String) async throws -> DeviceFlowStart {
+    public func startOAuth(providerId: String, newAccount: Bool = false, clientId: String? = nil, retryClientId: String? = nil) async throws -> DeviceFlowStart {
         let (data, response) = try await perform { client, token in
             var request = URLRequest(url: client.base.appendingPathComponent("api/providers/oauth"))
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "content-type")
             request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["providerId": providerId])
+            request.httpBody = try JSONSerialization.data(withJSONObject: Self.startOAuthBody(providerId: providerId, newAccount: newAccount, clientId: clientId, retryClientId: retryClientId))
             return request
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -969,10 +969,19 @@ public actor BackendClient {
         return decoded
     }
 
+    /// The start body: `newAccount` is only sent when true, `clientId` only when set.
+    static func startOAuthBody(providerId: String, newAccount: Bool, clientId: String? = nil, retryClientId: String? = nil) -> [String: Any] {
+        var body: [String: Any] = ["providerId": providerId]
+        if newAccount { body["newAccount"] = true }
+        if let clientId, !clientId.isEmpty { body["clientId"] = clientId }
+        if let retryClientId, !retryClientId.isEmpty { body["retryClientId"] = retryClientId }
+        return body
+    }
+
     /// Poll one device flow. On `complete` the route also returns the full GET
     /// payload, decoded here when present. Every poll answer carries the next
     /// `intervalMs` the server wants between polls.
-    public func pollOAuth(pollId: String) async throws -> (status: String, intervalMs: Int?, payload: ProvidersPayload?) {
+    public func pollOAuth(pollId: String) async throws -> (status: String, intervalMs: Int?, error: String?, retryClientId: String?, payload: ProvidersPayload?) {
         let (data, response) = try await perform { client, token in
             var request = URLRequest(url: client.base.appendingPathComponent("api/providers/oauth/\(Self.pathComponent(pollId))"))
             request.httpMethod = "POST"
@@ -980,14 +989,14 @@ public actor BackendClient {
             return request
         }
         try Self.expectOK(data, response)
-        struct Poll: Decodable { let status: String?; let intervalMs: Int? }
+        struct Poll: Decodable { let status: String?; let intervalMs: Int?; let error: String?; let retryClientId: String? }
         guard let poll = try? JSONDecoder().decode(Poll.self, from: data),
               let status = poll.status, !status.isEmpty else {
             throw BackendError.decoding
         }
         let payload = try? JSONDecoder().decode(ProvidersPayload.self, from: data)
         let hasPayload = payload.map { !$0.catalog.isEmpty || !$0.connections.isEmpty } ?? false
-        return (status, poll.intervalMs, hasPayload ? payload : nil)
+        return (status, poll.intervalMs, poll.error, poll.retryClientId, hasPayload ? payload : nil)
     }
 
     public func cancelOAuth(pollId: String) async throws {

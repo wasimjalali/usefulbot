@@ -12,6 +12,14 @@ struct OAuthPending: Equatable {
     let pollId: String
     let providerId: String
     let label: String
+    /// "browser" opens the authorization URL; "device" shows a code.
+    let flow: String
+    /// The saved ChatGPT account this sign-in continues with, if any.
+    let account: String?
+    let accounts: [SavedChatGptAccount]
+    let reusesSaved: Bool
+    /// The issued client this attempt uses; nil when it registers a new account.
+    let clientId: String?
     let userCode: String
     let verificationUrl: String
     let verificationUrlComplete: String?
@@ -254,6 +262,12 @@ final class AppModel: ObservableObject {
     /// A device flow the Providers pane is waiting on, with its poll.
     @Published private(set) var oauth: OAuthPending?
     @Published private(set) var oauthError: String?
+    /// The poll's error code behind `oauthError`, which drives what the sheet offers.
+    @Published private(set) var oauthErrorCode: String?
+    /// How the last ChatGPT attempt was started, so Try again repeats it.
+    private var oauthLastAttempt: (newAccount: Bool, clientId: String?) = (false, nil)
+    /// The client a failed attempt offered for a retry, if the server gave one.
+    private var oauthRetryClientId: String?
     /// True once the flow ended in an error the sheet shows. The pending entry
     /// stays so the sheet stays up with the error; the spinner and the
     /// sign-in button hide, and Close clears everything.
@@ -261,6 +275,10 @@ final class AppModel: ObservableObject {
     /// Bumped each time a device sign-in completes, so a screen waiting on
     /// one can tell it finished rather than was cancelled.
     @Published private(set) var oauthCompletions = 0
+    /// The one-time "You're using your ChatGPT plan" dialog, shown after the
+    /// first ChatGPT sign-in on this install (first run or the Providers pane).
+    @Published var showChatGptPlanWelcome = false
+    private static let chatgptPlanWelcomeKey = "chatgptPlanWelcomeShown"
     /// Consecutive poll errors; the flow ends at the limit rather than waiting out the code.
     private var oauthErrorStreak = 0
     private static let oauthErrorLimit = 6
@@ -3665,6 +3683,10 @@ final class AppModel: ObservableObject {
     /// The server error code in plain words for the connect sheet.
     static func connectCopy(_ code: String?, name: String? = nil) -> String {
         switch code {
+        case "chatgpt_state_unreadable":
+            return "Useful Bot couldn't read its saved ChatGPT sign-in details. Try again, or restart Useful Bot."
+        case "chatgpt_account_unknown":
+            return "That saved ChatGPT account isn't available anymore. Pick another account."
         case "provider_key":
             return "That key looks invalid."
         case "upstream_auth_failed":
@@ -3706,7 +3728,11 @@ final class AppModel: ObservableObject {
         providerBusy = connectionId
         providersError = nil
         do {
-            applyProviders(try await client.disconnectConnection(connectionId))
+            let payload = try await client.disconnectConnection(connectionId)
+            applyProviders(payload)
+            if payload.notice == "chatgpt_revoke_unconfirmed" {
+                providersError = "Signed out here. ChatGPT didn't confirm it, so you can also remove Useful Bot in ChatGPT settings."
+            }
         } catch BackendError.providerNotice(_, let message) {
             // The bots that name this connection could not all be reset, so it
             // was not removed: re-read first (a read clears providersError),
@@ -3746,17 +3772,21 @@ final class AppModel: ObservableObject {
     /// away and cancelled on the server, so nothing polls in the background.
     private var oauthGeneration = 0
 
-    func startOAuth(providerId: String, label: String) async {
+    func startOAuth(providerId: String, label: String, newAccount: Bool = false, clientId: String? = nil, retryClientId: String? = nil) async {
+        oauthLastAttempt = (newAccount, clientId)
+        // A retry that itself expires keeps the client it was retrying.
+        oauthRetryClientId = retryClientId
         oauthPoll?.cancel()
         oauthGeneration &+= 1
         let generation = oauthGeneration
         providerBusy = "\(providerId):oauth"
         oauthError = nil
+        oauthErrorCode = nil
         oauthDone = false
         oauthErrorStreak = 0
         providersError = nil
         do {
-            let flow = try await client.startOAuth(providerId: providerId)
+            let flow = try await client.startOAuth(providerId: providerId, newAccount: newAccount, clientId: clientId, retryClientId: retryClientId)
             guard generation == oauthGeneration else {
                 try? await client.cancelOAuth(pollId: flow.pollId)
                 if providerBusy == "\(providerId):oauth" { providerBusy = nil }
@@ -3766,6 +3796,11 @@ final class AppModel: ObservableObject {
                 pollId: flow.pollId,
                 providerId: providerId,
                 label: label,
+                flow: flow.flow,
+                account: flow.account,
+                accounts: flow.accounts,
+                reusesSaved: flow.reusesSaved,
+                clientId: flow.clientId,
                 userCode: flow.userCode,
                 verificationUrl: flow.verificationUrl,
                 verificationUrlComplete: flow.verificationUrlComplete,
@@ -3775,6 +3810,10 @@ final class AppModel: ObservableObject {
             startOAuthPoll()
         } catch {
             if generation == oauthGeneration {
+                // A saved account that's gone must not be retried: Try again starts plain.
+                if (error as? BackendError)?.providerCode == "chatgpt_account_unknown" {
+                    oauthLastAttempt = (false, nil)
+                }
                 providersError = Self.connectCopy((error as? BackendError)?.providerCode)
             }
         }
@@ -3807,7 +3846,7 @@ final class AppModel: ObservableObject {
     private func pollOAuthOnce() async {
         guard let pending = oauth, !oauthDone else { return }
         do {
-            let (status, intervalMs, payload) = try await client.pollOAuth(pollId: pending.pollId)
+            let (status, intervalMs, errorCode, retryClientId, payload) = try await client.pollOAuth(pollId: pending.pollId)
             // Cancelled or replaced while this poll was out: its answer is stale.
             guard oauth?.pollId == pending.pollId else { return }
             if let intervalMs, intervalMs > 0 {
@@ -3824,15 +3863,29 @@ final class AppModel: ObservableObject {
                 oauthPoll?.cancel()
                 oauth = nil
                 oauthError = nil
+                oauthErrorCode = nil
                 oauthCompletions &+= 1
+                if pending.providerId == "openai",
+                   !UserDefaults.standard.bool(forKey: Self.chatgptPlanWelcomeKey) {
+                    UserDefaults.standard.set(true, forKey: Self.chatgptPlanWelcomeKey)
+                    showChatGptPlanWelcome = true
+                }
             case "pending", "slow_down":
                 oauthErrorStreak = 0
                 oauthError = nil
+                oauthErrorCode = nil
                 if oauthExpired {
                     oauthPoll?.cancel()
                     oauthDone = true
                     oauthError = "That sign-in expired. Try again."
                 }
+            case "error" where pending.flow == "browser":
+                // The browser flow reports a final code, so there is nothing to wait out.
+                oauthPoll?.cancel()
+                oauthDone = true
+                oauthError = Self.chatgptSignInCopy(errorCode)
+                oauthErrorCode = errorCode
+                oauthRetryClientId = retryClientId
             case "error":
                 // One vendor or transport hiccup keeps polling like "pending",
                 // with a note so the wait is not silent. A run of them ends the
@@ -3852,14 +3905,54 @@ final class AppModel: ObservableObject {
             case "denied":
                 oauthPoll?.cancel()
                 oauthDone = true
-                oauthError = "That sign-in was denied."
+                oauthError = pending.flow == "browser"
+                    ? Self.chatgptSignInCopy(errorCode ?? "denied")
+                    : "That sign-in was denied."
+                oauthErrorCode = errorCode
+                oauthRetryClientId = retryClientId
             default:
                 oauthPoll?.cancel()
                 oauthDone = true
-                oauthError = "Could not finish sign-in."
+                oauthError = pending.flow == "browser"
+                    ? Self.chatgptSignInCopy(errorCode)
+                    : "Could not finish sign-in."
+                oauthErrorCode = errorCode
+                oauthRetryClientId = retryClientId
             }
         } catch {
             // A failed poll never kills the flow. The next tick retries.
+        }
+    }
+
+    /// The ChatGPT sign-in poll error codes in plain words. The copy is the app's.
+    static let chatgptMismatchCopy = "That's a different ChatGPT account. Use a different account to connect it."
+
+    /// The sign-in ended on an account problem, so picking another account is the way forward.
+    var oauthOffersNewAccount: Bool {
+        oauthDone && (oauthErrorCode == "chatgpt_account_mismatch" || oauthErrorCode == "chatgpt_account_unknown")
+    }
+
+    /// Try again: starts the same way the failed attempt did.
+    func retryOAuth(providerId: String, label: String) async {
+        if let retry = oauthRetryClientId {
+            await startOAuth(providerId: providerId, label: label, retryClientId: retry)
+        } else {
+            await startOAuth(providerId: providerId, label: label, newAccount: oauthLastAttempt.newAccount, clientId: oauthLastAttempt.clientId)
+        }
+    }
+
+    static func chatgptSignInCopy(_ code: String?) -> String {
+        switch code {
+        case "chatgpt_plan_not_enabled":
+            return "ChatGPT plan use wasn't allowed. Try again and allow it, or connect another provider."
+        case "chatgpt_account_mismatch":
+            return chatgptMismatchCopy
+        case "chatgpt_account_unknown":
+            return "That saved ChatGPT account isn't available anymore. Pick another account."
+        case "denied":
+            return "Sign-in was cancelled in the browser."
+        default:
+            return "Couldn't finish signing in to ChatGPT. Try again."
         }
     }
 
@@ -3872,6 +3965,7 @@ final class AppModel: ObservableObject {
         let pending = oauth
         oauth = nil
         oauthError = nil
+        oauthErrorCode = nil
         oauthDone = false
         oauthErrorStreak = 0
         if let busy = providerBusy, busy.hasSuffix(":oauth") { providerBusy = nil }

@@ -12,13 +12,7 @@ export interface OAuthDeviceConfig {
   scopes: string;
   /** github-copilot: the OAuth token is exchanged for a short-lived Copilot token before use. */
   exchangeUrl?: string;
-  /** openai: POST here to poll for the authorization code. */
-  pollUrl?: string;
-  /** openai: page the user opens to approve the code. */
-  verificationUrl?: string;
-  /** openai: redirect_uri sent with the code exchange. */
-  redirectUri?: string;
-  /** Extra headers the vendor requires on every inference call (Copilot editor headers, ChatGPT account id is added by the adapter). */
+  /** Extra headers the vendor requires on every inference call (Copilot editor headers). */
   headers?: Record<string, string>;
 }
 
@@ -40,6 +34,8 @@ export interface ProviderMode {
   /** Extra text fields the connect sheet must collect (Cloudflare account id, custom base URL). */
   fields?: Array<{ id: string; label: string; placeholder: string; secret?: boolean }>;
   oauth?: OAuthDeviceConfig;
+  /** openai: Sign in with ChatGPT (browser authorization code flow) instead of a device flow. */
+  signIn?: "chatgpt";
   /** Default model per alias when nothing is selected yet. */
   defaults: { workhorse: string; reviewer: string };
   /**
@@ -85,43 +81,19 @@ export const PROVIDER_CATALOG: ProviderDef[] = [
         mode: "oauth",
         label: "ChatGPT",
         kindLabel: "Subscription",
-        baseUrl: "https://chatgpt.com/backend-api/codex",
+        baseUrl: "https://api.openai.com/v1",
         protocol: "openai-responses",
         keyHeader: "bearer",
         listsModels: true,
-        // The Codex /models list is filtered by client_version: each model
-        // carries a minimal_client_version and anything newer than the version
-        // sent is left out. A pinned real CLI version goes stale with every
-        // release (0.99.0 returned only GPT-5.5), so send one above any
-        // shipped CLI and let the account decide what it sees.
-        modelsQuery: { client_version: "99.0.0" },
         keyUrl: null,
-        hint: "ChatGPT Plus or Pro through Codex sign in.",
-        // Codex device flow per github.com/openai/codex
-        // codex-rs/login/src/device_code_auth.rs and exchange_code_for_tokens
-        // in server.rs. Start POST {issuer}/api/accounts/deviceauth/usercode
-        // with {client_id}. Poll POST {issuer}/api/accounts/deviceauth/token
-        // with {device_auth_id, user_code}: 403 or 404 means pending, other
-        // non-2xx means error, 2xx returns {authorization_code,
-        // code_challenge, code_verifier}. Then exchange at
-        // POST {issuer}/oauth/token as a form with grant_type
-        // authorization_code plus code, redirect_uri
-        // {issuer}/deviceauth/callback, client_id and code_verifier. Verify
-        // at {issuer}/codex/device. The id token carries the ChatGPT
-        // account id claim
-        // https://api.openai.com/auth.chatgpt_account_id, sent back as the
-        // ChatGPT-Account-Id header on inference calls.
-        oauth: {
-          kind: "device-code",
-          clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-          deviceUrl: "https://auth.openai.com/api/accounts/deviceauth/usercode",
-          tokenUrl: "https://auth.openai.com/oauth/token",
-          pollUrl: "https://auth.openai.com/api/accounts/deviceauth/token",
-          verificationUrl: "https://auth.openai.com/codex/device",
-          redirectUri: "https://auth.openai.com/deviceauth/callback",
-          scopes: "openid profile email offline_access api.connectors.read api.connectors.invoke",
-        },
-        // Checked against the live Codex /models list on 2026-09-19 (GPT-5.6
+        hint: "ChatGPT Plus or Pro through Sign in with ChatGPT.",
+        // Official Sign in with ChatGPT for open-source apps (browser sign-in
+        // with PKCE on a loopback callback, no device code), documented at
+        // https://developers.openai.com/siwc/token-sharing-open-source/sign-in
+        // and .../models-and-inference. The flow lives in
+        // shared/chatgpt-signin.ts; inference is the public Responses API.
+        signIn: "chatgpt",
+        // Checked against the live ChatGPT model list on 2026-09-19 (GPT-5.6
         // Sol, Terra and Luna, GPT-6 Astra, GPT-5.5). Only the fallback until
         // the live list lands; the live list overrides these.
         defaults: { workhorse: "gpt-5.6-luna", reviewer: "gpt-6-astra" },

@@ -116,6 +116,12 @@ export type Credential =
     accountId: string | null;
     /** github-copilot: exchanged inference token */
     exchanged?: { token: string; expiresAt: number };
+    /** openai (Sign in with ChatGPT): the issued client id, validated subject, email, granted scopes and retained ID token. A ChatGPT credential without clientId is a legacy Codex sign-in. */
+    clientId?: string | null;
+    idToken?: string | null;
+    scopes?: string[];
+    subject?: string | null;
+    email?: string | null;
   }
   | { kind: "none" };
 
@@ -178,6 +184,8 @@ export interface ConnectionPublic {
   status: "ok" | "expired" | "error";
   lastError: string | null;
   accountId: string | null;
+  /** The signed-in account's email for a ChatGPT sign-in, else null. */
+  accountLabel: string | null;
   fields: Record<string, string>;
   models: Array<{ id: string; label: string }>;
   /** The catalogue's everyday model for this mode (`defaults.workhorse`), the one first run suggests. */
@@ -278,6 +286,11 @@ function parseCredential(raw: unknown): Credential | null {
     if (isRecord(raw.exchanged) && typeof raw.exchanged.token === "string" && typeof raw.exchanged.expiresAt === "number") {
       cred.exchanged = { token: raw.exchanged.token, expiresAt: raw.exchanged.expiresAt };
     }
+    if (typeof raw.clientId === "string" && raw.clientId) cred.clientId = raw.clientId;
+    if (typeof raw.idToken === "string" && raw.idToken) cred.idToken = raw.idToken;
+    if (Array.isArray(raw.scopes)) cred.scopes = raw.scopes.filter((scope): scope is string => typeof scope === "string");
+    if (typeof raw.subject === "string" && raw.subject) cred.subject = raw.subject;
+    if (typeof raw.email === "string" && raw.email) cred.email = raw.email;
     return cred;
   }
   if (raw.kind === "none") return { kind: "none" };
@@ -794,7 +807,13 @@ function firstImageConnection(listed: Connection[], connectedIds: Set<string>, a
   return capable.find((conn) => conn.id === activeId) ?? capable[0] ?? null;
 }
 
+/** A ChatGPT sign-in made through the old Codex route: it has no issued client id and cannot be refreshed. */
+export function isLegacyChatGptCredential(providerId: string, mode: AuthMode, credential: Credential): boolean {
+  return providerId === "openai" && mode === "oauth" && credential.kind === "oauth" && !credential.clientId;
+}
+
 function connectionStatus(conn: Connection): ConnectionPublic["status"] {
+  if (isLegacyChatGptCredential(conn.providerId, conn.mode, conn.credential)) return "expired";
   if (conn.lastError) return "error";
   if (isExpired(conn)) return "expired";
   return "ok";
@@ -818,6 +837,9 @@ function publicConnection(conn: Connection, activeId: string | null): Connection
     status: connectionStatus(conn),
     lastError: conn.lastError?.code ?? null,
     accountId: conn.credential.kind === "oauth" ? conn.credential.accountId : null,
+    accountLabel: conn.providerId === "openai" && conn.mode === "oauth" && conn.credential.kind === "oauth"
+      ? conn.credential.email ?? null
+      : null,
     fields: { ...conn.fields },
     models: modelRows(conn.id),
     defaultModelId: mode.defaults.workhorse,
@@ -883,6 +905,7 @@ export function publicProviders(
         status: "ok" as const,
         lastError: null,
         accountId: null,
+        accountLabel: null,
         fields: {},
         models: modelRows(implicit.id),
         defaultModelId: providerMode("opencode-go", "plan").defaults.workhorse,
