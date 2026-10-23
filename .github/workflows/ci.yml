@@ -30,6 +30,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm --prefix router run typecheck
+      - run: npm ci --prefix scripts/brand-tools
       - run: npm run brand:check
       # cli-tools.test.ts expects gh's own config folder to exist, as it does on a dev Mac.
       - run: mkdir -p "$HOME/.config/gh"
