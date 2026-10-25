@@ -18,6 +18,8 @@ import { statePath } from "./stack.ts";
 
 export type WidgetRecord = {
   id: string;
+  /** The chat the widget was drawn in; absent on a record from before chats. */
+  chatId?: string | null;
   connectionId: string;
   toolName: string;
   resourceUri: string | null;
@@ -61,29 +63,43 @@ export function readWidget(id: string, dir = widgetsDir()): WidgetRecord | null 
   }
 }
 
-export function deleteWidget(id: string, dir = widgetsDir()): void {
-  try { unlinkSync(pathFor(id, dir)); } catch { /* ignore */ }
+/** Every readable record, for the orphan sweep. */
+export function listWidgets(dir = widgetsDir()): WidgetRecord[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out: WidgetRecord[] = [];
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const id = name.slice(0, -".json".length);
+    if (!ID.test(id)) continue;
+    const record = readWidget(id, dir);
+    if (record) out.push(record);
+  }
+  return out;
 }
 
 /** How long a record is kept before a sweep may call it an orphan. */
 export const WIDGET_ORPHAN_GRACE_MS = 10 * 60 * 1000;
 
 /**
- * Delete every stored widget no thread event names any more, and return the
- * ids it dropped.
+ * Delete every stored widget the keep set does not name, and return the ids it
+ * dropped. The caller keeps the widgets of chats that still exist and the
+ * drawings the Library holds.
  *
- * Clearing a chat takes its events with it but left the drawings behind, so
- * the directory only ever grew: each record holds the drawing itself, up to
- * RECORD_MAX, and nothing ever read them again. Nothing else deleted one
- * either, so this is the first caller `deleteWidget` has had.
+ * Deleting a chat leaves its drawings behind, so the directory would only ever
+ * grow: each record holds the drawing itself, up to RECORD_MAX.
  *
  * The grace window is what keeps the sweep off a live drawing. The widget
- * route writes the record and only then appends the event that names it, so a
+ * route writes the record and only then appends the row that names it, so a
  * sweep landing between the two would delete a drawing that is about to be
  * referenced. Anything younger than the window is left alone.
  */
 export function sweepOrphanWidgets(
-  referencedIds: Iterable<string>,
+  keepIds: Iterable<string>,
   dir = widgetsDir(),
   now = Date.now(),
 ): string[] {
@@ -94,7 +110,7 @@ export function sweepOrphanWidgets(
     // No directory yet, or one this process cannot read: nothing to sweep.
     return [];
   }
-  const keep = new Set(referencedIds);
+  const keep = new Set(keepIds);
   const dropped: string[] = [];
   for (const name of names) {
     if (!name.endsWith(".json")) continue;

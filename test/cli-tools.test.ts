@@ -9,11 +9,11 @@ import { CLI_REGISTRY, cliStatus, credentialPathsFor, findCli, resolveBin } from
 import { loneCommandHead } from "../agent/lib/command-risk.ts";
 import { sandboxProfile } from "../agent/lib/sandbox.ts";
 import installCli from "../agent/tools/install_cli.ts";
-import { upsertSessionGrant } from "../shared/workspace-store.ts";
+import { fakeCtx, stampGrant } from "./tools/ctx.ts";
 
 type Tool = { execute: (input: never, context: never) => unknown };
 
-async function run<T>(tool: Tool, input: Record<string, unknown>, context: Record<string, unknown> = {}): Promise<T> {
+async function run<T>(tool: Tool, input: Record<string, unknown>, context: unknown = {}): Promise<T> {
   return await tool.execute(input as never, context as never) as T;
 }
 
@@ -308,18 +308,14 @@ test("install_cli refuses to install in Read only", async () => {
     process.env.UB_WORKSPACE_ROOT = realpathSync(join(dir, "home"));
     process.env.UB_OWNER_PATH = fixture.dir;
     resetOwnerPath();
-    upsertSessionGrant(
-      { sessionId: "sess-read-only", path: null, permission: "read_only" },
-      new Date(),
-      process.env.UB_WORKSPACE_STORE_PATH,
-    );
+    stampGrant("sess-read-only", null, "read_only");
     // Reading what is installed is fine in every mode; installing is not.
-    const listed = await run<{ status: string }>(installCli, { action: "list" }, { session: { id: "sess-read-only" } });
+    const listed = await run<{ status: string }>(installCli, { action: "list" }, fakeCtx({ chatId: "sess-read-only" }));
     assert.equal(listed.status, "ok");
     const blocked = await run<{ status: string; error: string }>(
       installCli,
       { action: "install", name: "vercel" },
-      { session: { id: "sess-read-only" } },
+      fakeCtx({ chatId: "sess-read-only" }),
     );
     assert.equal(blocked.status, "blocked");
     assert.equal(blocked.error, "workspace_read_only");

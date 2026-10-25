@@ -1,0 +1,191 @@
+{
+  "rows": [
+    {
+      "rowId": "compaction:e-0042",
+      "kind": "note",
+      "turnId": null,
+      "at": "2026-10-25T12:00:00.000Z",
+      "text": "Conversation compacted to fit the model's window",
+      "source": "compaction"
+    },
+    {
+      "rowId": "note:connected-gmail",
+      "kind": "note",
+      "turnId": null,
+      "at": "2026-10-25T12:00:01.000Z",
+      "text": "Connected Gmail.",
+      "source": "connect"
+    },
+    {
+      "rowId": "card:prop-0001",
+      "kind": "card",
+      "turnId": null,
+      "at": "2026-10-25T12:00:02.000Z",
+      "proposalId": "prop-0001"
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a001:u",
+      "kind": "user",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:03.000Z",
+      "text": "Find two sources on Pi and draw the flow",
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c1",
+      "attachments": [
+        {
+          "name": "notes.txt",
+          "mediaType": "text/plain",
+          "size": 812
+        }
+      ]
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a001:a0",
+      "kind": "assistant",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:06.000Z",
+      "text": "Here are two sources.",
+      "searchResults": [
+        {
+          "title": "Pi agent harness",
+          "url": "https://example.com/pi",
+          "snippet": "An embeddable agent loop."
+        },
+        {
+          "title": "Session format",
+          "url": "https://example.com/pi/sessions",
+          "snippet": "Append-only JSONL."
+        }
+      ]
+    },
+    {
+      "rowId": "page:media-0001",
+      "kind": "page",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:07.000Z",
+      "mediaId": "media-0001",
+      "title": "Pi notes",
+      "path": "/Users/owner/Desktop/pi-notes.html"
+    },
+    {
+      "rowId": "widget:call-excal-1",
+      "kind": "widget",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:08.000Z",
+      "widgetId": "wdg-0001",
+      "callId": "call-excal-1",
+      "connectionId": "excalidraw",
+      "toolName": "create_view"
+    },
+    {
+      "rowId": "image:img-0001",
+      "kind": "image",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:09.000Z",
+      "imageId": "img-0001",
+      "prompt": "A small robot reading a map"
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a001:a1",
+      "kind": "assistant",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:10.000Z",
+      "text": "I drew the flow and saved a page."
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a001:q",
+      "kind": "question",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+      "at": "2026-10-25T12:00:11.000Z",
+      "requestId": "a1a1a1a1-0000-4000-8000-0000000000a1",
+      "prompt": "Which folder should I save the report in?",
+      "options": [
+        {
+          "id": "desktop",
+          "label": "Desktop"
+        },
+        {
+          "id": "docs",
+          "label": "Documents",
+          "detail": "~/Documents/Reports"
+        }
+      ],
+      "allowFreeform": true,
+      "open": false
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a002:u",
+      "kind": "user",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a002",
+      "at": "2026-10-25T12:00:12.000Z",
+      "text": "Desktop",
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c2",
+      "attachments": []
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a002:f",
+      "kind": "failure",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a002",
+      "at": "2026-10-25T12:00:14.000Z",
+      "code": "upstream_unavailable",
+      "detail": "The provider didn't answer.",
+      "retryAfterMs": 4000,
+      "messageKept": true
+    },
+    {
+      "rowId": "unsent:c1c1c1c1-0000-4000-8000-0000000000c3",
+      "kind": "unsent",
+      "turnId": null,
+      "at": "2026-10-25T12:00:15.000Z",
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c3",
+      "text": "and email it to me",
+      "reason": "cancelled"
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a003:u",
+      "kind": "user",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a003",
+      "at": "2026-10-25T12:00:16.000Z",
+      "text": "Try a shorter summary",
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c4",
+      "attachments": []
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a003:a0",
+      "kind": "assistant",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a003",
+      "at": "2026-10-25T12:00:17.000Z",
+      "text": "Working on a shorter"
+    },
+    {
+      "rowId": "7a1e0001-0000-4000-8000-00000000a004:u",
+      "kind": "user",
+      "turnId": "7a1e0001-0000-4000-8000-00000000a004",
+      "at": "2026-10-25T12:00:18.000Z",
+      "text": "Then list three next steps",
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c5",
+      "attachments": [],
+      "queued": true
+    }
+  ],
+  "tailSeq": 57,
+  "epoch": "e7a1c0de-0000-4000-8000-000000000001",
+  "running": {
+    "turnId": "7a1e0001-0000-4000-8000-00000000a003",
+    "startedAt": "2026-10-25T12:00:16.000Z",
+    "rowId": "7a1e0001-0000-4000-8000-00000000a003:a0",
+    "partialText": "Working on a shorter",
+    "activity": {
+      "kind": "tool",
+      "tool": "web_search",
+      "detail": "Searching the web"
+    }
+  },
+  "queued": [
+    {
+      "clientId": "c1c1c1c1-0000-4000-8000-0000000000c5",
+      "text": "Then list three next steps"
+    }
+  ],
+  "openQuestion": null,
+  "nextBefore": "compaction:e-0042"
+}

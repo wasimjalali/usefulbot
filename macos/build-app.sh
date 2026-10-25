@@ -176,7 +176,20 @@ fi
   fi
 )
 
-swift build -c release
+# Swift 6.4's default build engine (swiftbuild) links through swiftc, which gives
+# clang the SDK as --sysroot and runs without SDKROOT. clang reads the SDK version
+# only from -isysroot or SDKROOT, so ld recorded the deployment target as the SDK
+# (sdk 14.0) and AppKit and SwiftUI ran in old-SDK mode. Hand the link step
+# -isysroot until the driver fix ships (swiftlang/swift-driver#2158, #2240).
+SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+swift build -c release -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDK_PATH"
+# Never ship a binary that records another SDK than the one it was built with.
+BUILT_SDK="$(vtool -show-build .build/release/UsefulBotApp | awk '$1 == "sdk" { print $2; exit }')"
+WANT_SDK="$(xcrun --sdk macosx --show-sdk-version)"
+if [ "$BUILT_SDK" != "$WANT_SDK" ]; then
+  echo "build-app.sh: the app binary records sdk ${BUILT_SDK:-none}, expected $WANT_SDK" >&2
+  exit 1
+fi
 if [ "$VARIANT" = dev ]; then
   APP="dist/Useful Bot Dev.app"
   EXE="UsefulBotDevApp"
@@ -237,7 +250,7 @@ fi
 # Named after the logo it holds, and renamed whenever the logo changes, so
 # nothing that cached the bundle's icon by file name can match the old one.
 # (A Dock tile pinned before the change can still hold the old picture until
-# the system icon cache is cleared: see the logo gotcha in CLAUDE.md.) The
+# the system icon cache is cleared: see the logo gotcha in AGENTS.md.) The
 # last build's icon file goes first, so the bundle carries only this one.
 find "$APP/Contents/Resources" -maxdepth 1 -name '*.icns' -delete
 cp ../brand/app/macos/UsefulBot.icns "$APP/Contents/Resources/UsefulBotHead.icns"

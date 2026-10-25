@@ -1,0 +1,144 @@
+{
+  "task_id": "t04-web-search",
+  "title": "Web search",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r2",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "none"
+  },
+  "rubric": "The bot searched the web (the transcript or the activity labels show a search or a page fetch) instead of answering from memory, gave one concrete Node.js version number and cited a URL for it (nodejs.org or the project's GitHub releases are the expected sources). Judge the version for plausibility against the page the bot cites, not against your own knowledge of Node: a version the cited page supports passes. Deduct for no citation, for a vague answer, or for an LTS line mixed up with the latest stable release without saying so.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t04-web-search",
+  "errors": [],
+  "prompts": [
+    "What's the latest stable Node.js release? Cite the page."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792903527437,
+    "end": 1792903556714
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What's the latest stable Node.js release? Cite the page.",
+      "sent_at_ms": 1792903527666,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 1.0,
+          "label": "Using web fetch"
+        },
+        {
+          "t": 2.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 8.67,
+      "wall_s": 5.03,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792903544614,
+      "redraw": "ok",
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "The latest release is Node.js v26.12.1, published Oct 21, 2026. It's the current line, not LTS. The latest LTS release is v24.22.1 (\"Krypton\"), also updated Oct 20, 2026.\nSource: Node.js Releases, nodejs.org, which lists \"v26.12.1 Latest Release\" and \"v24.22.1 Latest LTS\".\nFor production, Node recommends Active LTS, so v24.22.1 is the safer pick.",
+      "reply_items": [
+        {
+          "text": "The latest release is Node.js v26.12.1, published Oct 21, 2026. It's the current line, not LTS. The latest LTS release is v24.22.1 (\"Krypton\"), also updated Oct 20, 2026.",
+          "bot": true,
+          "y": 298.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Source: Node.js Releases, nodejs.org, which lists \"v26.12.1 Latest Release\" and \"v24.22.1 Latest LTS\".",
+          "bot": true,
+          "y": 355.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "For production, Node recommends Active LTS, so v24.22.1 is the safer pick.",
+          "bot": true,
+          "y": 412.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r2/shots/t04-web-search-turn1.png",
+      "transcript_full": "The latest release is Node.js v26.12.1, published Oct 21, 2026. It's the current line, not LTS. The latest LTS release is v24.22.1 (\"Krypton\"), also updated Oct 20, 2026.\nSource: Node.js Releases, nodejs.org, which lists \"v26.12.1 Latest Release\" and \"v24.22.1 Latest LTS\".\nFor production, Node recommends Active LTS, so v24.22.1 is the safer pick.\nUSER: What's the latest stable Node.js release? Cite the page."
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 1.0,
+      "label": "Using web fetch"
+    },
+    {
+      "t": 2.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": true,
+      "detail": "/\\bv?\\d{1,2}\\.\\d+\\.\\d+\\b/ on turn -1: match"
+    },
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": false,
+      "detail": "/https?:/// on turn -1: no match"
+    },
+    {
+      "type": "activity_seen",
+      "gating": false,
+      "pass": true,
+      "detail": "labels matching: ['Using web fetch']"
+    }
+  ],
+  "checks_pass": false,
+  "wall_s_total": 5.03,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

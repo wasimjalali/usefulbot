@@ -1,0 +1,170 @@
+{
+  "task_id": "t01-files",
+  "title": "Files, tool choice",
+  "engine": "pi",
+  "run_id": "2026-10-25-pi",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot looked at the folder with its file tools (a listing, or a command that sizes the files) instead of guessing. The reply gives the right number of .md files counting the subfolder and names the largest one (the fixture has a larger .txt file that must not be named as the largest markdown file). One short answer. Deduct for inventing files or for a count that skips the subfolder.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files",
+  "errors": [],
+  "prompts": [
+    "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files (including subfolders), and which one is the largest?"
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792944467432,
+    "end": 1792944483228
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files (including subfolders), and which one is the largest?",
+      "sent_at_ms": 1792944467504,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 1.0,
+          "label": "Writing"
+        },
+        {
+          "t": 2.0,
+          "label": "Running a command"
+        },
+        {
+          "t": 5.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [
+        {
+          "t": 3.0,
+          "tool": "bash",
+          "preview": "changes files outside a project folder\nfind /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" | wc -l; echo \"---\"; find /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" -exec ls -l {} \\; | sort -k5 -n -r",
+          "texts": [
+            "bash",
+            "changes files outside a project folder\nfind /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" | wc -l; echo \"---\"; find /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" -exec ls -l {} \\; | sort -k5 -n -r"
+          ],
+          "decision": "approve",
+          "names_scratch": true
+        }
+      ],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 3.16,
+      "wall_s": 6.02,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792944479788,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "I'll count them and check sizes.\nThere are 8 .md files, including the one in sub/.\nThe largest is sub/design-notes.md at 3,116 bytes. The rest, from next biggest: delta.md (1,082), plan.md (833), gamma.md (691), beta.md (464), epsilon.md (400), alpha.md (237), sub/todo.md (63).",
+      "reply_items": [
+        {
+          "text": "I'll count them and check sizes.",
+          "bot": true,
+          "y": 314.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "There are 8 .md files, including the one in sub/.",
+          "bot": true,
+          "y": 359.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "The largest is sub/design-notes.md at 3,116 bytes. The rest, from next biggest: delta.md (1,082), plan.md (833), gamma.md (691), beta.md (464), epsilon.md (400), alpha.md (237), sub/todo.md (63).",
+          "bot": true,
+          "y": 400.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-pi/shots/t01-files-turn1.png",
+      "transcript_full": "I'll count them and check sizes.\nThere are 8 .md files, including the one in sub/.\nThe largest is sub/design-notes.md at 3,116 bytes. The rest, from next biggest: delta.md (1,082), plan.md (833), gamma.md (691), beta.md (464), epsilon.md (400), alpha.md (237), sub/todo.md (63).\nUSER: How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files (including subfolders), and which one is the largest?"
+    }
+  ],
+  "cards": [
+    {
+      "t": 3.0,
+      "tool": "bash",
+      "preview": "changes files outside a project folder\nfind /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" | wc -l; echo \"---\"; find /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" -exec ls -l {} \\; | sort -k5 -n -r",
+      "texts": [
+        "bash",
+        "changes files outside a project folder\nfind /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" | wc -l; echo \"---\"; find /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t01-files -type f -name \"*.md\" -exec ls -l {} \\; | sort -k5 -n -r"
+      ],
+      "decision": "approve",
+      "names_scratch": true
+    }
+  ],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 1.0,
+      "label": "Writing"
+    },
+    {
+      "t": 2.0,
+      "label": "Running a command"
+    },
+    {
+      "t": 5.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_has_md_count",
+      "gating": true,
+      "pass": true,
+      "detail": "expected 8 .md files; reply names that number"
+    },
+    {
+      "type": "reply_has_largest_md",
+      "gating": true,
+      "pass": true,
+      "detail": "largest is sub/design-notes.md (3116 bytes); reply names it"
+    },
+    {
+      "type": "tree_unchanged",
+      "gating": true,
+      "pass": true,
+      "detail": "changed/removed: []; added: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 6.02,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": null
+  }
+}

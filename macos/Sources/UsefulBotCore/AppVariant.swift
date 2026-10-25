@@ -140,7 +140,7 @@ public enum AppVariant: Equatable, Sendable, CaseIterable {
         }
     }
 
-    public var evePort: Int {
+    public var enginePort: Int {
         switch self {
         case .daily: return 4321
         case .dev: return 4421
@@ -154,7 +154,7 @@ public enum AppVariant: Equatable, Sendable, CaseIterable {
 
     public var webBaseURL: URL { loopback(webPort) }
     public var routerHealthURL: URL { loopback(routerPort, "/health/live") }
-    public var eveHealthURL: URL { loopback(evePort, "/eve/v1/health") }
+    public var engineHealthURL: URL { loopback(enginePort, "/health") }
 
     /// The Keychain service names are `<prefix>.<item>`: the services read
     /// them through `UB_KEYCHAIN_PREFIX`, the app reads the desktop token.
@@ -246,7 +246,7 @@ public enum AppVariant: Equatable, Sendable, CaseIterable {
                 "UB_STATE_ROOT": stateRoot(home: home).path,
                 "UB_ROUTER_PORT": String(routerPort),
                 "UB_WEB_PORT": String(webPort),
-                "UB_EVE_PORT": String(evePort),
+                "UB_ENGINE_PORT": String(enginePort),
                 "UB_KEYCHAIN_PREFIX": keychainPrefix,
                 "UB_MEDIA_DIR": mediaDirectory(home: home).path,
                 "UB_WEB_BASE_URL": webBaseURL.absoluteString,

@@ -1,0 +1,174 @@
+{
+  "run_id": "2026-10-25-pi",
+  "prices": "prices.json",
+  "db": "/Users/wasimjalali/.useful-bot-dev-app/router/usage.sqlite",
+  "tasks": {
+    "t01-files": {
+      "requests": 2,
+      "input_tokens": 11841,
+      "output_tokens": 234,
+      "usd": 0.001917,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944467432,
+        1792944484800
+      ]
+    },
+    "t02-bash-approve": {
+      "requests": 4,
+      "input_tokens": 25280,
+      "output_tokens": 406,
+      "usd": 0.004036,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944484800,
+        1792944501173
+      ]
+    },
+    "t03-deny": {
+      "requests": 5,
+      "input_tokens": 31887,
+      "output_tokens": 656,
+      "usd": 0.005177,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944501173,
+        1792944522551
+      ]
+    },
+    "t04-web-search": {
+      "requests": 2,
+      "input_tokens": 41316,
+      "output_tokens": 341,
+      "usd": 0.006402,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944522551,
+        1792944537973
+      ]
+    },
+    "t05-memory-save": {
+      "requests": 4,
+      "input_tokens": 24787,
+      "output_tokens": 780,
+      "usd": 0.004186,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944537973,
+        1792944557315
+      ]
+    },
+    "t06-memory-recall": {
+      "requests": 2,
+      "input_tokens": 12315,
+      "output_tokens": 759,
+      "usd": 0.002303,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944557315,
+        1792944574698
+      ]
+    },
+    "t07-routine": {
+      "requests": 10,
+      "input_tokens": 81720,
+      "output_tokens": 2332,
+      "usd": 0.013657,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944574698,
+        1792944624262
+      ]
+    },
+    "t08-connector": {
+      "requests": 3,
+      "input_tokens": 19252,
+      "output_tokens": 282,
+      "usd": 0.003057,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944624262,
+        1792944653788
+      ]
+    },
+    "t09-question": {
+      "requests": 3,
+      "input_tokens": 17417,
+      "output_tokens": 622,
+      "usd": 0.002986,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944653788,
+        1792944671188
+      ]
+    },
+    "t10-long-chat": {
+      "requests": 19,
+      "input_tokens": 158144,
+      "output_tokens": 2590,
+      "usd": 0.025276,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792944671188,
+        1792944779757
+      ]
+    }
+  },
+  "total": {
+    "input_tokens": 423959,
+    "output_tokens": 9002,
+    "requests": 54,
+    "usd": 0.068997
+  },
+  "note": "Input is priced at the cache-miss rate (the router does not record cache hits): an upper bound."
+}

@@ -3,7 +3,6 @@ import { ConnectionUrlError } from "./connection-url.ts";
 import {
   connectionIndex,
   connectionStatus,
-  indexIsStale,
   indexedToolBytes,
   isMountableToolName,
   listingIsDue,
@@ -11,185 +10,37 @@ import {
   nextStamp,
   checkedThisRuntimeFor,
   putConnectionDiscovery,
-  putConnectionOperations,
   putConnectionPending,
-  putConnectionStatus,
   type ConnectionState,
   type ConnectionStatus,
   type IndexedTool,
 } from "./connection-tools-store.ts";
 import { findConnectionById, readConnectionsStore, type ConnectionEntry } from "./connections-store.ts";
-import { listMcpToolsWithStats, MCP_READ_TIMEOUT_MS, McpError, measureOpenApiConnection, modelToolNames } from "./mcp-http.ts";
-import { specWireBytes, type SpecSize } from "./tool-wire-size.ts";
-import { MAX_SESSION_TOOL_BYTES, MAX_SESSION_TOOLS, MOUNTED_TOOL_BUDGET, MOUNTED_TOOL_BYTE_BUDGET } from "./policy.ts";
+import { listMcpToolsWithStats, MCP_READ_TIMEOUT_MS, McpError, modelToolNames } from "./mcp-http.ts";
+import { MAX_SESSION_TOOL_BYTES, MAX_SESSION_TOOLS } from "./policy.ts";
 
 /**
- * Which connections are mounted for every turn, and how a bot finds the tools
- * of the ones that are not.
+ * How a bot finds the tools of the connected MCP servers. None sits in context
+ * on its own: a server may publish hundreds, so `find_tools` searches the
+ * cached listings and the chat picks up what it asked for. A tool taken on
+ * demand is built here, from this index, so what it weighs on the wire is
+ * known before it is registered.
  *
- * What the budgets are and are not. eve mounts an OpenAPI connection by
- * fetching the spec itself, so what this side measured and what eve puts on
- * the wire are two fetches of the same endpoint and need not agree: that
- * charge is a deliberate over-estimate of a snapshot. A tool taken on demand
- * is built here, from this index, so its charge is exact.
- *
- * Neither is a defence against a server that deliberately answers one thing
- * to a measurement and another to a mount. The owner approved that server on
- * a card; the budgets are here so an honest one cannot walk a bot into a wall
- * that kills the chat.
- *
- * eve owns OpenAPI spec parsing, and those connections are few, so they stay
- * mounted. So does a small MCP server whose own allow-list is short: two
- * tools cost nothing against the budget and making the bot look them up first
- * would put a round trip in front of every drawing. Everything else waits to
- * be asked for by name.
+ * The budgets are not a defence against a server that deliberately answers one
+ * thing to a measurement and another to a call. The owner approved that server
+ * on a card; the budgets are here so an honest one cannot walk a bot into a
+ * wall that kills the chat.
  */
 
-/**
- * Only an OpenAPI connection is mounted for every turn, and only because eve
- * owns spec parsing and there is no other way to reach one.
- *
- * A pinned MCP server used to be mounted too, on the grounds that two tools
- * cost nothing and a bot should not have to look them up before it can draw.
- * There was no honest number to charge it. eve mounts an MCP connection by
- * asking the server itself and passes its names, descriptions and schemas
- * through with no cap, so nothing measured here bounds what goes on the wire:
- * a server pinned to eight tools could put a hundred kilobytes in front of
- * the model and be charged thirty-seven. A tool taken on demand is built
- * here, from this index, so its size is known before it is mounted. That is
- * the whole reason to prefer it, and it applies to two tools as much as two
- * hundred.
- */
-export function isEagerConnection(entry: ConnectionEntry): boolean {
-  return entry.kind === "openapi";
-}
-
-/**
- * The connections mounted for this turn, in the order they were connected,
- * stopping at the budget.
- *
- * The connect-time check is not enough on its own: rows connected before that
- * check existed, or written by any path that does not go through it, would
- * still put a list in front of the model that the router refuses with a
- * non-retryable error. Clamping here means the model never sees one, whatever
- * is in the store. A connection left out is not lost; it comes back as soon
- * as the ones ahead of it are disconnected.
- */
-export function eagerConnections(path?: string, storePath?: string): ConnectionEntry[] {
-  const all = readConnectionsStore(path).connections.filter(isEagerConnection);
-  const out: ConnectionEntry[] = [];
-  let tools = 0;
-  let bytes = 0;
-  for (const entry of all) {
-    const count = mountedToolCount(entry, storePath);
-    const size = mountedToolBytes(entry, storePath);
-    // A size nobody knows is not a small one.
-    if (count === null || size === null) continue;
-    // Nor is a name nobody has checked a short one.
-    if (!specNamesFit(entry.id, connectionIndex(entry.id, storePath)?.longestName)) continue;
-    if (tools + count > MOUNTED_TOOL_BUDGET || bytes + size > MOUNTED_TOOL_BYTE_BUDGET) continue;
-    tools += count;
-    bytes += size;
-    out.push(entry);
-  }
-  return out;
-}
-
+/** Every connection: they are all MCP servers, and all of them are searched on demand. */
 export function onDemandConnections(path?: string): ConnectionEntry[] {
-  return readConnectionsStore(path).connections.filter((entry) => !isEagerConnection(entry));
-}
-
-/**
- * Whether every tool name eve builds from a spec still fits the provider's
- * sixty-four once `<connectionId>__` is in front of it. An unknown length does
- * not fit.
- */
-export function specNamesFit(connectionId: string, longestName: number | undefined): boolean {
-  return longestName !== undefined && connectionId.length + 2 + longestName <= 64;
-}
-
-/**
- * How many tools an OpenAPI connection mounts, or null when nothing has
- * counted it. A row that predates the count, or one written by a path that
- * skipped it, is unknown, and guessing a modest figure would admit it into a
- * wall it can clear. `ensureMeasured` fills the gap in.
- */
-export function mountedToolCount(entry: ConnectionEntry, path?: string): number | null {
-  return connectionIndex(entry.id, path)?.operations ?? null;
-}
-
-/**
- * Measure the OpenAPI connections whose figures are missing or old, and write
- * them down. Called from the turn resolver, so a connection that predates the
- * count is measured on the next turn instead of staying unmountable.
- */
-export async function ensureMeasured(entries: ConnectionEntry[], path?: string): Promise<void> {
-  const due = entries.filter((entry) => {
-    if (entry.kind !== "openapi") return false;
-    const index = connectionIndex(entry.id, path);
-    // Missing or old: measure it.
-    if (indexIsStale(index)) return true;
-    // A recent attempt that failed backs off until the index goes stale, or a
-    // spec that cannot be read would be refetched at every turn boundary,
-    // eight seconds a time, for a row that stays unmounted either way.
-    if (index?.failed) return false;
-    // Fresh but incomplete, such as an index written before a figure existed:
-    // measure it now rather than leave it unmounted for six hours.
-    return mountedToolCount(entry, path) === null
-      || mountedToolBytes(entry, path) === null
-      || index?.longestName === undefined;
-  });
-  // Together, not one after another. This runs at a turn boundary and holds
-  // the first model call of the turn for as long as it takes.
-  await Promise.all(due.map(async (entry) => {
-    const startedAt = nextStamp();
-    let size: SpecSize | null = null;
-    try {
-      size = await measureOpenApiConnection(entry.url, await headersFor(entry));
-    } catch {
-      size = null;
-    }
-    try {
-      putConnectionOperations(entry.id, size, path, startedAt);
-    } catch {
-      // The index is a cache; a write that failed costs one fetch later.
-    }
-  }));
-}
-
-/** Never throws: a measurement is not worth failing a turn boundary over. */
-async function headersFor(entry: ConnectionEntry): Promise<Record<string, string>> {
-  try {
-    return await connectionHeaders(entry);
-  } catch {
-    return {};
-  }
-}
-
-/**
- * What one connection weighs on the wire, or null when nothing has measured
- * it. For an MCP server that is its listing, each tool weighed the way the
- * router weighs it. For an OpenAPI spec it is the argument-schema bytes eve
- * builds from that spec, resolved and written down when it was counted, plus
- * a function envelope and a description an operation for each.
- */
-export function mountedToolBytes(entry: ConnectionEntry, path?: string): number | null {
-  const index = connectionIndex(entry.id, path);
-  if (index?.schemaBytes === undefined || index.operations === undefined) return null;
-  // An index written before the operation text was measured has no figure
-  // for it, and a missing figure is not a zero.
-  if (index.textBytes === undefined) return null;
-  return specWireBytes({
-    operations: index.operations,
-    schemaBytes: index.schemaBytes,
-    textBytes: index.textBytes,
-  });
+  return readConnectionsStore(path).connections;
 }
 
 export type ToolHit = {
   connectionId: string;
   connectionName: string;
-  /** `<connectionId>__<toolName>`: what eve mounts and the app parses. */
+  /** `<connectionId>__<toolName>`: what the engine registers and the app parses. */
   name: string;
   tool: string;
   description: string;
@@ -376,37 +227,6 @@ async function attempt(
     logOutcome(entry, status);
     return { status, tools: tools ?? connectionIndex(entry.id, store)?.tools ?? [] };
   };
-  if (entry.kind === "openapi") {
-    let size = null;
-    try {
-      const specHeaders = opts.headers ?? await connectionHeaders(entry);
-      markStarted();
-      size = await measureOpenApiConnection(entry.url, specHeaders);
-    } catch (err) {
-      // Not knowing yet is not a failed spec: nothing is recorded.
-      if (err instanceof OAuthRefreshBusyError) return notKnownYet(entry.id, startedAt, store);
-      size = null;
-    }
-    const status: ConnectionStatus = size === null
-      ? {
-        state: "discovery_failed",
-        lastError: { code: "spec_unreadable", message: "The API description could not be read." },
-        checkedAt,
-        toolCount: null,
-      }
-      : { state: size.operations > 0 ? "ready" : "zero_tools", lastError: null, checkedAt, toolCount: size.operations };
-    try {
-      putConnectionOperations(entry.id, size, store, startedAt);
-      if (!putConnectionStatus(entry.id, status, store, { unlessNewer: true })) {
-        return superseded(entry.id, startedAt, store);
-      }
-    } catch (err) {
-      discoveryLog(`[useful-bot] connection ${entry.id} discovery result could not be written: ${errorName(err)}`);
-      return { status: storeFailure(checkedAt), tools: [] };
-    }
-    logOutcome(entry, status);
-    return { status, tools: [] };
-  }
   try {
     const headers = opts.headers ?? await connectionHeaders(entry);
     markStarted();
@@ -560,11 +380,11 @@ export async function ensureConnectionIndex(
 }
 
 /**
- * Before a session's saved tools are mounted: make sure each connection's
+ * Before a chat's picked tools are registered: make sure each connection's
  * latest status in this process is `ready` (or `zero_tools`). The saved listing
  * may be from before a restart (a tool the server dropped, a schema it changed,
- * an access that was revoked), and a bot resuming a session mounted it without
- * ever asking. A connection nothing has listed yet is listed now; one a
+ * an access that was revoked), and a chat that reopens would register it
+ * without ever asking. A connection nothing has listed yet is listed now; one a
  * discovery is already working on is waited for; one whose latest outcome was a
  * failure (whoever ran it: this check, the Connectors page, `find_tools`) is
  * given its retry chance by the usual schedule. Returns the connections whose
@@ -577,9 +397,8 @@ export async function refreshBeforeMount(connectionIds: Iterable<string>, storeP
   const working = (state: ConnectionState | undefined) => state === undefined || state === "ready" || state === "zero_tools";
   await Promise.all([...new Set(connectionIds)].map(async (id) => {
     const entry = findConnectionById(id);
-    // Anything else is not mounted from the index at all.
-    if (!entry || entry.kind !== "mcp") return;
-    // Checked in this process is not the same as fresh: a session that lives
+    if (!entry) return;
+    // Checked in this process is not the same as fresh: a chat that lives
     // for hours would otherwise keep mounting a listing the server dropped.
     if (
       checkedThisRuntimeFor(id)
@@ -746,10 +565,10 @@ export type MountedPick = {
 };
 
 /**
- * Which of a session's picked-up tools actually mount, in the order the
- * session took them. The one selection the resolver mounts with
- * (agent/tools/connection_tools.ts) and admission weighs
- * (web/lib/agent-exec.ts `mountedToolChars`): MCP connections only, inside the
+ * Which of a chat's picked tools actually register, in the order the chat
+ * took them. The one selection the engine registers with
+ * (agent/tools/picked.ts) and admission weighs
+ * (web/lib/agent-exec.ts `mountedToolChars`): inside the
  * owner's allow-list as it is now, with an indexed listing, and clamped by the
  * cumulative count (MAX_SESSION_TOOLS) and byte (MAX_SESSION_TOOL_BYTES)
  * limits. A tool that would not mount is skipped, and so is not charged.
@@ -767,8 +586,8 @@ export function selectMountedTools(
     const split = splitMountedName(name);
     if (!split) continue;
     const entry = lookup.connection(split.connectionId);
-    if (!entry || entry.kind !== "mcp") continue;
-    // The owner can narrow a server's allow-list after a session picked a tool up.
+    if (!entry) continue;
+    // The owner can narrow a server's allow-list after a chat picked a tool up.
     if (entry.toolsAllow && !entry.toolsAllow.includes(split.tool)) continue;
     const indexed = lookup.indexed(split.connectionId, split.tool);
     if (!indexed) continue;

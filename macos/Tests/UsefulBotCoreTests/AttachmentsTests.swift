@@ -22,41 +22,14 @@ import Testing
         }
     }
 
-    @Test func messageEmbedsReadableTextAndDescribesBinary() {
-        let files = [
-            Attachment(id: "1", name: "notes.md", bytes: 12, text: "hi there"),
-            Attachment(id: "2", name: "photo.png", bytes: 2048, text: nil),
-        ]
-        let text = Attachments.formatMessage("look", files: files)
-        #expect(text.contains("look"))
-        #expect(text.contains("Attached file: notes.md\n```\nhi there\n```"))
-        #expect(text.contains("Attached file: photo.png (2048 bytes). Contents are not readable as text."))
-    }
-
-    @Test func imagesRideAsFilePartsAndEchoAsFileLines() throws {
+    @Test func onlyAPictureWithItsBytesIsAnImage() {
         let dataUrl = "data:image/png;base64,iVBORw0KGgo="
         let shot = Attachment(id: "1", name: "shot.png", bytes: 11, text: nil, mediaType: "image/png", dataUrl: dataUrl)
         let note = Attachment(id: "2", name: "notes.md", bytes: 2, text: "hi")
+        let bare = Attachment(id: "3", name: "gone.png", bytes: 2, text: nil, mediaType: "image/png", dataUrl: nil)
         #expect(shot.isImage)
         #expect(!note.isImage)
-        let flat = Attachments.formatMessage("look", files: [note, shot])
-        #expect(flat.contains("Attached file: notes.md"))
-        #expect(flat.contains("Attached image: shot.png"))
-        #expect(!flat.contains("not readable"))
-        // No image: the turn is the plain string the text path always sent.
-        #expect(Attachments.turnMessage(formatted: flat, images: [note]) as? String == flat)
-        // With one: the composed text goes through as it is, once, plus the part.
-        let parts = try #require(Attachments.turnMessage(formatted: flat, images: [note, shot]) as? [[String: String]])
-        #expect(parts.count == 2)
-        #expect(parts[0] == ["type": "text", "text": flat])
-        #expect(flat.components(separatedBy: "Attached image").count == 2)
-        #expect(parts[1] == ["type": "file", "data": dataUrl, "mediaType": "image/png", "filename": "shot.png"])
-        #expect(Attachments.echoedMessage(flat, images: [shot]) == "\(flat)\n[file: shot.png (image/png)]")
-        #expect(Attachments.echoedMessage(flat, images: []) == flat)
-    }
-
-    @Test func emptyTextWithNoFilesTrimsToEmpty() {
-        #expect(Attachments.formatMessage("   ", files: []) == "")
+        #expect(!bare.isImage)
     }
 
     @Test func safeMIMELowercasesEssenceAndRejectsUTIs() {
@@ -67,11 +40,21 @@ import Testing
         #expect(Attachments.safeMIME("") == nil)
     }
 
-    @Test func messageFenceOutgrowsFencesInTheBody() {
-        let body = "see\n```\nnot a close\n```\n"
-        let files = [Attachment(id: "1", name: "notes.md", bytes: 30, text: body)]
-        let text = Attachments.formatMessage("read", files: files)
-        #expect(text.contains("Attached file: notes.md\n````\n"))
-        #expect(text.contains("````\n\(body)\n````"))
+    /// A picture is known by its name alone once it is sent, so two different
+    /// pictures pasted as `image.png` must not share one.
+    @Test func aContentNameSeparatesPicturesThatShareAFileName() {
+        let a = Attachments.contentName("image.png", data: Data([1, 2, 3]))
+        let b = Attachments.contentName("image.png", data: Data([4, 5, 6]))
+        #expect(a != b)
+        #expect(a.hasPrefix("image-") && a.hasSuffix(".png"))
+        // Naming it again changes nothing.
+        #expect(Attachments.contentName(a, data: Data([1, 2, 3])) == a)
+        #expect(Attachments.contentName("README", data: Data([1])).hasPrefix("README-"))
+    }
+
+    @Test func aDataURLGivesBackItsBytes() {
+        let bytes = Data([1, 2, 3, 4])
+        #expect(Attachments.bytes(ofDataURL: "data:image/png;base64,\(bytes.base64EncodedString())") == bytes)
+        #expect(Attachments.bytes(ofDataURL: "https://example.com/x.png") == nil)
     }
 }

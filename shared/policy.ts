@@ -5,22 +5,19 @@ export { foldPath };
 
 export type Alias = "workhorse" | "reviewer" | "image";
 export type Profile = "desktop" | "phone" | "reviewer" | "eval";
-export type SandboxBackendName = "microsandbox" | "docker" | "just-bash";
-export type Isolation = "verified-vm" | "non-vm";
 
 export const POLICY_WINDOW_TOKENS = 131_072;
 /**
  * The window used to size compaction and the router's output cap when the catalog does not say what the
  * selected model's is (a custom server, Ollama, LM Studio, an unlisted id).
  * Deliberately small: guessing 131,072 let a small local model overflow before
- * eve compacted. A model that really has more only compacts earlier than it
+ * the engine compacted. A model that really has more only compacts earlier than it
  * had to, which costs a summary, never a failed turn.
  */
 export const UNKNOWN_WINDOW_TOKENS = 32_768;
 export const POLICY_OUTPUT_TOKENS = 4_096;
 export const POLICY_APPROVAL_TTL_MS = 5 * 60 * 1000;
 export const POLICY_NODE_MAJOR = 24;
-export const POLICY_EVE_VERSION = "0.54.3";
 export const ABSOLUTE_NODE = "/usr/local/bin/node";
 export const ROUTER_HOST = "127.0.0.1";
 /**
@@ -29,7 +26,6 @@ export const ROUTER_HOST = "127.0.0.1";
  * fixture (test/fixtures/router-index-pre-fix.ts.txt) that still imports it.
  */
 export const ROUTER_PORT = DAILY.routerPort;
-export const EVE_HOST = "127.0.0.1";
 export const BODY_LIMIT_BYTES = 1_048_576;
 /**
  * A completion body carries the conversation, and a conversation with images
@@ -97,59 +93,40 @@ export const MAX_ACTIVE_IMAGE = 4;
 /**
  * A count, like `MAX_TOOL_SCHEMAS` below, and not the real bound either:
  * `COMPLETION_BODY_LIMIT_BYTES` is what keeps the upstream payload sane, and
- * eve compacts a session at 75% of the model's window (agent/agent.ts) long before a
+ * the engine compacts a chat as it nears the model's window long before a
  * conversation of this length is a problem for anyone.
  *
  * It was 256, which a bot doing real work walks through in an afternoon: every
  * step adds an assistant message and a tool result, so a few hours of filing
  * documents is a few hundred messages. Crossing it threw `unsupported_parameter`,
- * a non-retryable 400, and eve retires a session that gets one: the chat was
- * dead for good and the owner's only way on was a fresh one. It happened twice
- * in two days (2026-09-19, and to Drive Admin mid-task on 2026-09-20). The cap
- * is here to stop a runaway caller, not to end a long conversation.
+ * a non-retryable 400, and the old engine ended the chat on one: the owner's
+ * only way on was a fresh one. It happened twice in two days (2026-09-19, and
+ * to Drive Admin mid-task on 2026-09-20). The cap is here to stop a runaway
+ * caller, not to end a long conversation.
  */
 export const MAX_MESSAGE_COUNT = 4_096;
 /**
  * A count, not the real bound: `MAX_TOOL_SCHEMA_BYTES` is what keeps the
  * upstream payload sane, and a schema's size has little to do with how many
- * there are. 32 was one below what this app actually sends (26 agent tools
- * plus eve's own, 33 in total on 2026-09-15), so adding a single tool killed
- * every turn with `unsupported_parameter`. The headroom here is for the
- * connector and per-session tools a bot picks up, which vary per roster;
+ * there are. 32 was one below what this app actually sent on 2026-09-15 (33
+ * tools), so adding a single tool killed every turn with
+ * `unsupported_parameter`. The headroom here is for the connector and
+ * per-session tools a bot picks up, which vary per roster;
  * the byte bound below is what actually protects the upstream.
  */
 export const MAX_TOOL_SCHEMAS = 300;
 export const MAX_TOOL_SCHEMA_BYTES = 128 * 1024;
 
 /**
- * The cap above is a wall, not a budget: the router refuses a turn past it
- * with a non-retryable `unsupported_parameter`, and eve retires a session
- * that gets one, so the chat is dead for good. Nothing may be allowed to walk
- * a bot into it. These three keep the running total well underneath.
- *
- * `MOUNTED_TOOL_BUDGET` is what a connect may take the eagerly mounted total
- * to. The rest of the headroom is for the agent's own tools, eve's, and the
- * tools a session picks up mid-turn.
- */
-export const MOUNTED_TOOL_BUDGET = 60;
-/**
- * And the same budget in bytes, because the router refuses a turn on schema
- * bytes too, with the same non-retryable error. Only what this app can
- * measure is counted: the argument schemas a connected MCP server published.
- * eve generates an OpenAPI connection's schemas itself and this side never
- * sees them, which is the other half of why the count budget is as low as it
- * is.
- */
-export const MOUNTED_TOOL_BYTE_BUDGET = 24 * 1024;
-/**
- * Tools one session may pick up on demand. Past this the model is told to
- * work with what it has rather than quietly walking the turn into the wall.
+ * Tools one chat may pick up on demand. Past this the model is told to work
+ * with what it has rather than quietly walking the turn into the router's
+ * `MAX_TOOL_SCHEMAS` wall, a non-retryable `unsupported_parameter`.
  */
 export const MAX_SESSION_TOOLS = 40;
 /**
- * And in bytes, for the same reason the mounted set has one: forty schemas
+ * And in bytes: forty schemas
  * at the size a server is allowed to publish would clear the router's byte
- * wall on their own, and that refusal retires the session.
+ * wall on their own, and that refusal is non-retryable.
  */
 export const MAX_SESSION_TOOL_BYTES = 40 * 1024;
 

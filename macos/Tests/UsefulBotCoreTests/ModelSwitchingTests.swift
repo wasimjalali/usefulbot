@@ -106,6 +106,7 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
         let bodies = [
             #"{"error":{"code":"model_selection_unavailable","message":"gone"}}"#,
             #"{"error":"model_selection_unavailable"}"#,
+            #"{"ok":false,"error":"model_selection_unavailable"}"#,
             #"{"code":"model_selection_unavailable"}"#,
         ]
         for body in bodies {
@@ -117,7 +118,7 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
             }
             let client = try makeClient()
             do {
-                _ = try await client.send(botId: "b", sessionId: nil, message: "hi")
+                _ = try await client.sendTurn(chatId: "c1", clientId: "x", text: "hi")
                 Issue.record("expected a refusal")
             } catch let error as BackendError {
                 #expect(error == .modelSelectionUnavailable)
@@ -132,11 +133,11 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
             if request.url?.path == "/api/auth/session" {
                 return respond(200, #"{"ok":true,"csrfToken":"t"}"#, to: request.url!)
             }
-            return respond(409, #"{"ok":false,"error":"provider_route_retired","message":"\#(sentence)"}"#, to: request.url!)
+            return respond(400, #"{"ok":false,"error":"provider_route_retired","message":"\#(sentence)"}"#, to: request.url!)
         }
         let client = try makeClient()
         do {
-            _ = try await client.send(botId: "b", sessionId: nil, message: "hi")
+            _ = try await client.sendTurn(chatId: "c1", clientId: "x", text: "hi")
             Issue.record("expected a refusal")
         } catch let error as BackendError {
             #expect(error == .providerNotice(code: "provider_route_retired", message: sentence))
@@ -144,10 +145,83 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
         }
     }
 
+    @Test func theEnginesOtherRefusalsReadInPlainWords() async throws {
+        let cases: [(Int, String, BackendError)] = [
+            (400, #"{"ok":false,"error":"model_no_vision"}"#, .modelNoVision),
+            (400, #"{"ok":false,"error":"description_too_long"}"#, .shell("shell_description_too_long")),
+            (409, #"{"ok":false,"error":"chat_busy"}"#, .chat(code: "chat_busy", retryAfterMs: nil)),
+            (404, #"{"ok":false,"error":"chat_not_found"}"#, .chat(code: "chat_not_found", retryAfterMs: nil)),
+            (429, #"{"ok":false,"error":"retry_too_soon","retryAfterMs":4500}"#, .chat(code: "retry_too_soon", retryAfterMs: 4500)),
+            (400, #"{"ok":false,"error":"context_too_large"}"#, .chat(code: "context_too_large", retryAfterMs: nil)),
+            (503, #"{"ok":false,"error":"engine_starting"}"#, .chat(code: "engine_starting", retryAfterMs: nil)),
+            (500, "not json", .http(500)),
+        ]
+        for (status, body, expected) in cases {
+            SwitchStub.handler = { [self] request, _ in
+                if request.url?.path == "/api/auth/session" {
+                    return respond(200, #"{"ok":true,"csrfToken":"t"}"#, to: request.url!)
+                }
+                return respond(status, body, to: request.url!)
+            }
+            let client = try makeClient()
+            do {
+                _ = try await client.sendTurn(chatId: "c1", clientId: "x", text: "hi")
+                Issue.record("expected a refusal for \(body)")
+            } catch let error as BackendError {
+                #expect(error == expected, Comment(rawValue: body))
+            }
+        }
+        #expect(BackendError.chat(code: "chat_busy", retryAfterMs: nil).errorDescription == "Stop the chat first.")
+        #expect(BackendError.chat(code: "chat_not_found", retryAfterMs: nil).errorDescription == "That chat is gone.")
+    }
+
+    @Test func aTurnBodyCarriesTheTextAndTheFilesBesideIt() async throws {
+        let seen = Captured()
+        SwitchStub.handler = { [self] request, body in
+            if request.url?.path == "/api/auth/session" {
+                return respond(200, #"{"ok":true,"csrfToken":"t"}"#, to: request.url!)
+            }
+            seen.add(request.url!, body)
+            return respond(202, #"{"turnId":"t1"}"#, to: request.url!)
+        }
+        let client = try makeClient()
+        let note = UsefulBotCore.Attachment(id: "a", name: "notes.txt", bytes: 5, text: "hello")
+        let shot = UsefulBotCore.Attachment(
+            id: "b", name: "shot.png", bytes: 9, text: nil, mediaType: "image/png", dataUrl: "data:image/png;base64,AAAA"
+        )
+        let ack = try await client.sendTurn(chatId: "c 1", clientId: "x1", text: "look", attachments: [note, shot], retry: true)
+        #expect(ack == BackendClient.TurnAck(turnId: "t1", queued: false))
+        let call = try #require(seen.all.first)
+        #expect(call.url.path == "/api/chats/c%201/turns" || call.url.path == "/api/chats/c 1/turns")
+        let raw = try #require(call.body)
+        let body = try #require(try JSONSerialization.jsonObject(with: raw) as? [String: Any])
+        #expect(body["clientId"] as? String == "x1")
+        #expect(body["text"] as? String == "look")
+        #expect(body["retry"] as? Bool == true)
+        let files = try #require(body["attachments"] as? [[String: Any]])
+        #expect(files.count == 2)
+        #expect(files[0]["text"] as? String == "hello")
+        #expect(files[0]["mediaType"] as? String == "text/plain")
+        #expect(files[1]["dataUrl"] as? String == "data:image/png;base64,AAAA")
+        #expect(files[1]["text"] == nil)
+    }
+
+    @Test func aQueuedAnswerSaysSo() async throws {
+        SwitchStub.handler = { [self] request, _ in
+            if request.url?.path == "/api/auth/session" {
+                return respond(200, #"{"ok":true,"csrfToken":"t"}"#, to: request.url!)
+            }
+            return respond(202, #"{"queued":true}"#, to: request.url!)
+        }
+        let client = try makeClient()
+        let ack = try await client.sendTurn(chatId: "c1", clientId: "x", text: "again")
+        #expect(ack == BackendClient.TurnAck(turnId: nil, queued: true))
+    }
+
     @Test func aTurnTheRouterRefusedOnATurnedOffRouteReadsItsSentence() {
         let sentence = "GitHub doesn't support this Copilot sign-in in Useful Bot, so it's been turned off. Pick another provider."
         #expect(TurnFailure(code: "provider_route_retired", detail: "provider_route_retired: \(sentence)").message == sentence)
-        // Wrapped in eve's own message and a JSON tail.
+        // Wrapped in other text and a JSON tail.
         let wrapped = #"Failed after 1 attempt. Last error: {"error":{"code":"provider_route_retired","message":"provider_route_retired: \#(sentence)"}}"#
         #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: wrapped).message == sentence)
         // An escaped apostrophe cuts the text at the backslash: a half sentence is never shown.
@@ -207,47 +281,9 @@ private func composerJSON(model: String, label: String, available: Bool = true) 
             ("provider_disconnected", "The model provider is disconnected. Reconnect it in Settings."),
         ]
         for (code, copy) in expected {
-            // The code as the event's own field, and only inside eve's message.
+            // The code as the failure's own field, and only inside other text.
             #expect(TurnFailure(code: code, detail: "").message == copy, "\(code) as code")
             #expect(TurnFailure(code: "MODEL_CALL_FAILED", detail: "Failed after 3 attempts. Last error: AI_APICallError: \(code) (401)").message == copy, "\(code) in detail")
         }
-    }
-
-    // MARK: compaction note
-
-    private static let completed = #"{"type":"compaction.completed","meta":{"id":"c1","at":"2026-10-01T10:00:00.000Z"},"data":{"modelId":"workhorse","sequence":3,"sessionId":"s","turnId":"t1"}}"#
-
-    private func compactedRows(_ projection: StreamProjection) -> [TranscriptRow] {
-        Transcript.merge(events: [], messages: projection.messages, compactions: projection.compactionMarks)
-            .filter { $0.text == CompactionMark.text }
-    }
-
-    @Test func theCompactionNoteAppearsOnceLiveAndOnceInAReplay() throws {
-        func fold(_ lines: [String], live: Bool) -> StreamProjection {
-            var projection = StreamProjection()
-            for line in lines { projection.apply(try! #require(EveStream.parseLine(line)), live: live) }
-            return projection
-        }
-        let lines = [
-            #"{"type":"message.received","meta":{"id":"m1"},"data":{"message":"hello","turnId":"t1"}}"#,
-            #"{"type":"turn.started","meta":{"id":"ts"},"data":{"turnId":"t1"}}"#,
-            #"{"type":"compaction.requested","meta":{"id":"c0"},"data":{"turnId":"t1"}}"#,
-            Self.completed,
-            #"{"type":"message.completed","meta":{"id":"m2"},"data":{"message":"hi back","turnId":"t1"}}"#,
-        ]
-        // Replay: the same event twice (a rewound follower) still adds one row.
-        var replay = fold(lines, live: false)
-        replay.apply(try #require(EveStream.parseLine(Self.completed)))
-        let replayRows = Transcript.merge(events: [], messages: replay.messages, compactions: replay.compactionMarks)
-        #expect(replayRows.filter { $0.text == CompactionMark.text }.count == 1)
-        // The note sits under the owner's message, above the reply that followed.
-        #expect(replayRows.map(\.text) == ["hello", CompactionMark.text, "hi back"])
-        #expect(replayRows[1].kind == .note)
-        // Live, then the replay of the same events on top of it.
-        var live = fold(lines, live: true)
-        for line in lines { live.apply(try #require(EveStream.parseLine(line))) }
-        #expect(compactedRows(live).count == 1)
-        // Both ways produce the same row id, so the view keeps one row.
-        #expect(compactedRows(live).first?.id == compactedRows(replay).first?.id)
     }
 }

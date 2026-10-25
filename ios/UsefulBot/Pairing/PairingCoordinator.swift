@@ -393,7 +393,7 @@ final class PairingCoordinator: ObservableObject {
     // MARK: - Readiness (spec 7.2)
 
     /// Derive the level from the path monitor plus one `/api/status` probe.
-    /// `runtimeDown` when the eve probe inside status reports not-available.
+    /// `runtimeDown` when the engine probe inside status reports not-available.
     func probeReadiness() async {
         await probeReadiness(reschedule429: true)
     }
@@ -422,7 +422,7 @@ final class PairingCoordinator: ObservableObject {
                 readiness = .unsupportedVersion
                 return
             }
-            readiness = status.eve == "available" ? .ready : .runtimeDown
+            readiness = status.engine == "available" ? .ready : .runtimeDown
         } catch BackendError.credentialInvalid, BackendError.deviceTokenMissing {
             // Same terminal verdict as in exchangeSession: the token can no
             // longer be used, so the pairing's only exits are re-pair and
@@ -449,7 +449,7 @@ final class PairingCoordinator: ObservableObject {
             // Any other 403 (`ingress`, `forbidden`, `origin`, `csrf`) is an
             // edge refusal — the request was refused before the app could
             // answer, so §7.2's reachability level applies, not runtimeDown
-            // (its copy asserts an eve-probe failure that never ran). The
+            // (its copy asserts an engine-probe failure that never ran). The
             // refusal is itself proof the DNS/TLS/HTTP chain carried.
             guard store.isCurrent(generation: generation) else { return }
             readiness = .macUnreachable(

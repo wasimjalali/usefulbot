@@ -29,30 +29,29 @@ export { parseWorkspacePermission };
 /**
  * Workspace grants and project recents.
  *
- * A grant is the per-session answer to "which folder may this conversation
- * work in, and how much may it do there". The web server writes it at turn
- * time from the bot's shell fields; the eve agent process reads it at tool
- * execution time. One file, two processes, so writes go through the same
+ * A grant is the per-chat answer to "which folder may this conversation
+ * work in, and how much may it do there". The engine writes it at turn
+ * time from the bot's shell fields and its tools read it at execution time;
+ * the web service rewrites it when the owner changes the folder or the
+ * permission mid-turn. One file, two processes, so writes go through the same
  * directory-lock + atomic-replace convention as the other stores.
  */
 
 export const WORKSPACE_SCHEMA = 1;
-/** Grants outlive their session usefulness quickly; keep the file small. */
+/** Grants outlive their chat usefulness quickly; keep the file small. */
 export const GRANTS_MAX = 64;
 export const PROJECTS_MAX = 12;
 
 export type SessionGrant = {
-  sessionId: string;
+  /** The chat the grant belongs to. */
+  chatId: string;
   /** The attached folder, or null when the bot works under the owner's home. */
   path: string | null;
   permission: WorkspacePermission;
   /**
-   * The model the bot runs on, stamped with the permission at turn start. The
-   * agent prefers the owning bot's CURRENT selection at a turn's first step;
-   * the grant is the fallback for a brand new session no bot owns yet, and the
-   * source on the no-turn-id path (it only changes at turn start, so it is
-   * stable within a turn). Absent on a grant stamped before this field, or by
-   * a caller that passes none; the agent then uses the bot's own selection.
+   * The model the bot runs on, stamped with the permission at turn start. It
+   * only changes at turn start, so it is stable within a turn. Absent when a
+   * caller passes none; the engine then uses the bot's own selection.
    */
   selection?: ModelSelection;
   updatedAt: string;
@@ -83,8 +82,8 @@ function seedStore(at = new Date()): WorkspaceStore {
 function parseGrant(raw: unknown): SessionGrant | null {
   if (!raw || typeof raw !== "object") return null;
   const rec = raw as Record<string, unknown>;
-  const sessionId = typeof rec.sessionId === "string" && rec.sessionId.length > 0 && rec.sessionId.length <= 200
-    ? rec.sessionId
+  const chatId = typeof rec.chatId === "string" && rec.chatId.length > 0 && rec.chatId.length <= 200
+    ? rec.chatId
     : null;
   // Screened on read as well as on write: a hand-edited or older file must not
   // hand back a grant on `/` or on a credential folder that this build would
@@ -97,10 +96,10 @@ function parseGrant(raw: unknown): SessionGrant | null {
   else if (typeof rec.path === "string" && rec.path.length <= 1024 && isGrantableRootPath(rec.path)) path = rec.path;
   else return null;
   const permission = parseWorkspacePermission(rec.permission);
-  if (!sessionId || !permission) return null;
+  if (!chatId || !permission) return null;
   const selection = parseModelSelection(rec.selection);
   return {
-    sessionId,
+    chatId,
     path,
     permission,
     ...(selection ? { selection } : {}),
@@ -136,7 +135,7 @@ export function parseWorkspaceStore(raw: unknown): WorkspaceStore {
     .filter((project): project is ProjectEntry => project !== null);
   return {
     schemaVersion: WORKSPACE_SCHEMA,
-    grants: dedupeNewest(grants, (grant) => grant.sessionId, (grant) => grant.updatedAt)
+    grants: dedupeNewest(grants, (grant) => grant.chatId, (grant) => grant.updatedAt)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       .slice(-GRANTS_MAX),
     projects: dedupeNewest(projects, (project) => project.path, (project) => project.lastUsedAt)
@@ -148,7 +147,7 @@ export function parseWorkspaceStore(raw: unknown): WorkspaceStore {
 /**
  * One row per key, keeping the record with the highest timestamp.
  * First-in-file is not the same as newest: a hand-edited or partially
- * recovered store can hold two rows for one session.
+ * recovered store can hold two rows for one chat.
  */
 function dedupeNewest<T>(rows: T[], key: (row: T) => string, stamp: (row: T) => string): T[] {
   const byKey = new Map<string, T>();
@@ -204,14 +203,19 @@ function sleep(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/** Locked read-modify-write; the web server and the agent both write. */
+/**
+ * Locked read-modify-write; the web server and the agent both write. A caller
+ * that must not stall passes a short `timeoutMs`; a lock still held then throws
+ * `workspace_locked`.
+ */
 export function updateWorkspaceStore(
   mutate: (store: WorkspaceStore) => WorkspaceStore,
   path = defaultWorkspacePath(),
+  timeoutMs = LOCK_TIMEOUT_MS,
 ): WorkspaceStore {
   const lock = `${path}.lock`;
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   let held = false;
   while (!held) {
     try {
@@ -249,20 +253,21 @@ export function readWorkspaceStore(path = defaultWorkspacePath()): WorkspaceStor
   return readStoreFile(path);
 }
 
-/** The grant for one session, read fresh: permissions change mid-session. */
-export function readSessionGrant(sessionId: string, path = defaultWorkspacePath()): SessionGrant | null {
-  if (!sessionId) return null;
-  return readStoreFile(path).grants.find((grant) => grant.sessionId === sessionId) ?? null;
+/** The grant for one chat, read fresh: permissions change mid-chat. */
+export function readSessionGrant(chatId: string, path = defaultWorkspacePath()): SessionGrant | null {
+  if (!chatId) return null;
+  return readStoreFile(path).grants.find((grant) => grant.chatId === chatId) ?? null;
 }
 
 export function upsertSessionGrant(
-  input: { sessionId: string; path: string | null; permission: WorkspacePermission; selection?: ModelSelection },
+  input: { chatId: string; path: string | null; permission: WorkspacePermission; selection?: ModelSelection },
   at = new Date(),
   path = defaultWorkspacePath(),
+  timeoutMs = LOCK_TIMEOUT_MS,
 ): void {
   // The grant is a filesystem capability, so it is validated here and not
-  // only at the route: agent-exec stamps it from shell fields verbatim.
-  if (!input.sessionId || input.sessionId.length > 200) {
+  // only at the route: the engine stamps it from shell fields verbatim.
+  if (!input.chatId || input.chatId.length > 200) {
     throw new Error("workspace_session_invalid");
   }
   // Segment screen and root refusal, not just "looks absolute": a grant on
@@ -280,22 +285,22 @@ export function upsertSessionGrant(
     const stamp = at.toISOString();
     const grant: SessionGrant = { ...input, updatedAt: stamp };
     const grants = [
-      ...store.grants.filter((item) => item.sessionId !== input.sessionId),
+      ...store.grants.filter((item) => item.chatId !== input.chatId),
       grant,
     ]
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
       .slice(-GRANTS_MAX);
     return { ...store, grants };
-  }, path);
+  }, path, timeoutMs);
 }
 
 /** Detaching a folder must revoke the capability, not just the bot field. */
-export function removeSessionGrant(sessionId: string, path = defaultWorkspacePath()): void {
-  if (!sessionId) return;
+export function removeSessionGrant(chatId: string, path = defaultWorkspacePath(), timeoutMs = LOCK_TIMEOUT_MS): void {
+  if (!chatId) return;
   updateWorkspaceStore((store) => ({
     ...store,
-    grants: store.grants.filter((item) => item.sessionId !== sessionId),
-  }), path);
+    grants: store.grants.filter((item) => item.chatId !== chatId),
+  }), path, timeoutMs);
 }
 
 export function projectIdFor(path: string): string {

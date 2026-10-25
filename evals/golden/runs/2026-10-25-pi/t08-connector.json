@@ -1,0 +1,148 @@
+{
+  "task_id": "t08-connector",
+  "title": "Connector (DeepWiki)",
+  "engine": "pi",
+  "run_id": "2026-10-25-pi",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot used the connected DeepWiki tool (the activity labels or an approval card name it) rather than answering from its own knowledge, and gave a one-line description that is right: facebook/react is the React library for building user interfaces (a JavaScript library). If the DeepWiki call failed, the bot says so instead of pretending. Deduct for a long answer when one line was asked.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t08-connector",
+  "errors": [],
+  "prompts": [
+    "Using DeepWiki, tell me in one line what the repo facebook/react is."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792944624262,
+    "end": 1792944652209
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Using DeepWiki, tell me in one line what the repo facebook/react is.",
+      "sent_at_ms": 1792944624341,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 4.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 6.0,
+          "label": "(waiting on a card)"
+        },
+        {
+          "t": 17.1,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [
+        {
+          "t": 6.0,
+          "tool": "connection",
+          "preview": "DeepWiki · ask_wiki_question\n{\n \"repoName\": \"facebook/react\",\n \"question\": \"In one sentence, what is this repository and what is it used for?\"\n}",
+          "texts": [
+            "connection",
+            "DeepWiki · ask_wiki_question\n{\n \"repoName\": \"facebook/react\",\n \"question\": \"In one sentence, what is this repository and what is it used for?\"\n}"
+          ],
+          "decision": "approve",
+          "names_scratch": false
+        }
+      ],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 3.21,
+      "wall_s": 18.09,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792944648763,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "facebook/react is the open-source codebase of React, the JavaScript library for building user interfaces, including its core, renderers, compiler and dev tooling.",
+      "reply_items": [
+        {
+          "text": "facebook/react is the open-source codebase of React, the JavaScript library for building user interfaces, including its core, renderers, compiler and dev tooling.",
+          "bot": true,
+          "y": 288.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-pi/shots/t08-connector-turn1.png",
+      "transcript_full": "facebook/react is the open-source codebase of React, the JavaScript library for building user interfaces, including its core, renderers, compiler and dev tooling.\nUSER: Using DeepWiki, tell me in one line what the repo facebook/react is."
+    }
+  ],
+  "cards": [
+    {
+      "t": 6.0,
+      "tool": "connection",
+      "preview": "DeepWiki · ask_wiki_question\n{\n \"repoName\": \"facebook/react\",\n \"question\": \"In one sentence, what is this repository and what is it used for?\"\n}",
+      "texts": [
+        "connection",
+        "DeepWiki · ask_wiki_question\n{\n \"repoName\": \"facebook/react\",\n \"question\": \"In one sentence, what is this repository and what is it used for?\"\n}"
+      ],
+      "decision": "approve",
+      "names_scratch": false
+    }
+  ],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 4.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 6.0,
+      "label": "(waiting on a card)"
+    },
+    {
+      "t": 17.1,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": true,
+      "detail": "/react/ on turn -1: match"
+    },
+    {
+      "type": "activity_seen",
+      "gating": false,
+      "pass": false,
+      "detail": "labels matching: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 18.09,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": null
+  }
+}

@@ -12,6 +12,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +21,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "test/fixtures/ios-contract");
 const PORT = 4399;
+const ENGINE_PORT = 4398;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 // Fixture identities — never a real tailnet or device name (repo rule).
@@ -43,7 +45,6 @@ function writeConfig(dir, over = {}) {
     schemaVersion: 1,
     phoneEnabled: true,
     tailnet: TAILNET,
-    sandbox: { backend: "just-bash", evidenceId: "fixture", imageDigest: null },
     goBalanceDisabledConfirmedAt: null,
     searchKeyRequired: false,
     credentials: [
@@ -99,6 +100,14 @@ async function main() {
   const sessionsPath = path.join(work, "web-sessions.json");
   writeFileSync(sessionsPath, `{ "sessions": {} }\n`, { mode: 0o600 });
 
+  // /api/status probes the engine's /health. A stub on a scratch port answers it,
+  // so the recording does not depend on whether the owner's engine is running.
+  const engine = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, stack: "daily", epoch: "fixture", pi: "fixture" }));
+  });
+  await new Promise((resolve) => engine.listen(ENGINE_PORT, "127.0.0.1", resolve));
+
   const server = spawn(
     path.join(ROOT, "node_modules/next/dist/bin/next"),
     ["dev", path.join(ROOT, "web"), "--hostname", "127.0.0.1", "--port", String(PORT)],
@@ -107,6 +116,7 @@ async function main() {
         ...process.env,
         UB_ROUTER_CONFIG: configPath,
         UB_WEB_SESSIONS_PATH: sessionsPath,
+        UB_ENGINE_PORT: String(ENGINE_PORT),
       },
       stdio: ["ignore", "ignore", "inherit"],
     },
@@ -210,7 +220,7 @@ async function main() {
 
     await call("status.phone-owner", {
       url: STATUS, headers: tailnetHeaders({ cookie }),
-      note: "requireOwner over the phone session: apiVersion + eve probe.",
+      note: "requireOwner over the phone session: apiVersion + engine probe.",
     });
 
     await call("status.unauthenticated", {
@@ -259,6 +269,7 @@ async function main() {
     });
   } finally {
     server.kill("SIGTERM");
+    engine.close();
   }
 
   rmSync(work, { recursive: true, force: true });

@@ -1,20 +1,18 @@
 # Useful Bot
 
-Useful Bot is the free, open-source alternative to Grok Bot. Your own team of AI bots on your computer, on the AI plan you already pay for.
+Useful Bot is the free, open-source alternative to Grok Bot. Your own AI bot on your computer, on the AI plan you already pay for.
 
-Give each bot one job: writing, research, your inbox or your files. They run on the model you already
-pay for, work in the apps you connect and ask before they touch anything you haven't allowed.
+One bot for writing, research, your inbox and your files. It runs on the model you already pay for,
+works in the apps you connect and asks before it touches anything you haven't allowed.
 
 **[bot.usefulbuild.com](https://bot.usefulbuild.com)** · Open source under the [AGPL-3.0](LICENSE)
 
-![The Generalist bot explains what it can do, that it can set up other bots, where your data goes and that you can use any model.](site/public/shots/chat.png)
+![Useful Bot in a chat on a Mac.](site/public/shots/chat.png)
 
 ## What you get
 
-**One bot for every job.** Make a bot for each part of your work and group them the way your week
-runs. Each keeps its own chat, instructions and memory, and can hand work to another.
-
-![The new chat picker: New Bot, Create group chat and a list of bots with their jobs.](site/public/shots/bots.png)
+**One bot, all your chats.** Every chat is in the sidebar, by day. Your instructions and its memory
+carry across all of them.
 
 **Bring the model you already pay for.** Sign in with ChatGPT, add a coding plan or
 an API key, or point it at a model running on your own Mac. Pick the model per chat.
@@ -22,11 +20,11 @@ an API key, or point it at a model running on your own Mac. Pick the model per c
 ![Model settings with connected providers.](site/public/shots/models.png)
 
 **Your apps, on your terms.** Connect Gmail, Calendar, Drive and hundreds more. Read only, Auto or
-Full access decides what a bot may do on its own. In Auto, anything else waits for your yes.
+Full access decides what the bot may do on its own. In Auto, anything else waits for your yes.
 
-![Connectors, with apps a bot can use.](site/public/shots/connectors.png)
+![Connectors, with the apps the bot can use.](site/public/shots/connectors.png)
 
-**Work that runs while you're busy.** Give a bot a routine, like a morning brief or a weekly
+**Work that runs while you're busy.** Give it a routine, like a morning brief or a weekly
 cleanup, and it runs on schedule. Try it first with Test run. Web search is built in.
 
 ![A routine called Downloads triage: its schedule, instructions and Test run button.](site/public/shots/routines.png)
@@ -37,8 +35,8 @@ cleanup, and it runs on schedule. Try it first with Test run. Web search is buil
 |---|---|
 | Works on | macOS 14 or later, Apple silicon |
 | Models | ChatGPT, Claude, Gemini, OpenRouter and more, or a local model |
-| Stays on your Mac | Your chats, bots, memory and the files they make |
-| Leaves your Mac | What you ask goes to the model provider you connect, and to the apps a bot uses for you |
+| Stays on your Mac | Your chats, memory and the files the bot makes |
+| Leaves your Mac | What you ask goes to the model provider you connect, and to the apps the bot uses for you |
 | Tracking | None. No analytics, no crash reports, no ads |
 
 **[Download for Mac](https://github.com/wasimjalali/useful-bot-releases/releases/latest/download/Useful-Bot-macOS.dmg)**, or
@@ -50,8 +48,10 @@ curl -fsSL https://github.com/wasimjalali/useful-bot-releases/releases/latest/do
 
 # Development
 
-Everything below is for working on Useful Bot itself. It runs on [eve](https://github.com/vercel/eve)
-0.54.3.
+Everything below is for working on Useful Bot itself. The agent runs in its own engine process
+on the [Pi agent harness](https://github.com/earendil-works/pi) SDK
+(`@earendil-works/pi-coding-agent` 1.4.0, pinned), with one chat per Pi session file under the
+state folder's `engine/`. Design: [docs/plan/pi-engine/SPEC.md](docs/plan/pi-engine/SPEC.md).
 
 ## Runtime
 
@@ -78,7 +78,7 @@ export PATH=/usr/local/bin:$PATH
 
 That writes Keychain items and `~/.useful-bot/config.json` digests. Reveal the device token in Keychain Access (`com.usefulbot.device.desktop`). Install the OpenCode Go key as `com.usefulbot.opencode-go` yourself. This repo never prints those values.
 
-An install from before a credential existed (the reviewer token, `com.usefulbot.router.reviewer`, was added on 2026-09-15) picks it up with `setup-local.mjs --add-missing`, which mints only what is absent and keeps every other token. `--rotate` replaces all of them. `--rebuild-orphaned` is the release app's own recovery: with no config but Keychain items left by an earlier install, it rebuilds them all, and it refuses if a config exists. Restart the services afterwards: the router reads the credential table at boot.
+An install from before a credential existed picks it up with `setup-local.mjs --add-missing`, which mints only what is absent and keeps every other token. `--rotate` replaces all of them. `--rebuild-orphaned` is the release app's own recovery: with no config but Keychain items left by an earlier install, it rebuilds them all, and it refuses if a config exists. Restart the services afterwards: the router reads the credential table at boot.
 
 ```sh
 export PATH=/usr/local/bin:$PATH
@@ -88,31 +88,33 @@ make -C macos bundle
 open "macos/dist/Useful Bot.app"
 ```
 
-The web service is the API the app calls, on `http://127.0.0.1:4320` (no browser UI; `/` returns a status). Chat needs eve as well (`service.mjs eve`) after the Go key is in Keychain. Sleeping the Mac is downtime.
+The web service is the API the app calls, on `http://127.0.0.1:4320` (no browser UI; `/` returns a status). Chat needs the engine as well (`service.mjs engine`, port 4321) after the Go key is in Keychain. Sleeping the Mac is downtime.
 
-Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in through the browser, or take a coding-plan key. ChatGPT uses OpenAI's official [Sign in with ChatGPT for open-source apps](https://developers.openai.com/siwc/token-sharing-open-source): Continue with ChatGPT opens the browser, the sign-in returns to the web service at `http://127.0.0.1:<web port>/auth/callback`, and turns run on the public Responses API with the user's plan (manage usage at chatgpt.com/settings/usage). The issued client id and this Mac's host id live in `chatgpt-signin.json` next to the providers store; a sign-in made by an older version through the Codex route shows Expired and needs one fresh sign-in. Coding-plan rows take a key (OpenCode Go, Kimi Code, MiniMax and MiMo token plans, Command Code on any plan except Go). GitHub Copilot, the GLM Coding Plan and the Qwen Coding Plan are not offered because their vendors don't allow them in third-party apps; a connection made before that is shown as turned off, refuses turns with the reason and can be removed (`retired` in the catalogue). Z.ai and Qwen work with an API key. API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model and the reviewer model with their reasoning level.
+Model providers are connected from the app: account popover, Providers. The list comes from the server catalogue in `shared/provider-catalog.ts`, one row per provider and mode. Subscription rows sign in through the browser, or take a coding-plan key. ChatGPT uses OpenAI's official [Sign in with ChatGPT for open-source apps](https://developers.openai.com/siwc/token-sharing-open-source): Continue with ChatGPT opens the browser, the sign-in returns to the web service at `http://127.0.0.1:<web port>/auth/callback`, and turns run on the public Responses API with the user's plan (manage usage at chatgpt.com/settings/usage). The issued client id and this Mac's host id live in `chatgpt-signin.json` next to the providers store; a sign-in made by an older version through the Codex route shows Expired and needs one fresh sign-in. Coding-plan rows take a key (OpenCode Go, Kimi Code, MiniMax and MiMo token plans, Command Code on any plan except Go). GitHub Copilot, the GLM Coding Plan and the Qwen Coding Plan are not offered because their vendors don't allow them in third-party apps; a connection made before that is shown as turned off, refuses turns with the reason and can be removed (`retired` in the catalogue). Z.ai and Qwen work with an API key. API rows take a key, Local rows take a server URL. Claude and Google subscriptions are not offered because their terms forbid third-party use; both work with an API key. Connections live in `~/.useful-bot/providers.json`, the router picks the protocol per connection (OpenAI chat completions, Responses, Anthropic Messages), and Task models sets the chat model with its reasoning level.
 
 ## Chat layout
 
-What you say is a right-aligned bubble; what a bot says is a left-aligned white bubble, set apart from the white chat by its border and a soft shadow. Each message a bot posts in a turn is its own bubble, stacked close under the last, and the step row under them says what the bot is doing until the turn ends. Rows carry no clock: a centered rule marks Today, Yesterday or the date, and nothing else.
+There is one bot, Useful Bot, and the sidebar lists its chats by day. What you say is a right-aligned bubble; what the bot says is a left-aligned white bubble, set apart from the white chat by its border and a soft shadow. Each message the bot posts in a turn is its own bubble, stacked close under the last, and the step row under them says what it's doing until the turn ends. Rows carry no clock: a centered rule marks Today, Yesterday or the date, and nothing else.
 
-Anything a bot needs an answer to (an approval, a proposed bot or group) docks above the composer with its options on the same block, rather than scrolling away up the transcript.
+Anything the bot needs an answer to (an approval, a question, a connect card) docks above the composer with its options on the same block, rather than scrolling away up the transcript. An approval from a chat you don't have open says which chat it came from.
 
 ## Library
 
-What the bots make is the owner's, like the chats. Every generated image and every Excalidraw drawing is saved as a real file under `~/Documents/Useful Bot/<Bot>/<YYYY-MM>/`: images as PNG, JPEG or WebP, drawings as `.excalidraw` scenes. The index in `~/.useful-bot/media.json` keeps the prompt, model, bot and current path, and nothing deletes a file on its own. Library (in the account menu under the owner's photo) shows everything, filtered by kind and bot and searchable by prompt, with Open, Show in Finder, Copy, Open chat and Move to Trash. Drawing tiles show a native preview drawn from the saved scene; a drawing opens with that preview at once and hands over to the same live view the chat shows, with its own Edit and Open in Excalidraw. When a bot's Excalidraw camera does not cover its own drawing, the host widens it (4:3) so nothing is cut, in the chat and the Library alike. The Excalidraw app page is cached ten minutes per server, so drawings open without two network round trips each time. Every drawing still in a chat is listed, dated when it was first drawn. A file missing from its place offers Locate (point at where it went) and Regenerate, which draws it again in that row from the prompt the server kept, under the same id (each Regenerate is a paid image; the web service holds the router's desktop credential for it). The prompt under an image is one line with a copy button for the whole prompt. Locate only accepts a real file of the same kind, checked by content, never a link. If the folder cannot take a new image (no Documents access, a full disk), the app keeps it in its own store and moves it on the next Library load, so a billed image is never lost. To save a copy somewhere else, ask the bot: it copies the file there. Images from before the Library (base64 records in `~/.useful-bot/images`) move into the folder on first load.
+What the bot makes is the owner's, like the chats. Every generated image and every Excalidraw drawing is saved as a real file under `~/Documents/Useful Bot/Useful Bot/<YYYY-MM>/`: images as PNG, JPEG or WebP, drawings as `.excalidraw` scenes. The index in `~/.useful-bot/media.json` keeps the prompt, model, bot and current path, and nothing deletes a file on its own. Library (a fixed row at the top of the sidebar) shows everything, filtered by kind and searchable by prompt, with Open, Show in Finder, Copy, Open chat and Move to Trash. Drawing tiles show a native preview drawn from the saved scene; a drawing opens with that preview at once and hands over to the same live view the chat shows, with its own Edit and Open in Excalidraw. When a bot's Excalidraw camera does not cover its own drawing, the host widens it (4:3) so nothing is cut, in the chat and the Library alike. The Excalidraw app page is cached ten minutes per server, so drawings open without two network round trips each time. Every drawing still in a chat is listed, dated when it was first drawn. A file missing from its place offers Locate (point at where it went) and Regenerate, which draws it again in that row from the prompt the server kept, under the same id (each Regenerate is a paid image; the web service holds the router's desktop credential for it). The prompt under an image is one line with a copy button for the whole prompt. Locate only accepts a real file of the same kind, checked by content, never a link. If the folder cannot take a new image (no Documents access, a full disk), the app keeps it in its own store and moves it on the next Library load, so a billed image is never lost. To save a copy somewhere else, ask the bot: it copies the file there. Images from before the Library (base64 records in `~/.useful-bot/images`) move into the folder on first load.
 
 ## Routines
 
-A routine is a recurring instruction one bot runs on a schedule. Create and edit
-them in the chat details pane (the info button in the chat header). Schedules are
+A routine is a recurring instruction the bot runs on a schedule. Create and edit
+them on the Routines page (a fixed row at the top of the sidebar). Schedules are
 weekly, daily or one-shot, stored as wall-clock time in an IANA zone, so 09:00
 stays 09:00 across a DST change.
 
-Routines are stored in `~/.useful-bot/routines.json` and fire from the same tick
-the handoff pump uses, so nothing extra has to run. A run enters the bot's own
-chat as a turn and its outcome is kept in the routine's run history. Sleeping the
-Mac means a missed window catches up with one run, not one per window missed.
+Routines are stored in `~/.useful-bot/routines.json` and fire from the engine's
+own 20-second timer, at most four at once. Each routine runs in its own chat
+(created on its first run and reused), so runs never pile into the chat you're
+in, and its outcome is kept in the routine's run history with a link to that
+chat. Sleeping the Mac means a missed window catches up with one run, not one per
+window missed.
 
 Test run ignores the pause switch. Pausing stops the schedule, not the button, so
 a paused routine can still be tried by hand; the run does not consume the next
@@ -184,14 +186,14 @@ its own process group so a timeout or a Stop takes down what the line started.
 
 ## Connectors
 
-Connectors let a bot act in the owner's apps (Gmail, Google Calendar, Slack,
+Connectors let the bot act in the owner's apps (Gmail, Google Calendar, Slack,
 Notion, GitHub, Linear and the rest of Composio's catalogue). Open Connectors
-from the pill at the foot of the rail, paste a Composio API key once, then Add
+from its row at the top of the sidebar, paste a Composio API key once, then Add
 an app: the hosted sign-in opens in the browser and the app moves to Added when
-Composio reports the account active. Added holds every connection, apps and MCP or
-OpenAPI servers alike, each with its logo and real state; clicking one opens its
-page inside the dialog with its tools and Disconnect (servers also get Refresh and
-Reconnect).
+Composio reports the account active. Added holds every connection, apps and MCP
+servers alike, each with its logo and real state (Connected or Sign in again);
+clicking one opens its page with its tools grouped into reads and writes, and
+Reconnect and Disconnect (servers get Refresh instead of Reconnect).
 
 Composio runs the OAuth app for most apps, and an app that takes an API key
 asks for it on the hosted page. A few dozen apps (TikTok, X, Spotify) have no
@@ -210,16 +212,16 @@ catalogue (names, slugs, logos, no connection state) is cached for a day in
 `~/.useful-bot/composio-catalogue.json`, so the dialog pages and searches it
 locally; delete the file to force a refresh.
 
-The agent reaches apps through four tools. `connector_search` finds tool slugs
-for a use case in the connected apps. `connector_execute` runs one. A read runs
+The agent reaches apps through one tool, `apps`. `apps find` finds tool slugs
+for a use case in the connected apps, `apps tools` lists an app's tools and
+`apps run` runs one. A read runs
 at once; a write or a destructive action (delete, remove, archive, revoke)
 shows an approval card in auto and runs without one in full access; read only
 refuses writes. The card carries the app, the tool and every
 argument, hashed like a shell line, so what is approved is exactly what runs.
 
-A bot can also ask for an app it doesn't have yet. `connector_catalog` searches
-the whole catalogue, connected or not, and `propose_connector` puts a Connect
-app card above the composer. Authorize opens the hosted sign-in; the card waits
+The bot can also ask for an app it doesn't have yet. `apps connect` puts a
+Connect app card above the composer for an app from the whole catalogue. Authorize opens the hosted sign-in; the card waits
 (Reopen if the tab was lost, ten minutes before it times out), turns Connected
 when Composio reports the account active, and the bot gets a turn to continue
 what it was doing. MCP variants ("Notion MCP" beside "Notion") list in the
@@ -228,13 +230,13 @@ dialog and the catalogue too; connect whichever fits the job.
 Design and research: [docs/plan/CONNECTORS-COMPOSIO.md](docs/plan/CONNECTORS-COMPOSIO.md).
 Live check: `/usr/local/bin/node spikes/s4/probe.mjs` after the key is pasted.
 
-## MCP and OpenAPI connections
+## MCP connections
 
-Apps outside the Composio catalogue connect as eve MCP or OpenAPI servers.
+Apps outside the Composio catalogue connect as MCP servers.
 The owner-approved list lives in `~/.useful-bot/connections.json` (mode 0600).
 Secrets go in Keychain (`com.usefulbot.connection.{id}`), never in the JSON.
 `setup-local.mjs` seeds Excalidraw (`https://mcp.excalidraw.com/mcp`, no auth).
-A bot that needs a server not in the catalogue raises a Connect server card;
+When the bot needs a server not in the catalogue, `connect_server` raises a Connect server card;
 Authorize or a pasted key adds the row and the bot resumes. Drawings from
 Excalidraw render in the macOS chat as an MCP App widget. Edit opens it full
 screen over the window (Done or Escape returns), and Open in Excalidraw
@@ -253,12 +255,10 @@ server it couldn't search instead of finding nothing. Some vendors (Tella, as of
 2026-10-04) accept tokens only from their partner apps; their row stays at Needs
 sign-in.
 
-No MCP server's tools are mounted for every turn. An OpenAPI connection is,
-because eve owns spec parsing and there is no other way to reach one. Every
-MCP server waits, Excalidraw included: `find_tools`
-searches the cached listings in `~/.useful-bot/connection-tools.json` and
-records what it handed over, and a `step.started` resolver mounts those under
-`<connectionId>__<toolName>` for the next model call, inside the same turn.
+No MCP server's tools are mounted for every turn, Excalidraw included:
+`find_tools` searches the cached listings in `~/.useful-bot/connection-tools.json`
+and records what it picked for the chat, and the engine registers those as
+`<connectionId>__<toolName>` before the next model call, inside the same turn.
 So a drawing costs one lookup first, once per chat.
 A tool it mounts is gated by the posture alone, not by the tool's name: Read
 only refuses, Auto asks, Full access runs. A Composio slug is Composio's to
@@ -266,10 +266,8 @@ write, so reading a verb off it says something; an MCP server writes its own
 tool names, so a `list_items` that deletes would have read as a read.
 
 Budgets keep the router's walls out of reach, because a turn that hits one is
-refused with a non-retryable error and eve retires the session. The router
-counts schemas and bytes, so both are budgeted, on the connect (which is
-refused before a row or a credential is written), on the mounted set (clamped
-every turn, whatever is in the store) and on what one session may pick up.
+refused with a non-retryable error. The router counts schemas and bytes, so
+both are budgeted on what one chat may pick up (at most 40 picked tools).
 `test/tool-cap.test.ts` does the arithmetic, so lowering a wall or adding an
 agent tool trips CI rather than a live turn.
 
@@ -285,7 +283,7 @@ npm run brand:check
 
 Use the Node 24 runtime above. Brand tooling has its own lockfile to preserve the router's verified root dependency lock. The build creates `useful-bot-brand-assets.zip`; see [BRAND_ASSET_REPORT.md](BRAND_ASSET_REPORT.md) for the output inventory and verification results.
 
-The macOS bundle takes its app icon, logos, head-only bot avatars and native animation layers from `brand/`. Rebuild with `make -C macos bundle` after regenerating assets. Bot settings offer bright head colors with transparent surroundings. The app plays a head float and blink at launch and while working, respecting Reduce Motion. Old command-card icons and shape-based avatar renderers have been removed.
+The macOS bundle takes its app icon, logos and native animation layers from `brand/`. Rebuild with `make -C macos bundle` after regenerating assets. The app plays a head float and blink at launch, respecting Reduce Motion; while the bot works, the chat shows the dot mark of `useful-brand`'s agent-working motion.
 
 ## License
 

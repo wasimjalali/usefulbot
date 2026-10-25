@@ -8,7 +8,6 @@ import {
   claimDueRoutine,
   createRoutine,
   deleteRoutine,
-  deleteRoutinesForBot,
   dueRoutines,
   listRoutines,
   claimManualRun,
@@ -121,6 +120,7 @@ test("routineNextRun takes the earliest schedule and routineDueAt anchors on the
     lastRunAt: null,
     runHistory: [],
     manualRunRequested: false,
+    chatId: null,
   };
   // Daily 07:00 Berlin beats weekly Monday 09:00 Berlin on the same day.
   const next = routineNextRun(routine, new Date("2026-09-14T00:00:00.000Z"));
@@ -225,16 +225,15 @@ test("run history is bounded and deleting a bot takes its routines", () => {
       schedules: [{ kind: "daily", time: "09:00" }],
     });
     for (let index = 0; index < RUN_HISTORY_MAX + 5; index += 1) {
-      appendRoutineRun(routine.id, { status: index % 2 === 0 ? "ok" : "failed", sessionId: `ses_${index}` });
+      appendRoutineRun(routine.id, { status: index % 2 === 0 ? "ok" : "failed", chatId: `chat_${index}` });
     }
     const stored = readRoutine(routine.id);
     assert.equal(stored?.runHistory.length, RUN_HISTORY_MAX);
-    assert.equal(stored?.runHistory.at(-1)?.sessionId, `ses_${RUN_HISTORY_MAX + 4}`);
+    assert.equal(stored?.runHistory.at(-1)?.chatId, `chat_${RUN_HISTORY_MAX + 4}`);
     assert.equal(appendRoutineRun("rtn_nope", { status: "ok" }), null);
 
     createRoutine({ botId: "bot-b", name: "Other", instruction: "Do it.", schedules: [] });
-    assert.equal(deleteRoutinesForBot("bot-a"), 1);
-    assert.equal(listRoutines("bot-a").length, 0);
+    assert.equal(listRoutines("bot-a").length, 1);
     assert.equal(listRoutines("bot-b").length, 1);
   } finally {
     box.restore();
@@ -359,12 +358,11 @@ test("routines writes require the CSRF token and a rate-limit bucket", () => {
 
 test("the manual run route refuses to start without the agent credential", () => {
   const source = routeSource("[id]", "run", "route.ts");
-  assert.match(source, /if \(!agentsEnabled\(\)\)/);
-  assert.match(source, /agent_credential_missing/);
-  // The gate runs before anything reads or starts a routine. The start call
-  // is the claim: the route answers after the claim, so a claim failure can
-  // still be mapped to a status instead of vanishing into a voided run.
-  assert.ok(source.indexOf("requireOwner") < source.indexOf("startRoutineNow"));
+  assert.match(source, /engine_credential_missing/);
+  // The gate runs before anything reads or starts a routine. The engine
+  // call is the claim: the route answers after the claim, so a claim failure
+  // can still be mapped to a status instead of vanishing into a voided run.
+  assert.ok(source.indexOf("requireOwner") < source.indexOf("engineRunRoutine("));
 });
 
 // MARK: - Agent-requested runs

@@ -27,26 +27,26 @@ export type WorkspaceScope = "folder" | "computer";
 export type EffectiveWorkspace = {
   root: string;
   grant: SessionGrant | null;
-  /** The bot's permission; Auto when the session carries no grant at all. */
+  /** The bot's permission; Auto when the call carries no chat at all. */
   permission: WorkspacePermission;
   /** `folder` inside an attached folder, `computer` under the owner's home. */
   scope: WorkspaceScope;
 };
 
 /**
- * Where a conversation works and how much it may do there, verified at tool
+ * Where a chat works and how much it may do there, verified at tool
  * time. The grant is read ONCE here: pairing a root from one read with a
  * permission from another is a race a concurrent permission change could
  * exploit. An attached folder that is itself a symlink, or whose path
  * segments name a credential store, is refused here regardless of what any
  * route accepted earlier. A grant with no folder is the computer scope:
- * the owner's home under the bot's permission. A session with no grant at
- * all is one the web server did not stamp, so it fails closed to Read
- * only; only a call with no session (tests, evals) defaults to Auto.
+ * the owner's home under the bot's permission. A chat with no grant at
+ * all is one the engine did not stamp, so it fails closed to Read
+ * only; only a call with no chat (tests, evals) defaults to Auto.
  */
-export function effectiveRoot(sessionId?: string): EffectiveWorkspace {
-  const grant = sessionId ? readSessionGrant(sessionId) : null;
-  const permission = grant?.permission ?? (sessionId ? "read_only" : "auto");
+export function effectiveRoot(chatId?: string): EffectiveWorkspace {
+  const grant = chatId ? readSessionGrant(chatId) : null;
+  const permission = grant?.permission ?? (chatId ? "read_only" : "auto");
   if (!grant || grant.path === null) {
     return { root: workspaceRoot(), grant, permission, scope: "computer" };
   }
@@ -142,7 +142,7 @@ export function resolveWorkspacePath(inputPath: string, root: string = workspace
       throw new Error("path_forbidden");
     }
   }
-  // The runtime install folders (service code, eve transcripts) are three
+  // The runtime install folders (service code and the engine's session files) are three
   // segments long, so they are matched on the whole resolved path. That also
   // covers a root granted above them, or one inside them.
   if (isRuntimeInstallPath(resolved)) throw new Error("path_forbidden");

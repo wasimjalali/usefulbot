@@ -118,11 +118,10 @@ public enum DesignTokens {
 
     public enum Space {
         public static let railWidth: CGFloat = 248
-        public static let settingsPaneWidth: CGFloat = 320
         public static let stageMargin: CGFloat = 10
         public static let chatHead: CGFloat = 52
         public static let chatColumnMax: CGFloat = 768
-        /// The one cap on a bubble's width, for the owner and the bots alike.
+        /// The one cap on a bubble's width, for the owner and the bot alike.
         /// A narrow window shrinks bubbles below it; nothing grows past it.
         public static let bubbleMax: CGFloat = 640
         public static let chatColumnPadding: CGFloat = 24
@@ -135,7 +134,6 @@ public enum DesignTokens {
         public static let botRow: CGFloat = 36
         public static let headerGap: CGFloat = 10
         public static let sectionHead: CGFloat = 24
-        public static let pinnedCardPadding: CGFloat = 10
         public static let scrollbarWidth: CGFloat = 5
 
         // Phone metrics (iOS design spec 4.3); the Mac values above stay put.

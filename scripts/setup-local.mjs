@@ -19,9 +19,9 @@ enforceStack("setup-local");
 process.umask(0o077);
 
 // Every app token this setup mints: a config row (digest only) and the
-// Keychain item that holds the value. The channel secret has no config row,
-// the web and eve services read it from Keychain to sign and verify channel
-// JWTs. The reviewer credential is the only one that may carry the reviewer
+// Keychain item that holds the value. The channel secret has no config row:
+// it is the bearer the web service presents to the engine, and the engine
+// verifies it. Both read it from Keychain. The reviewer credential is the only one that may carry the reviewer
 // alias, so without it "ask the reviewer" reports reviewer_unconfigured.
 const TOKEN_CREDENTIALS = [
   { id: "device-desktop", kind: "device", callerId: "desktop", profile: "desktop", keychain: keychainName("device.desktop") },
@@ -431,7 +431,6 @@ async function main() {
       schemaVersion: 1,
       phoneEnabled: previous?.phoneEnabled === true,
       tailnet: previous?.tailnet ?? null,
-      sandbox: { backend: "just-bash", evidenceId: "s3-non-vm-default", imageDigest: null },
       goBalanceDisabledConfirmedAt: new Date().toISOString(),
       searchKeyRequired: false,
       credentials: minted.filter((entry) => entry.row).map((entry) => entry.row),
@@ -445,7 +444,6 @@ async function main() {
       schemaVersion: 1,
       phoneEnabled: false,
       tailnet: null,
-      sandbox: { backend: "just-bash", evidenceId: "s3-non-vm-default", imageDigest: null },
       goBalanceDisabledConfirmedAt: new Date().toISOString(),
       searchKeyRequired: false,
       credentials: minted.filter((entry) => entry.row).map((entry) => entry.row),
@@ -522,7 +520,7 @@ async function main() {
     keychainItems: KEYCHAIN_ITEMS,
     reveal: "Keychain Access",
     manual: `install ${keychainName("opencode-go")} yourself (see README)`,
-    restart: "restart the router, eve and web services: the router reloads the credential table and the other two read the tokens at boot",
+    restart: "restart the router, engine and web services: the router reloads the credential table and the other two read the tokens at boot",
   })}\n`);
 }
 

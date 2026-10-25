@@ -1,0 +1,42 @@
+{
+  "t01-files": {
+    "A": "eve",
+    "B": "pi"
+  },
+  "t02-bash-approve": {
+    "A": "eve",
+    "B": "pi"
+  },
+  "t03-deny": {
+    "A": "pi",
+    "B": "eve"
+  },
+  "t04-web-search": {
+    "A": "pi",
+    "B": "eve"
+  },
+  "t05-memory-save": {
+    "A": "eve",
+    "B": "pi"
+  },
+  "t06-memory-recall": {
+    "A": "pi",
+    "B": "eve"
+  },
+  "t07-routine": {
+    "A": "eve",
+    "B": "pi"
+  },
+  "t08-connector": {
+    "A": "eve",
+    "B": "pi"
+  },
+  "t09-question": {
+    "A": "pi",
+    "B": "eve"
+  },
+  "t10-long-chat": {
+    "A": "pi",
+    "B": "eve"
+  }
+}

@@ -1,6 +1,5 @@
 import {
   agentStorePath,
-  appendAgentEvent,
   listProposalsOfKind,
   readProposal,
   updateProposal,
@@ -19,9 +18,8 @@ import {
   type ConnectionEntry,
 } from "./connections-store.ts";
 import { connectionSecretService, keychainSet } from "./keychain.ts";
-import { listHandoffs, queueHandoff } from "./handoffs.ts";
+import { engineNoteRow, engineSystemTurn } from "./engine-client.ts";
 import { wrapUntrusted } from "./untrusted.ts";
-import { measureOpenApiConnection } from "./mcp-http.ts";
 import {
   completeMcpOAuth,
   dropOauthPending,
@@ -32,20 +30,8 @@ import {
   OAuthTokenError,
   startMcpOAuth,
 } from "./mcp-oauth.ts";
-import { readShell } from "./shell-io.ts";
-import { DEFAULT_BOT_ID, orchestratorId } from "./shell-store.ts";
 import type { ConnectionState, ConnectionStatus } from "./connection-tools-store.ts";
-import { specWireBytes } from "./tool-wire-size.ts";
-import {
-  discoverConnection,
-  eagerConnections,
-  ensureConnectionListing,
-  isEagerConnection,
-  mountedToolBytes,
-  mountedToolCount,
-  specNamesFit,
-} from "./connection-tools.ts";
-import { MOUNTED_TOOL_BUDGET, MOUNTED_TOOL_BYTE_BUDGET } from "./policy.ts";
+import { discoverConnection, ensureConnectionListing } from "./connection-tools.ts";
 
 /**
  * Connect-server card. Confirm writes the registry (and Keychain, and OAuth).
@@ -93,47 +79,19 @@ function resumeMessage(card: Stored, connectionId: string): string {
  * against that row and keeps its own id, and naming that id would send the bot
  * looking for a connection that does not exist.
  */
-function queueResume(card: Stored, storePath: string, connectionId = card.connectionId): boolean {
-  const targetId = card.sourceBotId ?? card.threadId;
-  let targetName = "Useful Bot";
-  // The resume is sent by the orchestrator under its real name. The roster
-  // not reading falls back to the default bot, as the name always did.
-  let source = { id: DEFAULT_BOT_ID, name: "Useful Bot" };
+async function queueResume(card: Stored, storePath: string, connectionId = card.connectionId): Promise<boolean> {
+  // The card's own key: the engine runs the turn once however often this is retried.
+  const key = `connect:${card.id}`;
   try {
-    const shell = readShell();
-    targetName = shell.bots.find((bot) => bot.id === targetId)?.name ?? targetName;
-    const orchestrator = shell.bots.find((bot) => bot.id === orchestratorId(shell));
-    if (orchestrator) source = { id: orchestrator.id, name: orchestrator.name };
-  } catch {
-    /* the names are cosmetic */
-  }
-  const message = resumeMessage(card, connectionId);
-  let handoffId: string;
-  try {
-    const flippedAt = Date.parse(card.waitingSince ?? "");
-    const existing = listHandoffs().find(
-      (record) => record.targetBotId === targetId
-        && record.message === message
-        && record.sourceBotId === source.id
-        && record.status !== "failed"
-        && Number.isFinite(flippedAt)
-        && Date.parse(record.createdAt) >= flippedAt - 1_000,
-    );
-    handoffId = existing?.id ?? queueHandoff({
-      sourceBotId: source.id,
-      sourceName: source.name,
-      targetBotId: targetId,
-      targetName,
-      message,
-      depth: 0,
-    }).id;
-  } catch {
+    if (!await engineSystemTurn(card.sourceBotId ?? card.threadId, key, resumeMessage(card, connectionId))) return false;
+  } catch (err) {
+    console.error(`[useful-bot] connect resume for ${connectionId} not started: ${err instanceof Error ? err.message : "unknown"}`);
     return false;
   }
   try {
     updateProposal(card.id, (item) => {
-      if (item.kind !== "connectServer" || item.handoffId) return;
-      item.handoffId = handoffId;
+      if (item.kind !== "connectServer" || item.resumeKey) return;
+      item.resumeKey = key;
     }, storePath);
   } catch {
     return false;
@@ -149,77 +107,6 @@ function queueResume(card: Stored, storePath: string, connectionId = card.connec
  */
 async function probeConnection(entry: ConnectionEntry, headers: Record<string, string> = {}): Promise<ConnectionStatus> {
   return (await discoverConnection(entry, { headers })).status;
-}
-
-/**
- * Refuse a connect that would take the tools mounted on every turn past the
- * budget, before any row or credential is written.
- *
- * The router refuses a turn carrying more than `MAX_TOOL_SCHEMAS` with a
- * non-retryable `unsupported_parameter`, and eve retires a session that gets
- * one, so the chat is dead for good. Nothing used to look: the count on the
- * card was for the owner to read, and a connect that doubled a bot's tools
- * went through in silence. An MCP server costs nothing here, because its
- * tools wait to be asked for; an OpenAPI spec is what this counts.
- */
-/**
- * @param headers what the caller legitimately holds for this connect, which
- * for a spec behind a key is the difference between countable and not. Passed
- * in rather than read from the Keychain: this runs before the row exists, so
- * the id it would read under may still belong to a different connection, and
- * that connection's credential must not be sent to this proposal's host.
- */
-async function assertToolBudget(
-  entry: ConnectionEntry,
-  headers: Record<string, string> = {},
-): Promise<void> {
-  if (!isEagerConnection(entry)) return;
-  // What is actually mounted, which is what reaches the wall. A row nobody
-  // has measured is not mounted, so it costs nothing here: charging it the
-  // ceiling made one unmeasurable row refuse every connect that followed,
-  // for good, with no way to remove it.
-  // A URL holds one row, so the one sharing this URL is the row this connect
-  // becomes or settles onto, and is not additional. A row sharing only the
-  // id is a different server that stays mounted: two cards for same-named
-  // servers are handed the same id before either connects, and excluding it
-  // admitted a connect while the real total was already over.
-  const others = eagerConnections().filter((item) => item.url !== entry.url);
-  const mounted = others.reduce((total, item) => total + (mountedToolCount(item) ?? 0), 0);
-  const mountedBytes = others.reduce((total, item) => total + (mountedToolBytes(item) ?? 0), 0);
-  let adding: number | null;
-  let addingBytes: number;
-  if (entry.kind === "openapi") {
-    // A spec this app could not read is not a spec with no operations in it.
-    // Counting it as zero let an unreachable or oversized one through, and
-    // eve then mounted its whole operation list on every later turn: the
-    // wall this check exists to keep out of reach. Measured, not rated: an
-    // ordinary operation carries kilobytes of schema, so a flat rate per
-    // operation cleared this budget and the router's by a factor of five.
-    const size = await measureOpenApiConnection(entry.url, headers).catch(() => null);
-    if (size === null) throw new Error("tool_count_unknown");
-    // A name the provider refuses retires every session it is mounted in.
-    // Checked against the longest id the store could give this row: an id
-    // another server holds is reassigned `<first sixty>-<n>`, up to three
-    // longer, and a check against the shorter one admitted a row the mount
-    // then skipped for good.
-    const longestId = "x".repeat(Math.max(entry.id.length, Math.min(entry.id.length, 60) + 3));
-    if (!specNamesFit(longestId, size.longestName)) throw new Error("tool_name_too_long");
-    adding = size.operations;
-    // The same weighing the clamp uses, so the two cannot disagree.
-    addingBytes = specWireBytes(size);
-    // Not written here. This runs before the row exists, and two cards for
-    // same-named servers are handed the same id before either connects, so a
-    // measurement stamped now can land on another connection's index and sit
-    // there for the six hours before anything re-measures it. `probeConnection`
-    // writes it afterwards, under the id the store actually gave this row.
-  } else {
-    // Unreachable while only OpenAPI is eager, and kept as a refusal rather
-    // than a zero so a future eager kind cannot pass this check uncounted.
-    throw new Error("tool_count_unknown");
-  }
-  if (mounted + adding > MOUNTED_TOOL_BUDGET || mountedBytes + addingBytes > MOUNTED_TOOL_BYTE_BUDGET) {
-    throw new Error("tool_budget_exceeded");
-  }
 }
 
 function authHeaders(authKind: ConnectionAuthKind, secret: string | null, authHeader: string | null): Record<string, string> {
@@ -243,15 +130,15 @@ function writeSecret(connectionId: string, secret: string): void {
  * remove it, and puts the card in `failed` with the state as the reason. No
  * resume goes to the bot: nothing it could use was connected.
  */
-function settleProbe(
+async function settleProbe(
   proposalId: string,
   entry: ConnectionEntry,
   status: ConnectionStatus,
   now: number,
   storePath: string,
-): void {
+): Promise<void> {
   if (status.state === "ready" || status.state === "zero_tools") {
-    markConnected(proposalId, entry, status.toolCount ?? 0, now, storePath);
+    await markConnected(proposalId, entry, status.toolCount ?? 0, now, storePath);
     return;
   }
   failCard(proposalId, status.state, now, storePath);
@@ -303,17 +190,17 @@ async function settleAgainstRow(
 ): Promise<ConnectionStatus> {
   const found = await ensureConnectionListing(row);
   const status = found.status.state === "pending" ? (await discoverConnection(row)).status : found.status;
-  settleProbe(proposalId, row, status, now, storePath);
+  await settleProbe(proposalId, row, status, now, storePath);
   return status;
 }
 
-function markConnected(
+async function markConnected(
   proposalId: string,
   entry: ConnectionEntry,
   toolCount: number | null,
   now: number,
   storePath: string,
-): Stored | null {
+): Promise<Stored | null> {
   updateProposal(proposalId, (item) => {
     if (item.kind !== "connectServer" || item.status !== "pending") return;
     item.phase = "connected";
@@ -325,11 +212,12 @@ function markConnected(
   const flipped = readProposal(proposalId, storePath);
   if (!isServer(flipped) || flipped.phase !== "connected") return null;
   try {
-    appendAgentEvent(flipped.threadId, { kind: "note", text: `${entry.name} connected`, connectedName: entry.name }, storePath);
-  } catch {
-    /* the resume still tells the owner */
+    await engineNoteRow(flipped.sourceBotId ?? flipped.threadId, `connect:${flipped.id}`, `Connected ${entry.name}.`);
+  } catch (err) {
+    // The resume still tells the owner.
+    console.error(`[useful-bot] connected note for ${entry.id} not written: ${err instanceof Error ? err.message : "unknown"}`);
   }
-  if (queueResume(flipped, storePath, entry.id)) {
+  if (await queueResume(flipped, storePath, entry.id)) {
     updateProposal(proposalId, (item) => {
       if (item.status === "pending") item.status = "confirmed";
     }, storePath);
@@ -362,7 +250,7 @@ export async function startConnectionConfirm(
       // The owner already approved this exact URL under another id. Settle
       // this card against the row that is there and let the bot resume.
       //
-      // Not a second row: eve would mount the server twice, so the model would
+      // Not a second row: the server would be offered twice, so the model would
       // see every one of its tools twice and both copies would count against
       // the tool cap. And not this card's id either: keychainSet writes with
       // `security add-generic-password -U`, so writing this card's secret
@@ -406,7 +294,7 @@ export async function startConnectionConfirm(
     const toolsAllow = proposal.connectionId === "excalidraw" ? ["read_me", "create_view"] : null;
     const entry: ConnectionEntry = {
       id: proposal.connectionId || allocateConnectionId(proposal.name),
-      kind: proposal.connectionKind,
+      kind: "mcp",
       name: proposal.name,
       url,
       description: proposal.description || `${proposal.name} MCP server`,
@@ -422,12 +310,6 @@ export async function startConnectionConfirm(
     // this URL, or the same row under a free id when this card's id turned out
     // to be a different server's. Everything below reads `stored`, never the
     // entry that went in.
-    // Nothing is written until the budget says there is room: a row and a
-    // credential for a connect that is about to be refused would have to be
-    // unwound, and the unwinding is what loses a credential. The secret the
-    // owner just pasted goes with the check, so a spec behind a key can be
-    // counted at all; it is this card's own, not a row's.
-    await assertToolBudget(entry, authHeaders(proposal.authKind, secret || null, entry.authHeader));
     const outcome = upsertConnection(entry);
     if (!outcome.won) {
       // Another card holds this URL. Nothing of this card's is in the store,
@@ -445,7 +327,7 @@ export async function startConnectionConfirm(
       proposal.authKind === "none" ? null : (opts.secret ?? "").trim() || null,
       stored.authHeader,
     );
-    settleProbe(proposalId, stored, await probeConnection(stored, headers), opts.now ?? Date.now(), storePath);
+    await settleProbe(proposalId, stored, await probeConnection(stored, headers), opts.now ?? Date.now(), storePath);
     return {};
   } finally {
     authorizing.delete(proposalId);
@@ -578,32 +460,6 @@ async function finishConnectionOAuth(
     const status = await settleAgainstRow(pendingPeek.proposalId, settled, opts.now ?? Date.now(), storePath);
     return outcomeOf(pendingPeek.proposalId, status);
   }
-  const provisional: ConnectionEntry = {
-    id: proposal.connectionId,
-    kind: proposal.connectionKind,
-    name: proposal.name,
-    url: assertConnectionUrl(proposal.url),
-    description: proposal.description || `${proposal.name} MCP server`,
-    authKind: "oauth",
-    authHeader: null,
-    toolsAllow: null,
-    createdAt: new Date(opts.now ?? Date.now()).toISOString(),
-  };
-  // Refuse before the exchange only when the refusal is certain without a
-  // credential: an authorization code is single use, so a refusal after it is
-  // spent costs the owner the whole sign-in. It cannot be the only check,
-  // because an OpenAPI spec behind this very sign-in answers 401 until the
-  // token exists, and refusing on that made such a server unconnectable.
-  try {
-    await assertToolBudget(provisional);
-  } catch (err) {
-    if ((err as Error).message !== "tool_count_unknown") {
-      // Nothing of this sign-in is worth keeping: the verifier and the client
-      // secret would otherwise sit on disk with nothing pointing at them.
-      dropOauthPending(state);
-      throw err;
-    }
-  }
   let exchanged: Awaited<ReturnType<typeof completeMcpOAuth>>;
   try {
     // The pending row stays until this attempt is done with the card: it is the
@@ -680,7 +536,7 @@ async function settleExchanged(
   const url = assertConnectionUrl(proposal.url);
   const entry: ConnectionEntry = {
     id: pending.connectionId,
-    kind: proposal.connectionKind,
+    kind: "mcp",
     name: proposal.name,
     url,
     description: proposal.description || `${proposal.name} MCP server`,
@@ -691,13 +547,6 @@ async function settleExchanged(
   };
   // Same last word as the confirm path: only the store's lock can see a row
   // that landed for this URL while the browser had the sign-in open.
-  const bearer = { authorization: `Bearer ${bundle.accessToken}` };
-  // After the exchange, because a spec behind this very sign-in cannot be
-  // read without the token, but still before anything is written. Refusing
-  // after the row and the credential were committed left a connection that
-  // never mounts, that the owner is told is connected, and that nothing can
-  // remove: a spec that became readable later would even mount itself.
-  await assertToolBudget(entry, bearer);
   assertAttemptCurrent(state, pendingPeek.proposalId);
   const outcome = upsertConnection(entry);
   if (!outcome.won) {
@@ -710,11 +559,11 @@ async function settleExchanged(
   }
   const stored = outcome.entry;
   keychainSet(connectionSecretService(stored.id), JSON.stringify(bundle));
-  const status = await probeConnection(stored, bearer);
+  const status = await probeConnection(stored, { authorization: `Bearer ${bundle.accessToken}` });
   // A newer sign-in began while the listing was read: the card is waiting on
   // it, and this callback must not say Connected.
   assertAttemptCurrent(state, pendingPeek.proposalId);
-  settleProbe(pending.proposalId, stored, status, now, storePath);
+  await settleProbe(pending.proposalId, stored, status, now, storePath);
   return outcomeOf(pending.proposalId, status);
 }
 
@@ -760,9 +609,9 @@ async function pumpOnce(
     const lingered = !Number.isFinite(since) || now - since > SERVER_LINGER_MS;
     // A settled card keeps its own connectionId, which has no row. The live
     // one is whatever holds its URL.
-    const queued = card.handoffId
+    const queued = card.resumeKey
       ? true
-      : queueResume(card, storePath, findConnectionByUrl(card.url)?.id ?? card.connectionId);
+      : await queueResume(card, storePath, findConnectionByUrl(card.url)?.id ?? card.connectionId);
     if (queued || lingered) {
       updateProposal(card.id, (item) => {
         if (item.status === "pending") item.status = "confirmed";

@@ -5,36 +5,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   admission,
-  briefBudgetChars,
   CONTEXT_TOO_LARGE_TEXT,
-  DESCRIPTION_TOO_LONG_TEXT,
+  descriptionTooLong,
   envelopeFor,
   OUTPUT_RESERVE_TOKENS,
   SHARED_PROMPT_CHARS,
   TOOL_SCHEMA_CHARS,
+  windowFor,
 } from "../shared/admission.ts";
 import { estimateTokens } from "../shared/context-blocks.ts";
+import { EngineUnavailableError } from "../shared/engine-client.ts";
 import { readProviderStore } from "../shared/providers.ts";
 import { readShell, updateShell, writeShell } from "../shared/shell-io.ts";
-import { applyShellAction, DEFAULT_BOT_ID, DESCRIPTION_MAX, GENERALIST_SEED_V2 } from "../shared/shell-store.ts";
-import { createRoutine, readRoutinesStore } from "../shared/routines-store.ts";
-import { queueHandoff, readHandoff } from "../shared/handoffs.ts";
-import { listThreadEvents } from "../shared/agent-store.ts";
-import { MemoryStore } from "../agent/lib/memory.ts";
-import { recallNotes } from "../agent/memory/notes.ts";
-import { upsertConnection } from "../shared/connections-store.ts";
-import { activateSessionTools, indexedToolBytes, putConnectionIndex, putConnectionOperations, updateConnectionToolsStore } from "../shared/connection-tools-store.ts";
-import { bindSession } from "../shared/session-bindings.ts";
-import { hiddenPrefixChars, rewriteEveTurnBody, type SessionRoute } from "../shared/eve-proxy.ts";
-import { MOUNTED_TOOL_BYTE_BUDGET } from "../shared/policy.ts";
-import {
-  admissionRefusal,
-  botContextReport,
-  mountedToolChars,
-  notesCharsFor,
-  pumpHandoffs,
-  startRoutineNow,
-} from "../web/lib/agent-exec.ts";
+import { DEFAULT_BOT_ID, DESCRIPTION_MAX, GENERALIST_SEED_V3 } from "../shared/shell-store.ts";
+import { botContextReport } from "../web/lib/agent-exec.ts";
+import { startStubEngine, withEnv } from "./web/stub-engine.ts";
+
+// Ways admission can fail:
+// 1. a bot whose instructions fill the window is let through, or a normal one is refused;
+// 2. the engine's measured prompt and tools are ignored, so the check keeps using the estimate;
+// 3. the Settings counter shows the web's guess instead of the engine's numbers, or invents a seed for a bot that has none;
+// 4. an engine that is down reads as "fits".
 
 const GO = "opencode-go:plan";
 /**
@@ -47,11 +38,7 @@ const GO = "opencode-go:plan";
  */
 const WINDOW = estimateTokens(SHARED_PROMPT_CHARS) + estimateTokens(TOOL_SCHEMA_CHARS) + OUTPUT_RESERVE_TOKENS + 2_100;
 
-const KEYS = [
-  "UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH", "UB_SHELL_PATH", "UB_WORKSPACE_STORE_PATH", "UB_ROUTINES_PATH",
-  "UB_AGENT_STORE_PATH", "UB_HANDOFF_DIR", "UB_CHANNEL_JWT", "UB_CHANNEL_JWT_SECRET", "UB_MEMORY_ROOT",
-  "UB_CONNECTIONS_PATH", "UB_CONNECTION_TOOLS_PATH", "UB_SESSION_OWNERS_PATH",
-] as const;
+const KEYS = ["UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH", "UB_SHELL_PATH"] as const;
 
 function row(id: string, contextTokens: number) {
   return { id, label: `Label ${id}`, efforts: ["low"], defaultEffort: "low", speeds: ["standard"], defaultSpeed: "standard", contextTokens };
@@ -64,16 +51,6 @@ async function withWorld<T>(fn: (world: { shell: string; dir: string }) => Promi
   process.env.UB_PROVIDERS_PATH = join(dir, "providers.json");
   process.env.UB_MODELS_CACHE_PATH = join(dir, "models-cache.json");
   process.env.UB_SHELL_PATH = join(dir, "shell.json");
-  process.env.UB_WORKSPACE_STORE_PATH = join(dir, "workspace.json");
-  process.env.UB_ROUTINES_PATH = join(dir, "routines.json");
-  process.env.UB_AGENT_STORE_PATH = join(dir, "agents.json");
-  process.env.UB_HANDOFF_DIR = join(dir, "handoffs");
-  process.env.UB_MEMORY_ROOT = join(dir, "memory");
-  process.env.UB_CONNECTIONS_PATH = join(dir, "connections.json");
-  process.env.UB_CONNECTION_TOOLS_PATH = join(dir, "connection-tools.json");
-  process.env.UB_SESSION_OWNERS_PATH = join(dir, "session-owners.json");
-  process.env.UB_CHANNEL_JWT_SECRET = "test-channel-secret";
-  delete process.env.UB_CHANNEL_JWT;
   writeFileSync(process.env.UB_PROVIDERS_PATH, JSON.stringify({
     schemaVersion: 2,
     connections: {
@@ -104,43 +81,43 @@ async function withWorld<T>(fn: (world: { shell: string; dir: string }) => Promi
 
 const pick = (modelId: string) => ({ connectionId: GO, modelId, effort: null, speed: "standard" as const });
 
-/** A teammate with the given description and model, returned with the fresh roster. */
+let botSeq = 0;
+
+/**
+ * A second bot with the given description and model, written straight into the
+ * roster (the app makes only the one): the tests below size bots side by side.
+ * Returned by id.
+ */
 function teammate(shell: string, description: string, modelId = "small") {
-  const made = applyShellAction(readShell(shell), { type: "createBot", name: "Alpha", description: description.slice(0, 100) });
-  const id = made.createdId as string;
+  const roster = readShell(shell);
+  botSeq += 1;
+  const id = `bot-test-${botSeq}`;
   // The description goes in verbatim, as the owner's editor saves it.
   writeShell({
-    ...made.store,
-    bots: made.store.bots.map((bot) => (bot.id === id ? { ...bot, description, model: pick(modelId) } : bot)),
+    ...roster,
+    bots: [...roster.bots, { ...roster.bots[0], id, name: `Alpha ${botSeq}`, label: "", description, model: pick(modelId), chatId: null }],
   }, shell);
   return id;
 }
 
-function eveFetchCounter() {
-  const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = (async () => { calls += 1; return new Response("{}", { status: 200 }); }) as typeof globalThis.fetch;
-  return { calls: () => calls, restore: () => { globalThis.fetch = original; } };
-}
+const botOf = (shell: string, id: string) => readShell(shell).bots.find((bot) => bot.id === id)!;
 
 test("SHARED_PROMPT_CHARS is at least the size of agent/instructions.md", () => {
   const bytes = readFileSync(new URL("../agent/instructions.md", import.meta.url)).length;
   assert.ok(SHARED_PROMPT_CHARS >= bytes, `instructions.md is ${bytes} bytes, the constant says ${SHARED_PROMPT_CHARS}`);
-  assert.equal(TOOL_SCHEMA_CHARS, 30_000);
   assert.equal(OUTPUT_RESERVE_TOKENS, 4096);
 });
 
-test("a bot with a normal description fits, and the Generalist and a teammate measure about the same fixed cost", async () => {
+test("a bot with a normal description fits, and a longer set of instructions makes a bigger envelope", async () => {
   await withWorld(({ shell }) => {
     const store = readProviderStore();
     const id = teammate(shell, "Watch rankings.");
-    const roster = readShell(shell);
-    const mate = admission({ bot: roster.bots.find((bot) => bot.id === id)!, shell: roster, store, notesChars: 0 });
-    const generalist = admission({ bot: roster.bots.find((bot) => bot.id === DEFAULT_BOT_ID)!, shell: roster, store, notesChars: 0 });
+    const mate = admission({ bot: botOf(shell, id), store, notesChars: 0 });
+    const generalist = admission({ bot: botOf(shell, DEFAULT_BOT_ID), store, notesChars: 0 });
     assert.ok(mate.ok && generalist.ok);
-    console.log(`envelope tokens: Generalist ${generalist.tokens}, teammate ${mate.tokens}, window ${mate.windowTokens}`);
-    // The Generalist carries "Running the team" and the long shipped text; the teammate does not.
+    // The Generalist carries the long shipped text; the other bot has one line.
     assert.ok(generalist.tokens > mate.tokens);
+    assert.ok(generalist.tokens - mate.tokens < 400, "the difference is the instructions alone");
     assert.equal(mate.windowTokens, WINDOW);
     assert.equal(mate.modelLabel, "Label small");
     const floor = estimateTokens(SHARED_PROMPT_CHARS) + estimateTokens(TOOL_SCHEMA_CHARS) + OUTPUT_RESERVE_TOKENS;
@@ -152,8 +129,7 @@ test("an 8,000-character description is refused on a small window and fits on a 
   await withWorld(({ shell }) => {
     const store = readProviderStore();
     const small = teammate(shell, "x".repeat(DESCRIPTION_MAX), "small");
-    const roster = readShell(shell);
-    const refused = admission({ bot: roster.bots.find((bot) => bot.id === small)!, shell: roster, store, notesChars: 0 });
+    const refused = admission({ bot: botOf(shell, small), store, notesChars: 0 });
     assert.equal(refused.ok, false);
     if (refused.ok) return;
     assert.equal(refused.code, "context_too_large");
@@ -161,270 +137,129 @@ test("an 8,000-character description is refused on a small window and fits on a 
     assert.match(refused.message, /Shorten its instructions/);
     assert.equal(refused.descriptionChars, DESCRIPTION_MAX);
     const big = teammate(shell, "x".repeat(DESCRIPTION_MAX), "big");
-    const roster2 = readShell(shell);
-    assert.equal(admission({ bot: roster2.bots.find((bot) => bot.id === big)!, shell: roster2, store, notesChars: 0 }).ok, true);
+    assert.equal(admission({ bot: botOf(shell, big), store, notesChars: 0 }).ok, true);
   });
 });
 
-test("the carry-over brief and the notes tip a fitting bot over, and the brief budget shrinks to what is left", async () => {
+test("hidden text and notes tip a fitting bot over", async () => {
   await withWorld(({ shell }) => {
     const store = readProviderStore();
-    const id = teammate(shell, "Watch rankings.");
-    const roster = readShell(shell);
-    const bot = roster.bots.find((item) => item.id === id)!;
-    const base = admission({ bot, shell: roster, store, notesChars: 0 });
+    const bot = botOf(shell, teammate(shell, "Watch rankings."));
+    const base = admission({ bot, store, notesChars: 0 });
     assert.ok(base.ok);
     const room = base.windowTokens - base.tokens;
     const tooBig = Math.ceil(room * 3.5) + 100;
-    assert.equal(admission({ bot, shell: roster, store, notesChars: 0, briefChars: tooBig }).ok, false);
-    assert.equal(admission({ bot, shell: roster, store, notesChars: tooBig }).ok, false);
-    assert.equal(admission({ bot, shell: roster, store, notesChars: 0, briefChars: 1000 }).ok, true);
-    const budget = briefBudgetChars({ bot, shell: roster, store, notesChars: 0 }, 32_000);
-    assert.ok(budget > 0 && budget <= Math.floor((room * 3.5) / 2), `budget ${budget}`);
-    // A bot whose fixed envelope already fills the window has no room for a brief.
-    const full = teammate(shell, "x".repeat(DESCRIPTION_MAX));
-    const roster3 = readShell(shell);
-    assert.equal(briefBudgetChars({ bot: roster3.bots.find((item) => item.id === full)!, shell: roster3, store, notesChars: 0 }, 32_000), 0);
+    assert.equal(admission({ bot, store, notesChars: 0, briefChars: tooBig }).ok, false);
+    assert.equal(admission({ bot, store, notesChars: tooBig }).ok, false);
+    assert.equal(admission({ bot, store, notesChars: 0, briefChars: 1000 }).ok, true);
   });
 });
 
-test("the notes block is read from the memory store, read only, and counted", async () => {
+test("tools the chat picked up count: a bot that fits without them is refused with enough of them", async () => {
   await withWorld(({ shell }) => {
-    const id = teammate(shell, "Watch rankings.");
-    assert.ok(notesCharsFor(id) > 0, "an empty store still carries the sentinel block");
-    const empty = notesCharsFor(id);
-    const memory = new MemoryStore();
-    memory.upsert({
-      expectedRevision: null, title: "Plan", tags: [], body: "y".repeat(900), botId: id, source: "owner", expiresAt: null, sessionId: "s1",
-    });
-    const after = notesCharsFor(id);
-    assert.ok(after > empty + 800, `empty ${empty}, with a note ${after}`);
-    assert.equal(notesCharsFor("bot-someone-else"), empty, "another bot's notes are not counted");
-    memory.close();
-  });
-});
-
-test("the proxy refuses an over-cap description and a too-large envelope with a 409 before any eve call", async () => {
-  await withWorld(async ({ shell }) => {
-    const eve = eveFetchCounter();
-    try {
-      const over = teammate(shell, "x".repeat(DESCRIPTION_MAX + 1), "big");
-      const roster = readShell(shell);
-      const store = readProviderStore();
-      const first = admissionRefusal(roster.bots.find((bot) => bot.id === over)!, roster, store);
-      assert.equal(first?.status, 409);
-      assert.deepEqual(await first!.json(), { ok: false, error: "description_too_long", message: DESCRIPTION_TOO_LONG_TEXT });
-      const full = teammate(shell, "x".repeat(DESCRIPTION_MAX));
-      const roster2 = readShell(shell);
-      const second = admissionRefusal(roster2.bots.find((bot) => bot.id === full)!, roster2, store);
-      assert.equal(second?.status, 409);
-      assert.deepEqual(await second!.json(), { ok: false, error: "context_too_large", message: CONTEXT_TOO_LARGE_TEXT });
-      const fine = teammate(shell, "Watch rankings.");
-      const roster3 = readShell(shell);
-      assert.equal(admissionRefusal(roster3.bots.find((bot) => bot.id === fine)!, roster3, store), null);
-      // A brief that pushes a fitting bot over is refused too.
-      assert.equal(admissionRefusal(roster3.bots.find((bot) => bot.id === fine)!, roster3, store, 500_000)?.status, 409);
-      assert.equal(eve.calls(), 0);
-    } finally {
-      eve.restore();
-    }
-  });
-});
-
-test("a routine and a handoff for a bot that does not fit fail in plain words and never reach eve", async () => {
-  await withWorld(async ({ shell }) => {
-    const eve = eveFetchCounter();
-    try {
-      const full = teammate(shell, "x".repeat(DESCRIPTION_MAX));
-      const over = teammate(shell, "x".repeat(DESCRIPTION_MAX + 1), "big");
-      const sender = teammate(shell, "Sends work.", "big");
-      const routine = createRoutine({ botId: full, name: "Daily", instruction: "do it", schedules: [] });
-      await assert.rejects(startRoutineNow(routine.id), /context_too_large/);
-      assert.match(readRoutinesStore().routines[0].runHistory[0].error ?? "", /context_too_large/);
-      const notes = listThreadEvents(full).map((event) => ("text" in event ? String(event.text) : ""));
-      assert.ok(notes.some((text) => text.includes(CONTEXT_TOO_LARGE_TEXT)), "the transcript note says it in plain words");
-      assert.ok(!notes.some((text) => text.includes("context_too_large")), "the note never shows the code");
-
-      const overRoutine = createRoutine({ botId: over, name: "Nightly", instruction: "do it", schedules: [] });
-      await assert.rejects(startRoutineNow(overRoutine.id), /description_too_long/);
-      const overNotes = listThreadEvents(over).map((event) => ("text" in event ? String(event.text) : ""));
-      assert.ok(overNotes.some((text) => text.includes(DESCRIPTION_TOO_LONG_TEXT)));
-
-      const handoff = queueHandoff({ sourceBotId: sender, sourceName: "Sender", targetBotId: full, targetName: "Alpha", message: "hello" });
-      const result = await pumpHandoffs(1);
-      assert.equal(result.failed.length, 1);
-      assert.equal(result.failed[0].error, CONTEXT_TOO_LARGE_TEXT);
-      assert.equal(readHandoff(handoff.id)?.status, "failed");
-      assert.equal(readHandoff(handoff.id)?.attempts, 1, "terminal on the first attempt");
-      assert.equal(eve.calls(), 0, "nothing was sent to eve");
-    } finally {
-      eve.restore();
-    }
-  });
-});
-
-test("the counter report: numbers for any bot, the seed only for the Generalist", async () => {
-  await withWorld(({ shell }) => {
-    const id = teammate(shell, "Watch rankings.");
-    const mate = botContextReport(id)!;
-    assert.equal(mate.max, DESCRIPTION_MAX);
-    assert.equal(mate.descriptionChars, "Watch rankings.".length);
-    assert.equal(mate.windowTokens, WINDOW);
-    assert.equal(mate.modelLabel, "Label small");
-    assert.equal(mate.fits, true);
-    assert.equal(mate.seed, null);
-    assert.equal(botContextReport("bot-ghost"), null);
-
-    const generalist = botContextReport(DEFAULT_BOT_ID)!;
-    assert.deepEqual(generalist.seed, { differs: false, text: GENERALIST_SEED_V2 });
-    updateShell((current) => ({
-      ...current,
-      bots: current.bots.map((bot) => (bot.id === DEFAULT_BOT_ID ? { ...bot, description: `${GENERALIST_SEED_V2}\n\nAlways answer in Spanish.` } : bot)),
-    }), shell);
-    assert.equal(botContextReport(DEFAULT_BOT_ID)!.seed?.differs, true);
-    // Whitespace alone is not a difference.
-    updateShell((current) => ({
-      ...current,
-      bots: current.bots.map((bot) => (bot.id === DEFAULT_BOT_ID ? { ...bot, description: `  ${GENERALIST_SEED_V2.replace(/\n/g, "\n\n")}  ` } : bot)),
-    }), shell);
-    assert.equal(botContextReport(DEFAULT_BOT_ID)!.seed?.differs, false);
-
-    // Over the cap: the report says it does not fit.
-    const over = teammate(shell, "x".repeat(DESCRIPTION_MAX + 1), "big");
-    assert.equal(botContextReport(over)!.fits, false);
-    assert.equal(envelopeFor({ bot: readShell(shell).bots.find((bot) => bot.id === over)!, shell: readShell(shell), store: readProviderStore(), notesChars: 0 }).descriptionChars, DESCRIPTION_MAX + 1);
-  });
-});
-
-test("mounted tool schemas count: an OpenAPI connection every turn and the MCP tools the session picked up", async () => {
-  await withWorld(({ shell }) => {
-    assert.equal(mountedToolChars(null), 0);
-    // A measured OpenAPI connection is mounted for every turn.
-    upsertConnection({
-      id: "orders", kind: "openapi", name: "Orders", url: "https://api.example.com/openapi.json", description: "Orders API",
-      authKind: "none", authHeader: null, toolsAllow: null, createdAt: "2026-10-01T00:00:00.000Z",
-    });
-    putConnectionOperations("orders", { operations: 4, schemaBytes: 3000, textBytes: 1000, longestName: 12 });
-    const eager = mountedToolChars(null);
-    assert.ok(eager > 3000, `an OpenAPI connection weighs ${eager}`);
-    assert.ok(eager <= MOUNTED_TOOL_BYTE_BUDGET, "never past the enforced budget");
-    // An MCP tool the session activated counts for that session only.
-    upsertConnection({
-      id: "files", kind: "mcp", name: "Files", url: "https://mcp.example.com/mcp", description: "Files",
-      authKind: "none", authHeader: null, toolsAllow: null, createdAt: "2026-10-01T00:00:00.000Z",
-    });
-    const tool = { name: "search", description: "Search the files.", inputSchema: { type: "object" }, inputSchemaBytes: 4000 };
-    putConnectionIndex("files", [tool]);
-    activateSessionTools("sess-held", ["files__search"], undefined, { files: "Files" });
-    const held = mountedToolChars("sess-held");
-    assert.equal(held, eager + indexedToolBytes(tool, "files", "Files"));
-    assert.equal(mountedToolChars("sess-other"), eager);
-
-    // The resolver mounts only what the owner's allow-list still names, inside
-    // the session limits; a tool it would not mount is not charged.
-    const big = { name: "dump", description: "Dump everything.", inputSchema: { type: "object" }, inputSchemaBytes: 12_000 };
-    const huge = { name: "firehose", description: "Everything.", inputSchema: { type: "object" }, inputSchemaBytes: 45_000 };
-    const files = (toolsAllow: string[] | null) => upsertConnection({
-      id: "files", kind: "mcp", name: "Files", url: "https://mcp.example.com/mcp", description: "Files",
-      authKind: "none", authHeader: null, toolsAllow, createdAt: "2026-10-01T00:00:00.000Z",
-    });
-    putConnectionIndex("files", [tool, big, huge]);
-    updateConnectionToolsStore((store) => {
-      store.sessions["sess-two"] = { updatedAt: new Date().toISOString(), tools: ["files__search", "files__dump", "files__firehose"] };
-    });
-    // No allow-list: search and dump mount; firehose is past the byte limit and is not charged.
-    files(null);
-    const wide = mountedToolChars("sess-two");
-    assert.equal(wide, eager + indexedToolBytes(tool, "files", "Files") + indexedToolBytes(big, "files", "Files"));
-    // The owner narrows the list: the large tool no longer mounts and no longer counts.
-    files(["search"]);
-    const narrow = mountedToolChars("sess-two");
-    assert.equal(narrow, eager + indexedToolBytes(tool, "files", "Files"));
-    // A bot that fits only without the excluded tool is admitted once it is excluded.
-    const mate = teammate(shell, "Watch rankings.");
-    const roster2 = readShell(shell);
-    const bot2 = roster2.bots.find((item) => item.id === mate)!;
-    const store2 = readProviderStore();
-    const base2 = admission({ bot: bot2, shell: roster2, store: store2, notesChars: 0 });
-    assert.ok(base2.ok);
-    // The same bot, on the same window: admitted with the narrowed set's tools, refused with the wide set's.
-    assert.equal(admission({ bot: bot2, shell: roster2, store: store2, notesChars: 0, mountedToolChars: narrow - eager }).ok, true);
-    assert.equal(admission({ bot: bot2, shell: roster2, store: store2, notesChars: 0, mountedToolChars: wide - eager }).ok, false);
-
-    // A bot that fits without them is refused with them on a tight window.
-    const id = teammate(shell, "Watch rankings.");
-    const roster = readShell(shell);
-    const bot = roster.bots.find((item) => item.id === id)!;
     const store = readProviderStore();
-    const base = admission({ bot, shell: roster, store, notesChars: 0 });
+    const bot = botOf(shell, teammate(shell, "Watch rankings."));
+    const base = admission({ bot, store, notesChars: 0 });
     assert.ok(base.ok);
     const room = (base.windowTokens - base.tokens) * 3.5;
-    assert.equal(admission({ bot, shell: roster, store, notesChars: 0, mountedToolChars: room - 100 }).ok, true);
-    assert.equal(admission({ bot, shell: roster, store, notesChars: 0, mountedToolChars: room + 100 }).ok, false);
+    assert.equal(admission({ bot, store, notesChars: 0, mountedToolChars: room - 100 }).ok, true);
+    assert.equal(admission({ bot, store, notesChars: 0, mountedToolChars: room + 100 }).ok, false);
   });
 });
 
-test("the admission notes count equals what the notes slot renders, outside-content label and long bodies included", async () => {
+test("the engine's measured prompt and tools replace the estimate, and the estimate stands when none is given", async () => {
   await withWorld(({ shell }) => {
-    const id = teammate(shell, "Watch rankings.");
-    const memory = new MemoryStore();
-    for (let index = 0; index < 9; index += 1) {
-      memory.upsert({
-        expectedRevision: null, title: `Note ${index}`, tags: [], body: `${index} `.repeat(index === 0 ? 700 : 40), botId: id,
-        source: index === 8 ? "model-after-outside-content" : "owner", expiresAt: null, sessionId: "s1",
-      });
-    }
-    const rendered = recallNotes(
-      { operationId: "op-test", memory: { scope: { value: id } } },
-      () => memory,
+    const store = readProviderStore();
+    const bot = botOf(shell, teammate(shell, "Watch rankings."));
+    const estimated = envelopeFor({ bot, store, notesChars: 0 });
+    const same = envelopeFor({ bot, store, notesChars: 0, promptChars: SHARED_PROMPT_CHARS, toolSchemaChars: TOOL_SCHEMA_CHARS });
+    assert.equal(same.tokens, estimated.tokens);
+    const measured = envelopeFor({ bot, store, notesChars: 0, promptChars: 3_500, toolSchemaChars: 14_000 });
+    assert.equal(
+      estimated.tokens - measured.tokens,
+      estimateTokens(SHARED_PROMPT_CHARS) - estimateTokens(3_500) + estimateTokens(TOOL_SCHEMA_CHARS) - estimateTokens(14_000),
     );
-    assert.ok(rendered);
-    const slot = rendered.messages[0].content;
-    assert.match(slot, /written after reading outside content/);
-    assert.equal(notesCharsFor(id), slot.length);
-    memory.close();
+    // A heavier prompt than the estimate is refused where the estimate would have admitted it.
+    assert.equal(admission({ bot, store, notesChars: 0 }).ok, true);
+    assert.equal(admission({ bot, store, notesChars: 0, promptChars: 40_000 }).ok, false);
   });
 });
 
-test("the hidden prefix is sized whole: the mention line, a routine note and the framing", () => {
-  const route: SessionRoute = { threadId: "g1", kind: "group", mentionIds: ["b1"], mentionNames: ["Research"], untargeted: false };
-  const raw = JSON.stringify({ message: "@Research go", botId: "g1" });
-  const body = JSON.parse(rewriteEveTurnBody(raw, route, ["Retry note: the last try failed."])) as { message: string };
-  assert.equal(hiddenPrefixChars(route, ["Retry note: the last try failed."]), body.message.length - "@Research go".length);
-  assert.equal(hiddenPrefixChars(null, []), 0);
-  assert.ok(hiddenPrefixChars(route, []) > "The owner addressed Research.".length, "the mention line and the session-note lead count");
+test("the cap and the window helpers", async () => {
+  await withWorld(() => {
+    assert.equal(descriptionTooLong({ description: "x".repeat(DESCRIPTION_MAX) }), false);
+    assert.equal(descriptionTooLong({ description: "x".repeat(DESCRIPTION_MAX + 1) }), true);
+    assert.deepEqual(windowFor(GO, "small"), { windowTokens: WINDOW, modelLabel: "Label small" });
+    // A model the catalog does not list has the default window and shows its id.
+    assert.deepEqual(windowFor(GO, "not-listed"), { windowTokens: 32_768, modelLabel: "not-listed" });
+  });
 });
 
-test("a pick or an edit that lands during a send's awaits is caught before the send, not after", async () => {
+test("the counter report takes the envelope and the window from the engine, and a seed only for the Generalist", async () => {
   await withWorld(async ({ shell }) => {
-    const id = teammate(shell, "Watch rankings.", "big");
-    bindSession("sess-x", id);
-    updateShell((current) => ({
-      ...current,
-      bots: current.bots.map((bot) => (bot.id === id ? { ...bot, sessionId: "sess-x" } : bot)),
-    }), shell);
-    const original = globalThis.fetch;
-    let posts = 0;
-    let edited = false;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if ((init?.method ?? "GET") === "POST") { posts += 1; return new Response("{}", { status: 200 }); }
-      // The history read: the owner pastes a huge description while it runs.
-      if (!edited && String(input).includes("/stream")) {
-        edited = true;
+    const engine = await startStubEngine();
+    try {
+      await withEnv({ UB_ENGINE_PORT: String(engine.port), UB_ENGINE_TOKEN: engine.token }, async () => {
+        const id = teammate(shell, "Watch rankings.");
+        const mate = (await botContextReport(id))!;
+        assert.equal(mate.max, DESCRIPTION_MAX);
+        assert.equal(mate.descriptionChars, "Watch rankings.".length);
+        // The stub's numbers, not the web's own guess.
+        assert.equal(mate.windowTokens, 32768);
+        assert.equal(mate.envelopeTokens, 9000);
+        assert.equal(mate.modelLabel, "Label small");
+        assert.equal(mate.fits, true);
+        assert.equal(mate.seed, null);
+        assert.equal(engine.requests.at(-1)?.path, `/internal/bots/${id}/context`);
+        assert.equal(engine.requests.at(-1)?.headers.authorization, `Bearer ${engine.token}`);
+        assert.equal(await botContextReport("bot-ghost"), null);
+
+        const generalist = (await botContextReport(DEFAULT_BOT_ID))!;
+        assert.deepEqual(generalist.seed, { differs: false, text: GENERALIST_SEED_V3 });
         updateShell((current) => ({
           ...current,
-          bots: current.bots.map((bot) => (bot.id === id ? { ...bot, description: "x".repeat(DESCRIPTION_MAX + 1) } : bot)),
+          bots: current.bots.map((bot) => (bot.id === DEFAULT_BOT_ID ? { ...bot, description: `${GENERALIST_SEED_V3}\n\nAlways answer in Spanish.` } : bot)),
         }), shell);
-      }
-      return new Response("", { status: 200 });
-    }) as typeof globalThis.fetch;
-    try {
-      const routine = createRoutine({ botId: id, name: "Daily", instruction: "do it", schedules: [] });
-      await assert.rejects(startRoutineNow(routine.id), /description_too_long/);
-      assert.equal(edited, true);
-      assert.equal(posts, 0, "nothing was sent after the edit");
+        assert.equal((await botContextReport(DEFAULT_BOT_ID))!.seed?.differs, true);
+        // Whitespace alone is not a difference.
+        updateShell((current) => ({
+          ...current,
+          bots: current.bots.map((bot) => (bot.id === DEFAULT_BOT_ID ? { ...bot, description: `  ${GENERALIST_SEED_V3.replace(/\n/g, "\n\n")}  ` } : bot)),
+        }), shell);
+        assert.equal((await botContextReport(DEFAULT_BOT_ID))!.seed?.differs, false);
+
+        // Over the cap: the report says it does not fit, whatever the envelope is.
+        const over = teammate(shell, "x".repeat(DESCRIPTION_MAX + 1), "big");
+        const report = (await botContextReport(over))!;
+        assert.equal(report.descriptionChars, DESCRIPTION_MAX + 1);
+        assert.equal(report.fits, false);
+        // An envelope past the window does not fit either.
+        engine.answer("GET", `/internal/bots/${id}/context`, 200, { ok: true, windowTokens: 8000, instructionTokens: 10, envelopeTokens: 9000 });
+        assert.equal((await botContextReport(id))!.fits, false);
+      });
     } finally {
-      globalThis.fetch = original;
+      await engine.close();
     }
+  });
+});
+
+test("the counter report fails loud when the engine is down, refuses it, or answers nonsense", async () => {
+  await withWorld(async ({ shell }) => {
+    const engine = await startStubEngine();
+    const port = engine.port;
+    const id = teammate(shell, "Watch rankings.");
+    try {
+      await withEnv({ UB_ENGINE_PORT: String(port), UB_ENGINE_TOKEN: engine.token }, async () => {
+        engine.answer("GET", `/internal/bots/${id}/context`, 404, { ok: false, error: "bot_not_found" });
+        await assert.rejects(botContextReport(id), /bot_not_found/);
+        engine.answer("GET", `/internal/bots/${id}/context`, 200, { ok: true, windowTokens: "big" });
+        await assert.rejects(botContextReport(id), /engine_context_invalid/);
+      });
+    } finally {
+      await engine.close();
+    }
+    await withEnv({ UB_ENGINE_PORT: String(port), UB_ENGINE_TOKEN: "t" }, async () => {
+      await assert.rejects(botContextReport(id), (error: unknown) => error instanceof EngineUnavailableError);
+    });
   });
 });

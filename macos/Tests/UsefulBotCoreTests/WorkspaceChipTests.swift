@@ -23,13 +23,6 @@ import Testing
         #expect(ws.permissionLabel == "Full access")
     }
 
-    @Test func aStoreFromTheGuardBuildReadsAsAuto() throws {
-        let legacy = Data(#"{"path":"/tmp/p","permission":"guard","finalConfirm":true}"#.utf8)
-        let ws = try JSONDecoder().decode(BotWorkspace.self, from: legacy)
-        #expect(ws.permission == "auto")
-        #expect(ws.permissionLabel == "Auto")
-    }
-
     @Test func folderNameDropsControlCharacters() throws {
         let ws = try #require(BotWorkspace(
             path: "/tmp/pro\njec\u{7}t",

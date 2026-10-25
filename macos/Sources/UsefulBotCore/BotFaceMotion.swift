@@ -11,9 +11,9 @@ public enum BotFacePose: Equatable, Sendable {
 
     public init(activity: TurnActivity) {
         switch activity {
-        case .thinking, .compacting: self = .thinking
+        case .thinking, .compacting, .retrying: self = .thinking
         case .working: self = .writing
-        case .tool, .subagent: self = .tool
+        case .tool: self = .tool
         }
     }
 }

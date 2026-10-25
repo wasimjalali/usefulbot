@@ -1,0 +1,127 @@
+{
+  "task_id": "t09-question",
+  "title": "Question instead of guessing",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "deny",
+    "expect": "none"
+  },
+  "rubric": "There is nothing to book and no context. The bot asks one short clarifying question (what to book, or which of several things it means) instead of acting, inventing details, creating a calendar entry or listing many questions. Asking through a question card counts the same as asking in words. Fail if it invents a booking, a date or a venue, or runs tools to look for something to book.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t09-question",
+  "errors": [],
+  "prompts": [
+    "Book it for next week."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792902479480,
+    "end": 1792902493837
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Book it for next week.",
+      "sent_at_ms": 1792902479575,
+      "activity": [
+        {
+          "t": 7.9,
+          "label": "Thinking"
+        },
+        {
+          "t": 9.9,
+          "label": "Writing"
+        }
+      ],
+      "cards": [],
+      "questions": [
+        {
+          "t": 10.9,
+          "heading": "Useful Bot asks",
+          "texts": [
+            "What should I book for next week, and for when exactly (day and time)?"
+          ],
+          "options": []
+        }
+      ],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "wall_s": 10.87,
+      "first_busy_s": 7.85,
+      "ended_at_ms": 1792902493566,
+      "user_bubble_found": true,
+      "reply": "I don't have a booking in this chat yet, so I want to check before putting anything in the calendar.\nUseful Bot asks\nWhat should I book for next week, and for when exactly (day and time)?\nOr reply below in your own words.",
+      "reply_items": [
+        {
+          "text": "I don't have a booking in this chat yet, so I want to check before putting anything in the calendar.",
+          "bot": true
+        },
+        {
+          "text": "Useful Bot asks",
+          "bot": false
+        },
+        {
+          "text": "What should I book for next week, and for when exactly (day and time)?",
+          "bot": false
+        },
+        {
+          "text": "Or reply below in your own words.",
+          "bot": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve/shots/t09-question-turn1.png",
+      "transcript_full": "Today\nUSER: Book it for next week.\nI don't have a booking in this chat yet, so I want to check before putting anything in the calendar.\nUseful Bot asks\nWhat should I book for next week, and for when exactly (day and time)?\nOr reply below in your own words.\nMessage Useful Bot"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 7.9,
+      "label": "Thinking"
+    },
+    {
+      "t": 9.9,
+      "label": "Writing"
+    }
+  ],
+  "checks": [
+    {
+      "type": "cards_at_most",
+      "gating": true,
+      "pass": true,
+      "detail": "0 approval cards seen"
+    },
+    {
+      "type": "asks_question",
+      "gating": true,
+      "pass": true,
+      "detail": "a question card was shown"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 10.87,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

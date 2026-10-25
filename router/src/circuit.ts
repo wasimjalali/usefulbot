@@ -101,8 +101,8 @@ export class AliasCircuit {
         status: 503,
         type: "internal_error",
         code: "circuit_open",
-        // The wait rides in the message too: eve keeps only the message of
-        // a failed call, so the app's countdown reads it from there.
+        // The wait rides in the message too, for a client that keeps only the
+        // message of a failed call.
         message: `circuit_open retry_after_ms=${current.openUntil - now}`,
         alias: alias as "workhorse" | "reviewer",
         retryable: true,

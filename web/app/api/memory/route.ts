@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { MemoryStore } from "../../../../agent/lib/memory.ts";
 import { isGateError, requireOwner } from "../../../lib/desktop-gate";
+import { memoryListing } from "../../../lib/memory-listing";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const botId = params.get("botId")?.trim() ?? "";
   const id = params.get("id")?.trim() ?? "";
-  if (!botId) return NextResponse.json({ ok: true, notes: [] });
+  if (!botId) return NextResponse.json({ ok: true, ...memoryListing(null, "") });
   if (id) {
     try {
       return NextResponse.json({ ok: true, note: memoryStore().readCard(id, botId) });
@@ -40,8 +41,7 @@ export async function GET(request: Request) {
       return storeFailure(err);
     }
   }
-  const notes = memoryStore().list(botId, 100);
-  return NextResponse.json({ ok: true, notes });
+  return NextResponse.json({ ok: true, ...memoryListing(memoryStore(), botId) });
 }
 
 /** Delete one of a bot's notes. Same owner gate and CSRF check as the other writes. */

@@ -43,7 +43,7 @@ export const PROTECTED_NAMES = [
   "Library/Keychains", "Library/Cookies",
   // The app's own stores and the launch agents that start it.
   APP_STATE_DIR, "LaunchAgents",
-  // The runtime install folders (service code and the `.eve/` transcripts),
+  // The runtime install folders (service code and the session files),
   // both stacks. RUNTIME_INSTALL_PATTERN below adds the case-folded form.
   ...RUNTIME_INSTALL_DIRS,
   // Shell startup files: a planted line runs in the owner's own shell.

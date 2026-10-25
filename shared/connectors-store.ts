@@ -11,7 +11,7 @@ import { statePath } from "./stack.ts";
  * nothing is connected and restrict the session to connected apps.
  *
  * Same shape as providers.json: 0600 JSON, read on demand by both the web and
- * the eve process, and the key never leaves this file except into a Composio
+ * the engine, and the key never leaves this file except into a Composio
  * client. Writes go through a lock like the routines store, because the web
  * route and an agent tool can both refresh the connected cache.
  */

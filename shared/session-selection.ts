@@ -6,7 +6,7 @@ import type { ComposerPublic } from "./models.ts";
 /**
  * What one bot runs on: the connection, the model and how hard it thinks.
  *
- * The owner picks it per bot (a group is a bot too). The global provider
+ * The owner picks it per bot. The global provider
  * store only keeps the LAST pick, as the default for a bot that has chosen
  * nothing yet. Nothing here reads a store at call time except `botSelection`,
  * so a turn that holds a selection cannot be moved by a later pick.

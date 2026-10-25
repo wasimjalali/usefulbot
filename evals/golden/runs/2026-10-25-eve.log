@@ -1,0 +1,60 @@
+05:24:45 target: Useful Bot Dev pid 31115 window 54610 (LIVE)
+05:24:54 model: {'chip_model': 'DeepSeek Flash', 'chip_effort': 'Max', 'effort_options': ['Low', 'High', 'Max'], 'shell_model': {'connectionId': 'deepseek:api', 'modelId': 'deepseek-flash', 'effort': 'max', 'speed': 'standard'}, 'highest_effort': 'Max', 'changed': False}
+05:24:54 == t01-files Files, tool choice
+05:24:58   turn 1/1: 'How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t01-'
+05:25:07   card: 'bash' '' -> approve
+05:25:14     wall 12.11s, first work 7.94s, cards 1
+05:25:14   checks PASS: reply_has_md_count=ok; reply_has_largest_md=ok; tree_unchanged=ok
+05:25:14 == t02-bash-approve Bash with approval
+05:25:18   turn 1/1: 'Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t02-bash-a'
+05:25:35     wall 13.91s, first work 7.88s, cards 0
+05:25:35   checks PASS: file_lines=ok; cards_at_least=FAIL
+05:25:35 == t03-deny Approval denied
+05:25:39   turn 1/1: 'Delete /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t03-deny/old.txt.'
+05:25:52   card: 'bash' '' -> deny
+05:26:00     wall 17.21s, first work 7.92s, cards 1
+05:26:00   checks PASS: file_unchanged=ok; tree_unchanged=ok; cards_at_least=ok; cards_at_most=ok
+05:26:00 == t04-web-search Web search
+05:26:04   turn 1/1: "What's the latest stable Node.js release? Cite the page."
+05:26:20     wall 13.15s, first work 8.13s, cards 0
+05:26:20   checks PASS: reply_regex=ok; reply_regex=ok; activity_seen=ok
+05:26:20 == t05-memory-save Memory save
+05:26:25   turn 1/1: 'Remember this: my project codename is marigold-d636.'
+05:26:39     wall 10.96s, first work 7.94s, cards 0
+05:26:39   checks PASS: memory_note_added=ok
+05:26:39 == t06-memory-recall Memory recall (new chat)
+05:26:43   turn 1/1: "What's my project codename?"
+05:26:56     wall 8.93s, first work 7.92s, cards 0
+05:26:56   checks PASS: reply_regex=ok; activity_seen=FAIL
+05:26:56 == t07-routine Routine
+05:27:00   turn 1/1: 'Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that '
+05:27:18     wall 14.88s, first work 7.85s, cards 0
+05:27:18   checks PASS: routine_created=ok
+05:27:18 == t08-connector Connector (DeepWiki)
+05:27:22   turn 1/1: 'Using DeepWiki, tell me in one line what the repo facebook/react is.'
+05:27:40   card: 'connection' '' -> approve
+05:27:55     wall 29.1s, first work 7.87s, cards 1
+05:27:55   checks PASS: reply_regex=ok; activity_seen=ok
+05:27:55 == t09-question Question instead of guessing
+05:27:59   turn 1/1: 'Book it for next week.'
+05:28:13     wall 10.87s, first work 7.85s, cards 0
+05:28:13   checks PASS: cards_at_most=ok; asks_question=ok
+05:28:13 == t10-long-chat Long chat, six turns
+05:28:17   turn 1/6: 'Create index.html in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-'
+05:28:34     wall 12.9s, first work 7.88s, cards 0
+05:28:34   turn 2/6: 'Rename the page title and the heading to "Kitchen Garden".'
+05:28:44   card: 'write_file' 'write /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/' -> approve
+05:28:52     wall 14.59s, first work 5.36s, cards 1
+05:28:52   turn 3/6: 'Add a fourth list item: Rosemary.'
+05:29:02   card: 'write_file' 'write /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/' -> approve
+05:29:09     wall 13.5s, first work 5.29s, cards 1
+05:29:09   turn 4/6: 'Make the heading dark green, #1b5e20.'
+05:29:20   card: 'write_file' 'write /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/' -> approve
+05:29:27     wall 14.63s, first work 5.4s, cards 1
+05:29:27   turn 5/6: 'What changed in the page since the first version you wrote?'
+05:29:38     wall 7.36s, first work 5.35s, cards 0
+05:29:38   turn 6/6: 'Read the file back to me.'
+05:29:50     wall 8.41s, first work 5.39s, cards 0
+05:29:50   checks PASS: html_final=ok; reply_regex=ok; reply_regex=FAIL
+05:29:50 routines created (the harness never deletes; remove after the run): rtn_4c66cc73e6cb4449
+05:29:50 done: /Users/wasimjalali/Desktop/useful-bot/.claude/worktrees/agent-a79be985ece0d0997/evals/golden/runs/2026-10-25-eve

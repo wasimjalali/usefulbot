@@ -14,7 +14,6 @@ import {
   postMessages,
   translateMessagesJson,
 } from "../router/src/upstreams/anthropic-messages.ts";
-import { settleCompletion, settleStreamBlock } from "../router/src/tool-finish.ts";
 
 function sse(frames: Array<{ event?: string; data: unknown }>): string {
   return frames.map((frame) => {
@@ -593,27 +592,6 @@ test("chat completions post through url, body and headers unchanged", async () =
   assert.equal(seenUrl, "https://opencode.ai/zen/go/v1/chat/completions");
   assert.deepEqual(seenBody, body);
   assert.deepEqual(seenHeaders, headers);
-});
-
-test("a length stop after a tool call becomes a tool step; plain text keeps length", () => {
-  const seen = { toolCall: false };
-  const text = `data: ${JSON.stringify({ choices: [{ delta: { content: "long answer" } }] })}`;
-  assert.equal(settleStreamBlock(text, seen), text);
-  const cut = `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}`;
-  // No tool call yet: a text-only cut is eve's to continue, unchanged.
-  assert.equal(settleStreamBlock(cut, seen), cut);
-  const call = `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "bash", arguments: "{" } }] } }] })}`;
-  assert.equal(settleStreamBlock(call, seen), call);
-  assert.equal(seen.toolCall, true);
-  assert.match(settleStreamBlock(cut, seen), /"finish_reason":"tool_calls"/);
-  assert.equal(settleStreamBlock("data: [DONE]", seen), "data: [DONE]");
-
-  const json = { choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: [{ id: "c1" }] }, finish_reason: "length" }] };
-  settleCompletion(json);
-  assert.equal(json.choices[0].finish_reason, "tool_calls");
-  const plain = { choices: [{ index: 0, message: { role: "assistant", content: "cut" }, finish_reason: "length" }] };
-  settleCompletion(plain);
-  assert.equal(plain.choices[0].finish_reason, "length");
 });
 
 test("responses tools stay non-strict unless the chat tool says strict", () => {

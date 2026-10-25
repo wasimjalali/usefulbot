@@ -3,7 +3,7 @@ import { isAbsolute, join } from "node:path";
 
 export const LAUNCHD_LABELS = [
   "com.usefulbot.router",
-  "com.usefulbot.eve",
+  "com.usefulbot.engine",
   "com.usefulbot.web",
 ] as const;
 

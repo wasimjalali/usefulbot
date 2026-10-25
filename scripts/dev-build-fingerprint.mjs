@@ -1,7 +1,7 @@
 // Prints one sha256 over what a dev build is made from. macos/build-app.sh records it in
 // the bundle when a dev build starts, and scripts/install-dev-app.sh refuses a bundle whose
 // record is missing (the build failed) or differs from a fresh run (the tree moved on).
-// package-lock.json is left out: eve restamps it on first boot (same rule as web-mode.mjs).
+// package-lock.json is left out: a `next build` auto-install can touch it (same rule as web-mode.mjs).
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";

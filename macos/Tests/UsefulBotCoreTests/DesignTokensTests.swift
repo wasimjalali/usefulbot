@@ -21,7 +21,6 @@ import Testing
 
     @Test func layoutTokensMatchTheWebShell() {
         #expect(DesignTokens.Space.railWidth == 248)
-        #expect(DesignTokens.Space.settingsPaneWidth == 320)
         #expect(DesignTokens.Space.chatColumnMax == 768)
         #expect(DesignTokens.Space.chatHead == 52)
         #expect(DesignTokens.Space.botRow == 36)

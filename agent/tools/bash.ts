@@ -1,4 +1,4 @@
-import { defineTool } from "eve/tools";
+import { defineTool } from "../lib/tool.ts";
 import { z } from "zod";
 import { homedir, tmpdir } from "node:os";
 import { effectiveRoot } from "../lib/workspace.ts";
@@ -12,10 +12,8 @@ import { getApprovalStore } from "../lib/write.ts";
 import { FORBIDDEN_PATH_SUBSTRINGS, foldPath } from "../../shared/policy.ts";
 import { APP_STATE_DIR, mentionsAppState } from "../../shared/stack.ts";
 import { ownerPath } from "../../shared/user-path.ts";
-import { wrapUntrusted } from "../../shared/untrusted.ts";
-import { SUB_AGENT_BLOCKED } from "../lib/permission.ts";
+import { clipUtf8, wrapUntrusted } from "../../shared/untrusted.ts";
 import { markOutside } from "../lib/outside-content.ts";
-import { authoritySessionId, BOT_CONTEXT_MISSING, isBotContextMissing, isSubAgent } from "../lib/active-bot.ts";
 
 const OUTPUT_MAX_BYTES = 32 * 1024;
 const INPUT_MAX_BYTES = 1024 * 1024;
@@ -55,7 +53,7 @@ function blockedReason(command: string, scoped: boolean): string | null {
   for (const part of scoped ? [...BLOCKED_COMMAND_SUBSTRINGS, ...SCOPED_COMMAND_SUBSTRINGS] : BLOCKED_COMMAND_SUBSTRINGS) {
     if (lowered.includes(foldPath(part))) return `command references ${part}`;
   }
-  // The app's own stores: approvals, the roster, the grants. read_file and
+  // The app's own stores: approvals, the bot record, the grants. read_file and
   // list_dir refuse the same names; a shell line must not be the way round.
   // Every state folder, in either stack (.useful-bot, .useful-bot-dev-app),
   // and both runtime install folders (Library/Application Support/Useful Bot[ Dev]).
@@ -64,32 +62,22 @@ function blockedReason(command: string, scoped: boolean): string | null {
 }
 
 export default defineTool({
+  name: "bash",
   description: "Run a shell command in the attached folder, or under the owner's home when none. The owner's own PATH and home apply, so CLIs they've signed in to (codex, claude, gh, npm) run as in their terminal. Not a login shell, stdin closed: use non-interactive flags (codex exec, claude -p). Default timeout 30s; pass timeoutMs for long runs, and timedOut: true means out of time, not failed. Run a CLI on a line of its own: a chained line gets no sign-in. gh and claude keep their token in the keychain, so a card-free run reads signed out: say so and offer a run they approve. Reads run at once; the owner's permission governs the rest.",
   inputSchema: z.object({
     command: z.string().min(1).max(8192),
     timeoutMs: z.number().int().min(1).max(MAX_TIMEOUT_MS).optional(),
   }),
+  sequential: true,
   async execute(input, ctx) {
     markOutside(ctx);
     // One grant read for root AND permission: two reads could pair a root
     // from before a permission change with the permission after it. A
     // grant whose folder is gone still answers a tripwired line with the
     // block, not a workspace error.
-    // A sub-agent runs under its root session's grant; one that cannot be
-    // verified runs nothing.
-    let grantSession: string | undefined;
-    try {
-      grantSession = authoritySessionId(ctx);
-    } catch (error) {
-      if (isBotContextMissing(error)) return BOT_CONTEXT_MISSING;
-      throw error;
-    }
-    // A global tool install is the owner's own chat's: an approved line that
-    // writes the PATH directories is refused for a sub-agent, as install_cli is.
-    if (isSubAgent(ctx) && needsPathWrite(input.command)) return SUB_AGENT_BLOCKED;
     let workspace;
     try {
-      workspace = effectiveRoot(grantSession);
+      workspace = effectiveRoot(ctx.chatId);
     } catch (error) {
       // The posture is unknown here, so only the list every posture shares.
       const blocked = blockedReason(input.command, false);
@@ -121,7 +109,7 @@ export default defineTool({
       canonicalArgs: JSON.stringify({ command: input.command }),
       cwd: root,
       targetRevision: null,
-      backend: "just-bash",
+      backend: "seatbelt",
       toolVersion: "1",
     });
     // The posture decides who answers the card. In an attached folder, Auto
@@ -160,12 +148,15 @@ export default defineTool({
       ...approvalActor(ctx),
       tool: "bash",
       actionSha256: hash,
-      preview: risk ? `${input.command}\n${risk}` : input.command,
+      // The reason first: a long command must never push the risk out of view.
+      preview: risk ? `${risk}\n${input.command}` : input.command,
     });
     if (!askOwner) {
       store.decide(rec.id, "approve", hash);
     } else {
-      await waitUntilNotPending(store, rec.id);
+      if (await waitUntilNotPending(store, rec.id, ctx.abortSignal) === "aborted") {
+        return { status: "cancelled" };
+      }
       // The workspace may have changed while the card sat open. The approval
       // was granted against the cwd AND the posture at request time, so a
       // changed root, a changed permission, or a revoked grant all refuse the
@@ -173,7 +164,7 @@ export default defineTool({
       // Same rule as the write path.
       let refreshed;
       try {
-        refreshed = effectiveRoot(grantSession);
+        refreshed = effectiveRoot(ctx.chatId);
       } catch {
         // A grant revoked with no legacy root configured leaves nothing to
         // run in. That is the workspace changing, not a tool crash.
@@ -250,14 +241,14 @@ export default defineTool({
         // The turn's signal reaches the child: a Stop must not leave a
         // cancelled line running to its own timeout with side effects
         // landing after the owner gave up.
-        signal: ctx?.abortSignal,
+        signal: ctx.abortSignal,
       });
-      const truncated = run.truncated
-        || run.stdout.length > OUTPUT_MAX_BYTES
-        || run.stderr.length > OUTPUT_MAX_BYTES;
+      const stdout = clipUtf8(run.stdout, OUTPUT_MAX_BYTES);
+      const stderr = clipUtf8(run.stderr, OUTPUT_MAX_BYTES);
+      const truncated = run.truncated || stdout.cut || stderr.cut;
       return {
-        stdout: wrapUntrusted("bash stdout", run.stdout.slice(0, OUTPUT_MAX_BYTES)),
-        stderr: wrapUntrusted("bash stderr", run.stderr.slice(0, OUTPUT_MAX_BYTES)),
+        stdout: wrapUntrusted("bash stdout", stdout.text),
+        stderr: wrapUntrusted("bash stderr", stderr.text),
         exitCode: run.exitCode,
         truncated,
         // Named, so the model reads "this ran out of time" instead of

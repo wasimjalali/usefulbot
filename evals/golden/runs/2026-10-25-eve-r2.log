@@ -1,0 +1,61 @@
+05:43:38 target: Useful Bot Dev pid 31115 window 54610 (LIVE)
+05:43:49 model: {'chip_model': 'DeepSeek Flash', 'chip_effort': 'Max', 'effort_options': ['Low', 'High', 'Max'], 'shell_model': {'connectionId': 'deepseek:api', 'modelId': 'deepseek-flash', 'effort': 'max', 'speed': 'standard'}, 'highest_effort': 'Max', 'changed': False}
+05:43:49 == t01-files Files, tool choice
+05:43:54   turn 1/1: 'How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t'
+05:44:05   card: 'bash' 'find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files -t' -> approve
+05:44:20     wall 5.57s, first work 0.0s after Send, cards 1
+05:44:20   checks FAIL: reply_has_md_count=FAIL; reply_has_largest_md=FAIL; tree_unchanged=ok
+05:44:20 == t02-bash-approve Bash with approval
+05:44:24   turn 1/1: 'Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bas'
+05:44:49     wall 5.04s, first work 0.0s after Send, cards 0
+05:44:49   checks PASS: file_lines=ok; cards_at_least=FAIL
+05:44:49 == t03-deny Approval denied
+05:44:52   turn 1/1: 'Delete /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t03-deny/old.txt.'
+05:45:07   card: 'bash' 'rm /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t03-deny/old.t' -> deny
+05:45:24     wall 7.63s, first work 0.0s after Send, cards 1
+05:45:24   checks PASS: file_unchanged=ok; tree_unchanged=ok; cards_at_least=ok; cards_at_most=ok
+05:45:24 == t04-web-search Web search
+05:45:27   turn 1/1: "What's the latest stable Node.js release? Cite the page."
+05:45:56     wall 5.03s, first work 0.0s after Send, cards 0
+05:45:56   checks FAIL: reply_regex=ok; reply_regex=FAIL; activity_seen=ok
+05:45:56 == t05-memory-save Memory save
+05:45:59   turn 1/1: 'Remember this: my project codename is tamarind-88b9.'
+05:46:33     wall 6.04s, first work 0.0s after Send, cards 0
+05:46:33   checks PASS: memory_note_added=ok
+05:46:33 == t06-memory-recall Memory recall (new chat)
+05:46:37   turn 1/1: "What's my project codename?"
+05:47:02     wall 1.01s, first work 0.0s after Send, cards 0
+05:47:02   checks PASS: reply_regex=ok; activity_seen=FAIL
+05:47:02 == t07-routine Routine
+05:47:05   turn 1/1: 'Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that '
+05:47:39     wall 13.18s, first work 0.0s after Send, cards 0
+05:47:39   checks PASS: routine_created=ok
+05:47:39 == t08-connector Connector (DeepWiki)
+05:47:43   turn 1/1: 'Using DeepWiki, tell me in one line what the repo facebook/react is.'
+05:47:58   card: 'connection' 'DeepWiki · ask_wiki_question\n{\n "repoName": "facebook/react",\n "questi' -> approve
+05:48:29     wall 21.83s, first work 0.0s after Send, cards 1
+05:48:29   checks PASS: reply_regex=ok; activity_seen=ok
+05:48:29 == t09-question Question instead of guessing
+05:48:32   turn 1/1: 'Book it for next week.'
+05:49:00     wall 4.02s, first work 0.0s after Send, cards 0
+05:49:00   checks PASS: cards_at_most=ok; asks_question=ok
+05:49:00 == t10-long-chat Long chat, six turns
+05:49:03   turn 1/6: 'Create index.html in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t10-lo'
+05:49:30     wall 6.02s, first work 0.0s after Send, cards 0
+05:49:30   turn 2/6: 'Rename the page title and the heading to "Kitchen Garden".'
+05:49:45   card: 'bash' 'for d in Desktop Documents Downloads; do [ -d "$HOME/$d" ] && find "$H' -> approve
+05:50:18     wall 26.49s, first work 0.0s after Send, cards 1
+05:50:18   turn 3/6: 'Add a fourth list item: Rosemary.'
+05:51:16   card: 'bash' 'find "$HOME/Desktop" -maxdepth 4 -type f \\( -name \'*.md\' -o -name \'*.t' -> approve
+05:51:40     wall 58.05s, first work 0.0s after Send, cards 1
+05:51:40   turn 4/6: 'Make the heading dark green, #1b5e20.'
+05:52:01   card: 'bash' 'find "$HOME/Desktop" "$HOME/Documents" "$HOME/Downloads" -maxdepth 5 -' -> approve
+05:52:48     wall 25.73s, first work 0.0s after Send, cards 1
+05:52:48   turn 5/6: 'What changed in the page since the first version you wrote?'
+05:53:15     wall 2.01s, first work 0.0s after Send, cards 0
+05:53:15   turn 6/6: 'Read the file back to me.'
+05:53:34   card: 'bash' 'ls -l "$HOME/Desktop/kitchen-garden.html" "$HOME/Desktop/kitchen-garde' -> approve
+05:54:27     wall 46.07s, first work 0.0s after Send, cards 1
+05:54:27   checks FAIL: html_final=FAIL; reply_regex=FAIL; reply_regex=FAIL
+05:54:27 routines created (the harness never deletes; remove after the run): rtn_abc2871d90ef4b30
+05:54:27 done: /Users/wasimjalali/Desktop/useful-bot/.claude/worktrees/agent-a79be985ece0d0997/evals/golden/runs/2026-10-25-eve-r2

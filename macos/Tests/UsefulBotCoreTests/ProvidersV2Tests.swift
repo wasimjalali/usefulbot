@@ -60,7 +60,6 @@ import Testing
         #expect(payload.defaultRole?.connectionIcon == "openai")
         #expect(payload.defaultRole?.models.count == 1)
         #expect(payload.defaultRole?.models.first?.icon == "openai")
-        #expect(payload.reviewerRole?.efforts.isEmpty == true)
         #expect(payload.composer?.modelId == "gpt-5.2-codex")
         #expect(payload.legacyProviders.count == 1)
         #expect(payload.legacyActiveProviderId == "openai")
@@ -87,7 +86,6 @@ import Testing
         #expect(payload.defaultRole?.modelId == "glm-5")
         #expect(payload.defaultRole?.connectionIcon == "")
         #expect(payload.defaultRole?.efforts.isEmpty == true)
-        #expect(payload.reviewerRole == nil)
         #expect(payload.composer == nil)
         #expect(payload.legacyProviders.isEmpty)
     }

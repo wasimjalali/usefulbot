@@ -1,0 +1,192 @@
+{
+  "task_id": "t07-routine",
+  "title": "Routine",
+  "engine": "pi",
+  "run_id": "2026-10-25-pi",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created a routine (checked: a new routine with a weekly Monday to Friday schedule at 09:00 exists) whose instruction asks for a one-line weather summary for Berlin. The reply confirms the schedule it set, in plain words, and does not promise anything the routine does not do. The harness never deletes the routine: the orchestrator removes it after the run.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t07-routine",
+  "errors": [],
+  "prompts": [
+    "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792944574698,
+    "end": 1792944622655
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up.",
+      "sent_at_ms": 1792944574767,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 13.1,
+          "label": "Thinking"
+        },
+        {
+          "t": 14.1,
+          "label": "Running a command"
+        },
+        {
+          "t": 34.2,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 3.12,
+      "wall_s": 38.2,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792944619215,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "Done. Routine \"Berlin weather, weekday mornings\" is active, Monday to Friday at 09:00 Berlin time.\n- First run: tomorrow, Monday 26 October, 09:00.\n- Output is one line, for example: Berlin: 12°C and partly cloudy, high 14°C / low 7°C, 60% chance of rain.\n- Data comes from the Open-Meteo forecast API, no account needed. I checked it works and a test run finished ok.\n- Each run replies in the routine's own chat, and you can pause or delete it on the Routines page.\nWant the test run's actual line, or a tweak to the format (wind, no rain figure, German wording)?",
+      "reply_items": [
+        {
+          "text": "Done. Routine \"Berlin weather, weekday mornings\" is active, Monday to Friday at 09:00 Berlin time.",
+          "bot": true,
+          "y": 288.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "•",
+          "bot": true,
+          "y": 355.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "First run: tomorrow, Monday 26 October, 09:00.",
+          "bot": true,
+          "y": 355.0,
+          "x": 1004.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "•",
+          "bot": true,
+          "y": 377.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Output is one line, for example: Berlin: 12°C and partly cloudy, high 14°C / low 7°C, 60% chance of rain.",
+          "bot": true,
+          "y": 377.0,
+          "x": 1004.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "•",
+          "bot": true,
+          "y": 425.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Data comes from the Open-Meteo forecast API, no account needed. I checked it works and a test run finished ok.",
+          "bot": true,
+          "y": 425.0,
+          "x": 1004.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "•",
+          "bot": true,
+          "y": 473.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Each run replies in the routine's own chat, and you can pause or delete it on the Routines page.",
+          "bot": true,
+          "y": 473.0,
+          "x": 1004.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Want the test run's actual line, or a tweak to the format (wind, no rain figure, German wording)?",
+          "bot": true,
+          "y": 530.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-pi/shots/t07-routine-turn1.png",
+      "transcript_full": "Done. Routine \"Berlin weather, weekday mornings\" is active, Monday to Friday at 09:00 Berlin time.\n- First run: tomorrow, Monday 26 October, 09:00.\n- Output is one line, for example: Berlin: 12°C and partly cloudy, high 14°C / low 7°C, 60% chance of rain.\n- Data comes from the Open-Meteo forecast API, no account needed. I checked it works and a test run finished ok.\n- Each run replies in the routine's own chat, and you can pause or delete it on the Routines page.\nWant the test run's actual line, or a tweak to the format (wind, no rain figure, German wording)?\nUSER: Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up."
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 13.1,
+      "label": "Thinking"
+    },
+    {
+      "t": 14.1,
+      "label": "Running a command"
+    },
+    {
+      "t": 34.2,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "routine_created",
+      "gating": true,
+      "pass": true,
+      "detail": "routine rtn_82f6206419b1452f 'Berlin weather, weekday mornings' runs weekly on days [1, 2, 3, 4, 5] at 09:00"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 38.2,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [
+    "rtn_82f6206419b1452f"
+  ],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": null
+  }
+}

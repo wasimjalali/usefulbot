@@ -1,0 +1,14 @@
+{"ev":"app_init","pid":38632,"run":"warm-51ddec93","t":323624298498791}
+{"bot":"bot-useful","ev":"initial_selection","run":"warm-51ddec93","t":323624694712833}
+{"chat":"","ev":"ready","run":"warm-51ddec93","t":323624755327791}
+{"ev":"step","index":0,"label":"warmup","name":"Perf Long Tools","run":"warm-51ddec93","t":323624755394000}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_first_paint","rows":6,"run":"warm-51ddec93","t":323624850619791}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_done","rows":6,"run":"warm-51ddec93","t":323624850667833}
+{"blocks":7,"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"landed","loaded":6,"reason":"settled","rows":6,"run":"warm-51ddec93","t":323625091728291}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"responsive","landedAt":323625091728291,"run":"warm-51ddec93","stallMaxMs":1.976167,"t":323626120684416}
+{"ev":"abort","run":"warm-51ddec93","t":323654853430000,"why":"step 0: Perf Long Tools never landed"}
+{"chat":"bf00af8c-5262-4227-a941-4c24d85eb474","ev":"rows_first_paint","rows":13,"run":"warm-51ddec93","t":323654917697916}
+{"chat":"bf00af8c-5262-4227-a941-4c24d85eb474","ev":"rows_done","rows":13,"run":"warm-51ddec93","t":323654917771416}
+{"blocks":14,"chat":"bf00af8c-5262-4227-a941-4c24d85eb474","ev":"landed","loaded":13,"reason":"settled","rows":13,"run":"warm-51ddec93","t":323655178697666}
+{"chat":"bf00af8c-5262-4227-a941-4c24d85eb474","ev":"responsive","landedAt":323655178697666,"run":"warm-51ddec93","stallMaxMs":1.680458,"t":323656211680625}
+{"chat":"bf00af8c-5262-4227-a941-4c24d85eb474","ev":"restored","run":"warm-51ddec93","t":323656354757125}

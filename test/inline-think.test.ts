@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PI_TOOL_IMAGE_TEXT,
   createThinkStream,
   flushThinkStream,
   noteInlineThink,
   rewrapThinkHistory,
   splitThinkBlock,
   splitThinkCompletion,
+  stripEarlierReasoning,
   usesInlineThink,
 } from "../router/src/inline-think.ts";
 import { THINK_TAGS, scanThink, splitLeadingThink } from "../shared/inline-think.ts";
@@ -364,3 +366,78 @@ test("history goes back as inline thinking only to models that wrote it that way
   assert.equal(history[1].reasoning_content, "greet");
 });
 
+
+// Pi echoes reasoning back under the field its delta came in, or as
+// OpenRouter's reasoning_details, and carries a tool result's images in a
+// user message of its own. These are the ways that history could go wrong.
+
+const PNG_PART = { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo=" } };
+const call = (id: string) => ({ id, type: "function", function: { name: "screenshot", arguments: "{}" } });
+
+test("every reasoning field Pi echoes is dropped from earlier turns and kept in the current one", () => {
+  const history = [
+    { role: "user", content: "one" },
+    { role: "assistant", content: "a", reasoning: "r1" },
+    { role: "assistant", content: "b", reasoning_text: "r2" },
+    { role: "assistant", content: "c", reasoning_details: [{ type: "reasoning.encrypted", data: "x" }] },
+    { role: "assistant", content: "d", reasoning_content: "r4", reasoning_details: [{ type: "reasoning.text", text: "r4" }] },
+    { role: "user", content: "two" },
+    { role: "assistant", content: null, reasoning: "now", reasoning_details: [{ type: "reasoning.text", text: "now" }], tool_calls: [call("t1")] },
+  ];
+  const out = stripEarlierReasoning(history) as Array<Record<string, unknown>>;
+  assert.deepEqual(out.slice(1, 5), [
+    { role: "assistant", content: "a" },
+    { role: "assistant", content: "b" },
+    { role: "assistant", content: "c" },
+    { role: "assistant", content: "d" },
+  ]);
+  assert.equal(out[6], history[6]);
+  assert.equal(history[1].reasoning, "r1");
+});
+
+test("an inline-thinking model gets Pi's reasoning back as a think block, whichever field it rode in", () => {
+  noteInlineThink("opencode-go", "minimax-m3");
+  const history = [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "A", reasoning: "via reasoning" },
+    { role: "assistant", content: "B", reasoning_text: "via reasoning_text", reasoning_details: [{ type: "reasoning.text", text: "via reasoning_text" }] },
+    { role: "assistant", content: null, reasoning_content: "", reasoning: "empty field skipped", tool_calls: [call("t1")] },
+    { role: "assistant", content: "C", reasoning_details: [{ type: "reasoning.encrypted", data: "x" }] },
+  ];
+  const out = rewrapThinkHistory(history) as Array<Record<string, unknown>>;
+  assert.deepEqual(out[1], { role: "assistant", content: "<think>via reasoning</think>\n\nA" });
+  assert.deepEqual(out[2], { role: "assistant", content: "<think>via reasoning_text</think>\n\nB" });
+  assert.deepEqual(out[3], { role: "assistant", content: "<think>empty field skipped</think>", tool_calls: [call("t1")] });
+  // Structured reasoning alone has no text to wrap; the message goes as it came.
+  assert.equal(out[4], history[4]);
+});
+
+test("Pi's tool-image carrier stays inside the turn; any other user message opens a new one", () => {
+  const turn = [
+    { role: "user", content: "earlier" },
+    { role: "assistant", content: "ok", reasoning: "old" },
+    { role: "user", content: "screenshot it" },
+    { role: "assistant", content: null, reasoning_content: "current", tool_calls: [call("t1"), call("t2")] },
+    { role: "tool", tool_call_id: "t1", content: "(see attached image)" },
+    { role: "tool", tool_call_id: "t2", content: "(see attached image)" },
+  ];
+  const carrier = { role: "user", content: [{ type: "text", text: PI_TOOL_IMAGE_TEXT }, PNG_PART, PNG_PART] };
+  const kept = stripEarlierReasoning([...turn, carrier]) as Array<Record<string, unknown>>;
+  assert.equal(kept[3].reasoning_content, "current");
+  assert.equal("reasoning" in kept[1], false);
+
+  // An owner message after a turn that ended on a tool result (a failed turn)
+  // may come with another model: it opens a new turn.
+  for (const next of [
+    { role: "user", content: "new question" },
+    { role: "user", content: [{ type: "text", text: "look at this" }, PNG_PART] },
+    { role: "user", content: [{ type: "text", text: PI_TOOL_IMAGE_TEXT }] },
+    { role: "user", content: [{ type: "text", text: PI_TOOL_IMAGE_TEXT }, PNG_PART, { type: "text", text: "and more" }] },
+  ]) {
+    const out = stripEarlierReasoning([...turn, next]) as Array<Record<string, unknown>>;
+    assert.equal("reasoning_content" in out[3], false, JSON.stringify(next));
+  }
+  // The carrier text only counts right after a tool result.
+  const misplaced = stripEarlierReasoning([...turn.slice(0, 4), carrier]) as Array<Record<string, unknown>>;
+  assert.equal("reasoning_content" in misplaced[3], false);
+});

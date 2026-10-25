@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createProposal, listThreadEvents, readProposal, updateProposal } from "../shared/agent-store.ts";
+import { createProposal, readProposal, updateProposal } from "../shared/agent-store.ts";
 import {
   completeConnectionOAuth,
   failConnectionOAuth,
@@ -19,20 +19,29 @@ import { EXCALIDRAW_CONNECTION, findConnectionById, readConnectionsStore, remove
 function storePathOf(): string {
   return process.env.UB_AGENT_STORE_PATH ?? "";
 }
-import { listHandoffs, queueHandoff } from "../shared/handoffs.ts";
 import { memoryKeychain, setKeychainDriver, connectionSecretService, keychainGet, keychainSet } from "../shared/keychain.ts";
 import { setMcpFetch } from "../shared/mcp-http.ts";
-import { connectionIndex, connectionStatus, putConnectionOperations } from "../shared/connection-tools-store.ts";
+import { connectionIndex, connectionStatus } from "../shared/connection-tools-store.ts";
 import { discoverConnection, setDiscoveryLogger } from "../shared/connection-tools.ts";
-import { ApprovalStore } from "../agent/lib/approvals.ts";
-import { setApprovalStore } from "../agent/lib/write.ts";
-import { upsertSessionGrant } from "../shared/workspace-store.ts";
-import connectionTools from "../agent/tools/connection_tools.ts";
-import { MOUNTED_TOOL_BUDGET } from "../shared/policy.ts";
 import { findOauthPending, setOauthFetch } from "../shared/mcp-oauth.ts";
 import { acquireRefreshLock } from "../shared/connection-auth.ts";
-import { writeShell } from "../shared/shell-io.ts";
-import { seedStore } from "../shared/shell-store.ts";
+import { startStubEngine, withEnv, type StubEngine } from "./web/stub-engine.ts";
+
+// The flow resumes the bot through the engine and writes the connected note
+// there; the stub records both. A resume is counted by its key, as the engine
+// dedupes by it.
+let engine: StubEngine;
+let restoreEnv: (() => void) | null = null;
+const RESUME = "/internal/bots/b1/system-turn";
+const sent = (path: string) => engine.requests.filter((request) => request.method === "POST" && request.path === path);
+function listHandoffs(): Array<{ key: string; message: string }> {
+  const byKey = new Map<string, { key: string; message: string }>();
+  for (const request of sent(RESUME)) {
+    const body = JSON.parse(request.body) as { key: string; text: string };
+    byKey.set(body.key, { key: body.key, message: body.text });
+  }
+  return [...byKey.values()];
+}
 
 const CALLBACK = "http://127.0.0.1:4320/api/connections/callback";
 
@@ -40,16 +49,10 @@ function paths() {
   const dir = mkdtempSync(join(tmpdir(), "ub-server-"));
   process.env.UB_AGENT_STORE_PATH = join(dir, "agents.json");
   process.env.UB_CONNECTIONS_PATH = join(dir, "connections.json");
-  process.env.UB_HANDOFF_DIR = join(dir, "handoffs");
-  process.env.UB_SHELL_PATH = join(dir, "shell.json");
   process.env.UB_OAUTH_PENDING_PATH = join(dir, "oauth.json");
   process.env.UB_CONNECTION_TOOLS_PATH = join(dir, "connection-tools.json");
   resetConnectionMemo();
   setConnectionLookup(async () => "8.8.8.8");
-  const shell = seedStore();
-  shell.bots.push({ ...shell.bots[0], id: "b1", name: "Drawer" });
-  shell.selectedBotId = "b1";
-  writeShell(shell);
   return { storePath: process.env.UB_AGENT_STORE_PATH, dir };
 }
 
@@ -71,7 +74,6 @@ function seedCard(overrides: Record<string, unknown> = {}) {
     redirectHost: null,
     waitingSince: null,
     toolCount: null,
-    handoffId: null,
     ...overrides,
   });
 }
@@ -94,7 +96,22 @@ function stubTools(count = 2) {
   });
 }
 
-test.afterEach(() => {
+test.beforeEach(async () => {
+  engine = await startStubEngine();
+  const saved = { port: process.env.UB_ENGINE_PORT, token: process.env.UB_ENGINE_TOKEN };
+  process.env.UB_ENGINE_PORT = String(engine.port);
+  process.env.UB_ENGINE_TOKEN = engine.token;
+  restoreEnv = () => {
+    for (const [key, value] of [["UB_ENGINE_PORT", saved.port], ["UB_ENGINE_TOKEN", saved.token]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
+});
+
+test.afterEach(async () => {
+  await engine.close();
+  restoreEnv?.();
   setMcpFetch(null);
   setOauthFetch(null);
   setKeychainDriver(null);
@@ -102,7 +119,7 @@ test.afterEach(() => {
   resetConnectionMemo();
 });
 
-test("none-auth confirm writes the registry, counts tools and queues one resume", async () => {
+test("none-auth confirm writes the registry, counts tools and starts one resume", async () => {
   const { storePath } = paths();
   stubTools(2);
   const proposal = seedCard();
@@ -116,7 +133,9 @@ test("none-auth confirm writes the registry, counts tools and queues one resume"
   assert.equal(listHandoffs().length, 1);
   assert.equal(listHandoffs()[0].message.includes("example"), true);
   assert.equal(listHandoffs()[0].message.includes("mcp.example.com"), false);
-  assert.ok(listThreadEvents("b1", storePath).some((e) => e.kind === "note" && e.text === "Example connected" && e.connectedName === "Example"));
+  assert.deepEqual(sent("/internal/bots/b1/rows").map((request) => JSON.parse(request.body)), [
+    { key: `connect:${proposal.id}`, kind: "note", text: "Connected Example.", source: "connect" },
+  ]);
   assert.equal(listHandoffs()[0].message.includes("BEGIN-UNTRUSTED(connect-purpose)"), true);
 });
 
@@ -146,11 +165,11 @@ test("apiKey confirm stores the secret in Keychain, not in JSON", async () => {
   );
 });
 
-test("a connected card whose resume cannot queue is retried, then leaves after the linger cap", async () => {
+test("a connected card whose resume the engine does not take is retried with the same key, then leaves after the linger cap", async () => {
   const { storePath } = paths();
   stubTools(1);
   const proposal = seedCard();
-  writeFileSync(process.env.UB_HANDOFF_DIR ?? "", "not a directory");
+  engine.answer("POST", RESUME, 503, { ok: false, error: "engine_starting" });
   await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK });
   const stored = readProposal(proposal.id, storePath);
   assert.equal(stored?.kind === "connectServer" && stored.phase, "connected");
@@ -159,6 +178,19 @@ test("a connected card whose resume cannot queue is retried, then leaves after t
   assert.equal(readProposal(proposal.id, storePath)?.status, "pending");
   await pumpConnections({ now: Date.now() + SERVER_LINGER_MS + 1000 });
   assert.equal(readProposal(proposal.id, storePath)?.status, "confirmed");
+  assert.equal(listHandoffs().length, 1, "every attempt carried the card's key");
+});
+
+test("an engine that is down keeps the card Connected and does not throw", async () => {
+  const { storePath } = paths();
+  stubTools(1);
+  const proposal = seedCard();
+  await engine.close();
+  await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK });
+  const stored = readProposal(proposal.id, storePath);
+  assert.equal(stored?.kind === "connectServer" && stored.phase, "connected");
+  assert.equal(stored?.status, "pending");
+  assert.equal(stored?.kind === "connectServer" && stored.resumeKey, null);
 });
 
 test("a waiting oauth card expires after ten minutes", async () => {
@@ -179,30 +211,6 @@ test("overlapping pumps do not double-confirm a connected card", async () => {
   assert.equal(listHandoffs().length, 1);
   assert.equal(readProposal(proposal.id, storePath)?.status, "confirmed");
   assert.ok(results.every((r) => Array.isArray(r.connected)));
-});
-
-test("an older resume of the same server is not adopted", async () => {
-  paths();
-  stubTools(1);
-  const stale = queueHandoff({
-    sourceBotId: "bot-useful",
-    sourceName: "Useful Bot",
-    targetBotId: "b1",
-    targetName: "Drawer",
-    message: "The owner connected the server example. Continue the task: List the widgets",
-  });
-  const earlier = new Date(Date.now() - 60_000).toISOString();
-  writeFileSync(join(process.env.UB_HANDOFF_DIR ?? "", `${stale.id}.json`), JSON.stringify({
-    ...stale,
-    status: "delivered",
-    createdAt: earlier,
-    updatedAt: earlier,
-  }));
-  const proposal = seedCard();
-  await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK });
-  const id = (readProposal(proposal.id) as { handoffId: string }).handoffId;
-  assert.notEqual(id, stale.id);
-  assert.equal(listHandoffs().length, 2);
 });
 
 test("oauth complete refuses a card that is not waiting and does not fetch", async () => {
@@ -513,176 +521,6 @@ test("a settled card does not leave its sign-in on disk", async () => {
   assert.equal(readConnectionsStore().connections.length, 1);
 });
 
-test("a connect that would overrun the mounted tool budget is refused before anything is written", async () => {
-  const mem = memoryKeychain();
-  setKeychainDriver(mem);
-  const { storePath } = paths();
-  // An OpenAPI spec mounts every operation for every turn. One that fills the
-  // budget leaves no room for the next. It has to be measured to be mounted,
-  // and only what is mounted is charged.
-  const big = Array.from({ length: MOUNTED_TOOL_BUDGET }, (_, i) => [`/p${i}`, { get: {} }]);
-  setMcpFetch(async () => new Response(JSON.stringify({ paths: Object.fromEntries(big) }), {
-    headers: { "content-type": "application/json" },
-  }));
-  upsertConnection({
-    id: "huge",
-    kind: "openapi",
-    name: "Huge",
-    url: "https://api.example.com/openapi.json",
-    description: "An OpenAPI service with many operations",
-    authKind: "none",
-    authHeader: null,
-    toolsAllow: null,
-    createdAt: new Date().toISOString(),
-  });
-  putConnectionOperations("huge", { operations: MOUNTED_TOOL_BUDGET, schemaBytes: 1_000, textBytes: 0, longestName: 20 });
-  const proposal = seedCard({
-    connectionId: "second",
-    connectionKind: "openapi",
-    name: "Second",
-    url: "https://api2.example.com/openapi.json",
-    urlHost: "api2.example.com",
-    authKind: "apiKey",
-    authHeader: "X-Api-Key",
-  });
-  await assert.rejects(
-    () => startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK, secret: "sk_test_secret_1" }),
-    /tool_budget_exceeded/,
-  );
-  // Neither the row nor the credential landed, so nothing has to be unwound.
-  assert.equal(findConnectionById("second"), null);
-  assert.equal(keychainGet(connectionSecretService("second")), null);
-  assert.equal(readProposal(proposal.id, storePath)?.status, "pending");
-});
-
-test("an MCP server whose tools wait to be asked for costs nothing at connect time", async () => {
-  const { storePath } = paths();
-  upsertConnection({
-    id: "huge",
-    kind: "mcp",
-    name: "Huge",
-    url: "https://huge.example.com/mcp",
-    description: "An MCP server with two hundred tools",
-    authKind: "none",
-    authHeader: null,
-    toolsAllow: null,
-    createdAt: new Date().toISOString(),
-  });
-  stubTools(2);
-  const proposal = seedCard();
-  await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK });
-  assert.equal(findConnectionById("example")?.url, "https://mcp.example.com/mcp");
-  // And the listing went to the index the search reads, so the first
-  // find_tools after a connect answers from disk.
-  assert.equal(connectionIndex("example")?.tools.length, 2);
-  assert.equal(readProposal(proposal.id, storePath)?.status, "confirmed");
-});
-
-test("a spec this app could not read is not a spec with no operations in it", async () => {
-  const { storePath } = paths();
-  // An unreachable or oversized spec used to count as zero operations and
-  // sail through the budget; eve then mounted its whole operation list on
-  // every later turn.
-  setMcpFetch(async () => new Response("nope", { status: 502 }));
-  const proposal = seedCard({
-    connectionId: "spec",
-    connectionKind: "openapi",
-    name: "Spec",
-    url: "https://api.example.com/openapi.json",
-    urlHost: "api.example.com",
-  });
-  await assert.rejects(
-    () => startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK }),
-    /tool_count_unknown/,
-  );
-  assert.equal(findConnectionById("spec"), null);
-  assert.equal(readProposal(proposal.id, storePath)?.status, "pending");
-});
-
-test("a spec behind a key is counted with the key the owner just pasted", async () => {
-  const mem = memoryKeychain();
-  setKeychainDriver(mem);
-  const { storePath } = paths();
-  // The row does not exist yet, so the credential cannot come from the store.
-  // Without the pasted one the fetch 401s and a valid connect is refused.
-  const seen: string[] = [];
-  setMcpFetch(async (_input, init) => {
-    const key = new Headers(init?.headers).get("x-api-key") ?? "";
-    seen.push(key);
-    if (key !== "sk_test_secret_1") return new Response("no", { status: 401 });
-    return new Response(JSON.stringify({ paths: { "/a": { get: {} } } }), {
-      headers: { "content-type": "application/json" },
-    });
-  });
-  const proposal = seedCard({
-    connectionId: "spec",
-    connectionKind: "openapi",
-    name: "Spec",
-    url: "https://api.example.com/openapi.json",
-    urlHost: "api.example.com",
-    authKind: "apiKey",
-    authHeader: "X-Api-Key",
-  });
-  await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK, secret: "sk_test_secret_1" });
-  assert.equal(seen[0], "sk_test_secret_1");
-  assert.equal(findConnectionById("spec")?.id, "spec");
-  assert.equal(readProposal(proposal.id, storePath)?.status, "confirmed");
-});
-
-test("the budget check never reads a credential the new row does not own yet", async () => {
-  const mem = memoryKeychain();
-  setKeychainDriver(mem);
-  const { storePath } = paths();
-  // An id that is free in the connections store can still have a Keychain
-  // item behind it, from a row that was removed or a card that lost a race.
-  keychainSet(connectionSecretService("spec"), "sk_someone_elses_secret");
-  const seen: string[] = [];
-  setMcpFetch(async (_input, init) => {
-    seen.push(new Headers(init?.headers).get("x-api-key") ?? "");
-    return new Response(JSON.stringify({ paths: { "/a": { get: {} } } }), {
-      headers: { "content-type": "application/json" },
-    });
-  });
-  const proposal = seedCard({
-    connectionId: "spec",
-    connectionKind: "openapi",
-    name: "Spec",
-    url: "https://api.example.com/openapi.json",
-    urlHost: "api.example.com",
-  });
-  await startConnectionConfirm(proposal.id, { callbackUrl: CALLBACK });
-  // A no-auth card sends no key, whatever is sitting under that id.
-  assert.deepEqual([...new Set(seen)], [""]);
-  assert.equal(readProposal(proposal.id, storePath)?.status, "confirmed");
-});
-
-test("a spec whose tool names would pass sixty-four under a reassigned id is refused", async () => {
-  const { storePath } = paths();
-  // "spec__" plus fifty-six fits, but the store can hand this row "spec-2",
-  // and eve prefixes whatever id the row ends up with.
-  const serve = (operationId: string) => setMcpFetch(async () => new Response(
-    JSON.stringify({ paths: { "/a": { get: { operationId } } } }),
-    { headers: { "content-type": "application/json" } },
-  ));
-  serve("o".repeat(56));
-  const refused = seedCard({
-    connectionId: "spec",
-    connectionKind: "openapi",
-    name: "Spec",
-    url: "https://api.example.com/openapi.json",
-    urlHost: "api.example.com",
-  });
-  await assert.rejects(
-    () => startConnectionConfirm(refused.id, { callbackUrl: CALLBACK }),
-    /tool_name_too_long/,
-  );
-  assert.equal(findConnectionById("spec"), null);
-  assert.equal(readProposal(refused.id, storePath)?.status, "pending");
-  serve("o".repeat(55));
-  await startConnectionConfirm(refused.id, { callbackUrl: CALLBACK });
-  assert.equal(findConnectionById("spec")?.id, "spec");
-});
-
 /** An MCP server whose tools/list answer is chosen by the test; initialize and the notification always work. */
 function listing(answer: (id: number | undefined) => Response | Promise<Response>) {
   setMcpFetch((async (_input: unknown, init?: RequestInit) => {
@@ -738,7 +576,7 @@ test("a failing listing leaves the card failed with its reason, keeps the row an
     assert.ok(connectionStatus(id)?.lastError?.code, name);
   }
   assert.equal(listHandoffs().length, 0);
-  assert.equal(listThreadEvents("b1", storePath).some((e) => e.kind === "note" && /connected/.test(String(e.text))), false);
+  assert.equal(sent("/internal/bots/b1/rows").length, 0, "no connected note either");
   // The malformed one says how many it dropped.
   assert.equal(connectionStatus("srv-malformed")?.dropped, 2);
   // A pump has nothing to resume and does not settle it.
@@ -817,13 +655,12 @@ test("an oauth callback whose listing fails leaves the card failed and fires no 
   assert.ok(keychainGet(connectionSecretService("tella"))?.includes("at_secret_1"));
 });
 
-test("a listing that works marks the card connected, and its tools are mounted and run on the next step", async () => {
+test("a listing that works marks the card connected and indexes its tools", async () => {
   setKeychainDriver(memoryKeychain());
   setDiscoveryLogger(() => {});
-  const { storePath, dir } = paths();
+  const { storePath } = paths();
   // Answers by method, so a tool call that is not made as one cannot pass for a listing.
   const methods: string[] = [];
-  const calls: Array<{ name?: string; arguments?: unknown }> = [];
   setMcpFetch((async (_input: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number; params?: { name?: string; arguments?: unknown } };
     methods.push(String(body.method));
@@ -834,10 +671,6 @@ test("a listing that works marks the card connected, and its tools are mounted a
         { name: "list_videos", description: "List the owner's Tella videos" },
         { name: "create_video", description: "Create a video" },
       ] });
-    }
-    if (body.method === "tools/call") {
-      calls.push({ name: body.params?.name, arguments: body.params?.arguments });
-      return rpcJson(body.id, { content: [{ type: "text", text: `ran ${body.params?.name}` }] });
     }
     return new Response(`unexpected ${body.method}`, { status: 400 });
   }) as typeof fetch);
@@ -850,29 +683,10 @@ test("a listing that works marks the card connected, and its tools are mounted a
   assert.equal(stored.toolCount, 2);
   assert.equal(listHandoffs().length, 1);
   assert.equal(connectionStatus("tella")?.state, "ready");
-  // No restart: the resolver reads the registry and the index as they are now.
-  const resolve = (connectionTools as unknown as {
-    events: { "step.started": (event: unknown, ctx: unknown) => Promise<Record<string, { execute: (input: unknown, ctx: unknown) => Promise<Record<string, unknown>> }> | null> };
-  }).events["step.started"];
-  const ctx = { session: { id: "s-tella" } };
-  process.env.UB_WORKSPACE_STORE_PATH = join(dir, "workspace.json");
-  process.env.UB_APPROVALS_PATH = join(dir, "approvals.json");
-  setApprovalStore(new ApprovalStore(Date.now, join(dir, "approvals.json")));
-  upsertSessionGrant({ sessionId: "s-tella", path: null, permission: "full_access" }, new Date(), process.env.UB_WORKSPACE_STORE_PATH);
-  const first = await resolve({}, ctx);
-  assert.ok(first?.find_tools);
-  const found = await first!.find_tools.execute({ query: "tella videos" }, ctx);
-  assert.equal(found.status, "ok");
-  assert.equal(found.unavailable, undefined);
-  const second = await resolve({}, ctx);
-  assert.ok(second?.tella__list_videos, "the tool is callable on the next step");
-  assert.ok(second?.tella__create_video);
-  // And it runs: a tools/call reaches the server with the arguments, and its answer comes back.
-  const ran = await second!.tella__list_videos.execute({}, ctx);
-  assert.equal(ran.status, "ok");
-  assert.match(String(ran.result), /ran list_videos/);
-  assert.deepEqual(calls, [{ name: "list_videos", arguments: {} }]);
-  assert.equal(methods.filter((method) => method === "tools/call").length, 1);
+  // The sign-in listed the tools and made no call: running them is the engine's.
+  assert.equal(methods.includes("tools/list"), true);
+  assert.equal(methods.includes("tools/call"), false);
+  assert.equal(connectionIndex("tella")?.tools.length, 2);
 });
 
 test("reauthorize replaces the credential on the same row and relists", async () => {

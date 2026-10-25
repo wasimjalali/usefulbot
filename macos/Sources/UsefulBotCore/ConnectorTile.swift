@@ -27,6 +27,15 @@ public struct ConnectorTile: Identifiable, Equatable, Sendable {
 
     public var isReady: Bool { mark == .added }
 
+    /// A sign-in expired or was refused: the tile shows Sign in again and the
+    /// sidebar's Connectors row shows a dot.
+    public var needsSignIn: Bool {
+        switch source {
+        case .app(let app): return app.needsSignIn
+        case .server(let server): return server.state.needsSignIn
+        }
+    }
+
     public static func appId(_ slug: String) -> String { "app:\(slug)" }
     public static func serverId(_ id: String) -> String { "server:\(id)" }
 
@@ -34,7 +43,7 @@ public struct ConnectorTile: Identifiable, Equatable, Sendable {
         id = Self.appId(app.slug)
         name = app.name
         source = .app(app)
-        status = "Ready to use"
+        status = app.needsSignIn ? "Sign-in expired" : "Ready to use"
         mark = .added
         logoURL = app.logo
         iconData = nil
@@ -44,10 +53,16 @@ public struct ConnectorTile: Identifiable, Equatable, Sendable {
         id = Self.serverId(server.id)
         name = server.name
         source = .server(server)
-        status = Self.statusLine(server.state)
+        status = Self.readyLine(server) ?? Self.statusLine(server.state)
         mark = Self.mark(server.state)
         logoURL = nil
         iconData = Self.decodeIcon(server.icon)
+    }
+
+    /// "MCP server · 2 tools" for a ready server whose kind and tool count are known.
+    private static func readyLine(_ server: DirectConnection) -> String? {
+        guard server.state == .ready, server.kind != .unknown, let count = server.toolCount else { return nil }
+        return "\(server.kind.label) server · \(count) \(count == 1 ? "tool" : "tools")"
     }
 
     /// The plain-words line under a server's name.
@@ -75,7 +90,8 @@ public struct ConnectorTile: Identifiable, Equatable, Sendable {
 
     /// Ready tiles first, then by name, ignoring case; ties keep the apps before the servers.
     public static func merge(apps: [ConnectorToolkit], servers: [DirectConnection]) -> [ConnectorTile] {
-        let tiles = apps.filter(\.connected).map(ConnectorTile.init(app:)) + servers.map(ConnectorTile.init(server:))
+        // An app whose sign-in lapsed stays added, with Sign in again.
+        let tiles = apps.filter { $0.connected || $0.needsSignIn }.map(ConnectorTile.init(app:)) + servers.map(ConnectorTile.init(server:))
         return tiles.enumerated().sorted { a, b in
             if a.element.isReady != b.element.isReady { return a.element.isReady }
             let order = a.element.name.compare(b.element.name, options: [.caseInsensitive, .diacriticInsensitive])

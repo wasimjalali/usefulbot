@@ -15,6 +15,21 @@ import Testing
         try JSONDecoder().decode(Routine.self, from: Data(json.utf8))
     }
 
+    /// A routine runs in its own chat; a run points at the chat it used.
+    @Test func aRoutineAndItsRunsNameTheirChat() throws {
+        let routine = try decode("""
+        {"id":"rtn_9","botId":"bot-useful","name":"Morning brief","instruction":"x","chatId":"chat-1",
+         "active":true,"schedules":[{"kind":"daily","time":"08:00"}],
+         "runHistory":[{"at":"2026-09-14T07:07:00.000Z","status":"ok","chatId":"chat-1","error":""}]}
+        """)
+        #expect(routine.chatId == "chat-1")
+        #expect(routine.runHistory[0].chatId == "chat-1")
+        // Before its first run a routine has no chat.
+        let fresh = try decode(#"{"id":"rtn_1","botId":"bot-useful","chatId":null}"#)
+        #expect(fresh.chatId == nil)
+        #expect(try decode(#"{"id":"rtn_2","botId":"bot-useful"}"#).chatId == nil)
+    }
+
     @Test func decodeToleratesUnknownAndMissingFields() throws {
         // A newer server adds `nextRunAt`; only `id` is required here.
         let routine = try decode("""
@@ -22,7 +37,7 @@ import Testing
          "instruction":"Check rankings.","timezone":"Europe/Berlin","active":true,
          "nextRunAt":"2026-09-21T07:00:00.000Z",
          "schedules":[{"kind":"weekly","days":[1],"time":"09:00"}],
-         "runHistory":[{"at":"2026-09-14T07:07:00.000Z","status":"ok","sessionId":"ses_1","error":""}]}
+         "runHistory":[{"at":"2026-09-14T07:07:00.000Z","status":"ok","chatId":"chat_1","error":""}]}
         """)
         #expect(routine.name == "Weekly SEO check and draft")
         #expect(routine.schedules == [.weekly(days: [1], time: "09:00")])
@@ -55,11 +70,11 @@ import Testing
 
     @Test func aMalformedRunRowStillDecodes() throws {
         let routine = try decode("""
-        {"id":"rtn_4","runHistory":[{"at":"2026-09-14T07:07:00.000Z","status":"failed","error":"eve_send_500"}]}
+        {"id":"rtn_4","runHistory":[{"at":"2026-09-14T07:07:00.000Z","status":"failed","error":"engine_send_500"}]}
         """)
         #expect(routine.runHistory.count == 1)
         #expect(routine.runHistory[0].succeeded == false)
-        #expect(routine.runHistory[0].sessionId == nil)
+        #expect(routine.runHistory[0].chatId == nil)
     }
 
     @Test func wireBodyMatchesTheServerShape() {

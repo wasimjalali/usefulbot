@@ -1,0 +1,135 @@
+{
+  "task_id": "t07-routine",
+  "title": "Routine",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r2",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created a routine (checked: a new routine with a weekly Monday to Friday schedule at 09:00 exists) whose instruction asks for a one-line weather summary for Berlin. The reply confirms the schedule it set, in plain words, and does not promise anything the routine does not do. The harness never deletes the routine: the orchestrator removes it after the run.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t07-routine",
+  "errors": [],
+  "prompts": [
+    "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792903625519,
+    "end": 1792903659868
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up.",
+      "sent_at_ms": 1792903625782,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 3.0,
+          "label": "Writing a routine"
+        },
+        {
+          "t": 4.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 9.1,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 8.6,
+      "wall_s": 13.18,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792903650885,
+      "reply_before_redraw": "Done. \"Berlin weekday weather\" is set for Monday to Friday at 09:00 Berlin time, first run tomorrow at 09:00. I triggered a test run now, so you should see a sample line shortly; it should look like \"Berlin: cloudy, 5-12°C, 20% rain.\"\nPost a one-line weather summary for Berlin for today: conditions, high and low temperature in °C, and chance of rain. Get real data first, either by fetching https://wttr.in/Berlin?format=j1 or with a web search for \"Berlin weather today\"; never guess. Reply with one single line and nothing else, for example: \"Berlin: sunny, 3-11°C, 10% rain.\"\nYou can pause or edit it in the chat details pane.\nBerlin: overcast with rain around midday, 7-12°C, up to 86% chance of rain.",
+      "redraw": "failed: sidebar rows changed (wanted 'Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up.' first)",
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": false,
+      "reply": "Your project codename is tamarind-88b9. That's the current one, updated today. An earlier note had marigold-d636, which it replaced.\nBerlin: overcast with rain around midday, 7-12°C, up to 86% chance of rain.",
+      "reply_items": [
+        {
+          "text": "Your project codename is tamarind-88b9. That's the current one, updated today. An earlier note had marigold-d636, which it replaced.",
+          "bot": true,
+          "y": 298.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Berlin: overcast with rain around midday, 7-12°C, up to 86% chance of rain.",
+          "bot": true,
+          "y": 596.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r2/shots/t07-routine-turn1.png",
+      "transcript_full": "Your project codename is tamarind-88b9. That's the current one, updated today. An earlier note had marigold-d636, which it replaced.\nPost a one-line weather summary for Berlin for today: conditions, high and low temperature in °C, and chance of rain. Get real data first, either by fetching https://wttr.in/Berlin?format=j1 or with a web search for \"Berlin weather today\"; never guess. Reply with one single line and nothing else, for example: \"Berlin: sunny, 3-11°C, 10% rain.\"\nBerlin: overcast with rain around midday, 7-12°C, up to 86% chance of rain.\nWhat's my project codename?"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 3.0,
+      "label": "Writing a routine"
+    },
+    {
+      "t": 4.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 9.1,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "routine_created",
+      "gating": true,
+      "pass": true,
+      "detail": "routine rtn_abc2871d90ef4b30 'Berlin weekday weather' runs weekly on days [1, 2, 3, 4, 5] at 09:00"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 13.18,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [
+    "rtn_abc2871d90ef4b30"
+  ],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

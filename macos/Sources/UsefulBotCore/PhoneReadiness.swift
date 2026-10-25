@@ -63,7 +63,7 @@ public enum MacReadiness: Sendable, Equatable {
     /// the same honest copy. `diagnostics` feeds the Devices sheet's
     /// §1.15 rows.
     case macUnreachable(lastSeen: Date?, detail: String?, diagnostics: ReachabilityDiagnostics)
-    /// Status answered but its eve probe failed: management screens stay
+    /// Status answered but its engine probe failed: management screens stay
     /// usable, chat is down.
     case runtimeDown
     /// Status answered but its `apiVersion` is absent or unknown (S15):

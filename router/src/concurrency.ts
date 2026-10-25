@@ -10,11 +10,11 @@ export const CEILING_RETRY_AFTER_MS = 2_000;
  * Acquired before the step id is reserved, so a refused request never
  * consumes a step, a rate-limit hit or a token reservation.
  *
- * The key is the caller plus the session, not the caller alone. eve holds one
- * credential for every bot, so a caller-only key made the whole app one
- * session: a second bot got `session_busy` while the first was thinking. With
- * the session in the key one bot still cannot run two model calls at once,
- * and ten bots can run one each.
+ * The key is the caller plus the session, not the caller alone. The engine
+ * holds one credential for every chat, so a caller-only key made the whole app
+ * one session: a second chat got `session_busy` while the first was thinking.
+ * With the session in the key one chat still cannot run two model calls at
+ * once, and ten chats can run one each.
  *
  * The ceiling has its own code. It used to answer `global_budget_exhausted`,
  * which is also the DAILY aggregate budget, so the app told the owner the

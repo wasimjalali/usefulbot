@@ -1,0 +1,145 @@
+{
+  "task_id": "t01-files",
+  "title": "Files, tool choice",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-smoke",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot looked at the folder with its file tools (a listing, or a command that sizes the files) instead of guessing. The reply gives the right number of .md files counting the subfolder and names the largest one (the fixture has a larger .txt file that must not be named as the largest markdown file). One short answer. Deduct for inventing files or for a count that skips the subfolder.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-smoke/t01-files",
+  "errors": [],
+  "prompts": [
+    "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-smoke/t01-files (including subfolders), and which one is the largest?"
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": true,
+    "was": "full_access"
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792902257926,
+    "end": 1792902275630
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-smoke/t01-files (including subfolders), and which one is the largest?",
+      "sent_at_ms": 1792902258039,
+      "activity": [
+        {
+          "t": 8.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 9.0,
+          "label": "Running a command"
+        },
+        {
+          "t": 10.0,
+          "label": "Running a command: find"
+        }
+      ],
+      "cards": [
+        {
+          "t": 11.0,
+          "tool": "bash",
+          "preview": "",
+          "texts": [
+            "bash"
+          ],
+          "decision": "approve"
+        }
+      ],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "wall_s": 14.18,
+      "first_busy_s": 7.97,
+      "ended_at_ms": 1792902275347,
+      "user_bubble_found": true,
+      "reply": "The largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.\nThere are 8 .md files in that folder, counting subfolders.",
+      "reply_items": [
+        {
+          "text": "The largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.",
+          "bot": true
+        },
+        {
+          "text": "There are 8 .md files in that folder, counting subfolders.",
+          "bot": true
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-smoke/shots/t01-files-turn1.png",
+      "transcript_full": "Today\nUSER: How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-smoke/t01-files (including subfolders), and which one is the largest?\nThe largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.\nThere are 8 .md files in that folder, counting subfolders.\nMessage Useful Bot"
+    }
+  ],
+  "cards": [
+    {
+      "t": 11.0,
+      "tool": "bash",
+      "preview": "",
+      "texts": [
+        "bash"
+      ],
+      "decision": "approve"
+    }
+  ],
+  "activity": [
+    {
+      "t": 8.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 9.0,
+      "label": "Running a command"
+    },
+    {
+      "t": 10.0,
+      "label": "Running a command: find"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_has_md_count",
+      "gating": true,
+      "pass": true,
+      "detail": "expected 8 .md files; reply names that number"
+    },
+    {
+      "type": "reply_has_largest_md",
+      "gating": true,
+      "pass": true,
+      "detail": "largest is sub/design-notes.md (3116 bytes); reply names it"
+    },
+    {
+      "type": "tree_unchanged",
+      "gating": true,
+      "pass": true,
+      "detail": "changed/removed: []; added: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 14.18,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

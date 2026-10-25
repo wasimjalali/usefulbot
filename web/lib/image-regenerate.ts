@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readAgentStore } from "../../shared/agent-store.ts";
 import { readImage, writeImage } from "../../shared/images-store.ts";
 import { findMedia, readMediaBytes, saveImage, sniffImage } from "../../shared/media-store.ts";
 import { routerOrigin } from "../../shared/stack.ts";
@@ -21,17 +20,11 @@ const inflight: Map<string, Promise<{ path: string }>> =
 
 /**
  * What a lost image was drawn from, read on the server: the Library entry,
- * else the chat event that showed it. The prompt
- * never comes from the caller, so this route can only redraw what the owner
- * already had.
+ * which holds the whole prompt. The prompt never comes from the caller, so this
+ * route can only redraw what the owner already had.
  */
 function source(id: string): { prompt: string; botId: string; botName?: string } | null {
   const entry = findMedia(id);
-  // The chat event keeps the whole prompt; the Library entry a clipped one.
-  for (const thread of readAgentStore().threads) {
-    const event = thread.events.find((row) => row.imageId === id && row.kind === "image");
-    if (event?.text) return { prompt: event.text, botId: entry?.botId || thread.botId, botName: entry?.botName };
-  }
   return entry ? { prompt: entry.prompt, botId: entry.botId, botName: entry.botName } : null;
 }
 
@@ -119,6 +112,8 @@ async function redraw(id: string): Promise<{ path: string }> {
       provider,
       botId: from.botId,
       botName: bot?.name ?? from.botName ?? "Useful Bot",
+      // A redraw keeps the chat its entry already names.
+      chatId: null,
       replace: true,
       revive,
     });

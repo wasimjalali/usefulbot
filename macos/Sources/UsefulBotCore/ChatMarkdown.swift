@@ -395,7 +395,7 @@ public enum ChatMarkdownCache {
         }
     }
 
-    /// A few replies can stream at once (a group, a handoff), never many.
+    /// A few replies can stream at once (chats running side by side), never many.
     private static let transient = Transient(capacity: 8)
 
     /// `streamingKey` names a row whose text is still growing: its parse

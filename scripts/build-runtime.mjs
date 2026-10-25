@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The services a release app carries in Contents/Resources/runtime: the files
-// router, web and eve read at runtime, their production dependencies and an
+// router, engine and web read at runtime, their production dependencies and an
 // official Node. The app copies this to ~/Library/Application Support/Useful
 // Bot/app and runs it from there (macos/Sources/UsefulBotCore/RuntimeInstall.swift).
 //
@@ -48,7 +48,8 @@ const TRACKED = [
   "package.json",
   "package-lock.json",
   "scripts/service.mjs",
-  "scripts/patch-eve.mjs",
+  "scripts/service-secrets.mjs",
+  "scripts/secrets-preload.mjs",
   "scripts/setup-local.mjs",
   "scripts/web-mode.mjs",
   "shared",

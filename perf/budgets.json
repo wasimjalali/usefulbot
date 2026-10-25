@@ -1,164 +1,160 @@
 {
-  "_about": "Limits perf/run.sh check enforces. Set 2026-09-26 from evals/results/2026-09-26-perf-baseline-0555-0caa10d with the budgetRule in config.json. Its first launch started at load 6.5 (limit 6.0) and gave the worst cold_launch (1,504 ms against a 920 ms median), which loosens that case's worst budget; its other sample was in line. Change only by a reviewed edit that says why. On 2026-09-27 the four long-chat cases (cold_first_open_replies, warm_return_replies, cold_no_snapshot_replies, cold_no_snapshot_tools) were tightened from evals/results/2026-09-27-perf-baseline-1919-c450c11 after PR #139 fixed the long markdown chat (warm return 4.9 s to 1.55 s median); the old limits would have let it regress unnoticed. The other cases keep their 2026-09-26 limits. The two no-snapshot cases now settle (about 5.5 s and 1.5 s) instead of landing by the 10 s cap, so they accept only a settled landing.",
+  "_about": "Limits perf/run.sh check enforces. Set 2026-09-26 from evals/results/2026-09-26-perf-baseline-0555-0caa10d with the budgetRule in config.json. Its first launch started at load 6.5 (limit 6.0) and gave the worst cold_launch (1,504 ms against a 920 ms median), which loosens that case's worst budget; its other sample was in line. Change only by a reviewed edit that says why. On 2026-09-27 the four long-chat cases (cold_first_open_replies, warm_return_replies, cold_no_snapshot_replies, cold_no_snapshot_tools) were tightened from evals/results/2026-09-27-perf-baseline-1919-c450c11 after PR #139 fixed the long markdown chat (warm return 4.9 s to 1.55 s median); the old limits would have let it regress unnoticed. The other cases keep their 2026-09-26 limits. The two no-snapshot cases now settle (about 5.5 s and 1.5 s) instead of landing by the 10 s cap, so they accept only a settled landing. On 2026-10-25 (PR 3, the Pi engine) the two cold_no_snapshot cases were removed: chat snapshots are gone, so the cases no longer exist. On 2026-10-25 every case was re-baselined on the Pi engine from evals/results/2026-10-25-perf-baseline-1736-092a205 (rows_first_paint_ms and rows_done_ms added). That run was INCONCLUSIVE (other work peaked at 715% CPU, mostly the Claude app that ran the session); the run before it (1726) agreed within 6% on every visual and app median, and the check after it (2026-10-25-perf-check-1746-092a205) passed on a quiet machine, so the limits were taken from it. Against eve: the long markdown chat opens about twice as fast (775 ms visual median, was about 1.55 s; stall under 70 ms, was about 900 ms), so its limits tightened; short switches (355 ms, was about 225 ms) and cold launch (1,110 ms, was about 920 ms) are slower, because without snapshots every open goes through the landing gate's steady checks; their limits were raised to the measured numbers and a faster landing for short chats is a follow-up.",
   "cases": {
     "cold_first_open_replies": {
       "app_ms": {
-        "median": 1690.0,
-        "worst": 2540.0
+        "median": 770.0,
+        "worst": 1160.0
       },
       "reasons": [
         "settled"
       ],
-      "sources": [
-        "disk_snapshot"
-      ],
+      "rows_done_ms": {
+        "median": 110.0,
+        "worst": 160.0
+      },
+      "rows_first_paint_ms": {
+        "median": 100.0,
+        "worst": 150.0
+      },
+      "sources": [],
       "stall_ms": {
-        "median": 1100.0,
-        "worst": 1130.0
+        "median": 150,
+        "worst": 150
       },
       "visual_ms": {
-        "median": 1940.0,
-        "worst": 2910.0
+        "median": 940.0,
+        "worst": 1410.0
       }
     },
     "cold_first_open_tools": {
       "app_ms": {
-        "median": 370.0,
-        "worst": 560.0
+        "median": 430.0,
+        "worst": 640.0
       },
       "reasons": [
         "settled"
       ],
-      "sources": [
-        "disk_snapshot"
-      ],
+      "rows_done_ms": {
+        "median": 100.0,
+        "worst": 150.0
+      },
+      "rows_first_paint_ms": {
+        "median": 100.0,
+        "worst": 150.0
+      },
+      "sources": [],
       "stall_ms": {
-        "median": 220.0,
-        "worst": 220.0
+        "median": 150,
+        "worst": 150
       },
       "visual_ms": {
-        "median": 400.0,
-        "worst": 600.0
+        "median": 510.0,
+        "worst": 760.0
       }
     },
     "cold_launch": {
       "app_ms": {
-        "median": 1100.0,
-        "worst": 1860.0
+        "median": 1230.0,
+        "worst": 1840.0
       },
       "reasons": [
         "settled"
       ],
-      "sources": [
-        "disk_snapshot"
-      ],
+      "rows_done_ms": {
+        "median": 940.0,
+        "worst": 1410.0
+      },
+      "rows_first_paint_ms": {
+        "median": 940.0,
+        "worst": 1410.0
+      },
+      "sources": [],
       "stall_ms": {
         "median": 150,
         "worst": 150
       },
       "visual_ms": {
-        "median": 1120.0,
-        "worst": 1880.0
-      }
-    },
-    "cold_no_snapshot_replies": {
-      "app_ms": {
-        "median": 6140.0,
-        "worst": 9210.0
-      },
-      "reasons": [
-        "settled"
-      ],
-      "sources": [
-        "none"
-      ],
-      "stall_ms": {
-        "median": 150,
-        "worst": 150
-      },
-      "visual_ms": {
-        "median": 6680.0,
-        "worst": 10020.0
-      }
-    },
-    "cold_no_snapshot_tools": {
-      "app_ms": {
-        "median": 1630.0,
-        "worst": 2440.0
-      },
-      "reasons": [
-        "settled"
-      ],
-      "sources": [
-        "none"
-      ],
-      "stall_ms": {
-        "median": 150,
-        "worst": 150
-      },
-      "visual_ms": {
-        "median": 1840.0,
-        "worst": 2760.0
+        "median": 1350.0,
+        "worst": 2020.0
       }
     },
     "warm_return_replies": {
       "app_ms": {
-        "median": 1650.0,
-        "worst": 2480.0
-      },
-      "reasons": [
-        "settled"
-      ],
-      "sources": [
-        "stash_snapshot"
-      ],
-      "stall_ms": {
-        "median": 1100.0,
+        "median": 760.0,
         "worst": 1140.0
       },
-      "visual_ms": {
-        "median": 1880.0,
-        "worst": 2820.0
-      }
-    },
-    "warm_return_tools": {
-      "app_ms": {
-        "median": 360.0,
-        "worst": 540.0
-      },
       "reasons": [
         "settled"
       ],
-      "sources": [
-        "stash_snapshot"
-      ],
-      "stall_ms": {
-        "median": 210.0,
-        "worst": 220.0
+      "rows_done_ms": {
+        "median": 100.0,
+        "worst": 150.0
       },
-      "visual_ms": {
-        "median": 390.0,
-        "worst": 580.0
-      }
-    },
-    "warm_switch_short": {
-      "app_ms": {
-        "median": 250.0,
-        "worst": 380.0
+      "rows_first_paint_ms": {
+        "median": 100.0,
+        "worst": 150.0
       },
-      "reasons": [
-        "settled"
-      ],
-      "sources": [
-        "stash_snapshot"
-      ],
+      "sources": [],
       "stall_ms": {
         "median": 150,
         "worst": 150
       },
       "visual_ms": {
-        "median": 290.0,
-        "worst": 440.0
+        "median": 950.0,
+        "worst": 1420.0
+      }
+    },
+    "warm_return_tools": {
+      "app_ms": {
+        "median": 440.0,
+        "worst": 660.0
+      },
+      "reasons": [
+        "settled"
+      ],
+      "rows_done_ms": {
+        "median": 100.0,
+        "worst": 150.0
+      },
+      "rows_first_paint_ms": {
+        "median": 100.0,
+        "worst": 150.0
+      },
+      "sources": [],
+      "stall_ms": {
+        "median": 150,
+        "worst": 150
+      },
+      "visual_ms": {
+        "median": 490.0,
+        "worst": 740.0
+      }
+    },
+    "warm_switch_short": {
+      "app_ms": {
+        "median": 390.0,
+        "worst": 580.0
+      },
+      "reasons": [
+        "settled"
+      ],
+      "rows_done_ms": {
+        "median": 110.0,
+        "worst": 160.0
+      },
+      "rows_first_paint_ms": {
+        "median": 110.0,
+        "worst": 160.0
+      },
+      "sources": [],
+      "stall_ms": {
+        "median": 150,
+        "worst": 150
+      },
+      "visual_ms": {
+        "median": 450.0,
+        "worst": 680.0
       }
     }
   }

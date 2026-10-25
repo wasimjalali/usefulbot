@@ -1,0 +1,104 @@
+{
+  "task_id": "t05-memory-save",
+  "title": "Memory save",
+  "engine": "pi",
+  "run_id": "2026-10-25-pi",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot saved the fact to memory (a note was created or updated, checked) and confirmed it briefly. It did not ask a needless question or write the note somewhere other than its memory.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t05-memory-save",
+  "errors": [],
+  "prompts": [
+    "Remember this: my project codename is tamarind-977f."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792944537973,
+    "end": 1792944555709
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Remember this: my project codename is tamarind-977f.",
+      "sent_at_ms": 1792944538034,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 3.13,
+      "wall_s": 8.04,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792944552298,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "Saved: project codename is tamarind-977f.\nOne thing to flag: my note already had a codename, \"marigold-0469\", and before that \"tamarind-88b9\". I replaced it with tamarind-977f and kept those older values in the note as history. Tell me if you'd rather keep both names with separate meanings.",
+      "reply_items": [
+        {
+          "text": "Saved: project codename is tamarind-977f.",
+          "bot": true,
+          "y": 288.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "One thing to flag: my note already had a codename, \"marigold-0469\", and before that \"tamarind-88b9\". I replaced it with tamarind-977f and kept those older values in the note as history. Tell me if you'd rather keep both names with separate meanings.",
+          "bot": true,
+          "y": 329.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-pi/shots/t05-memory-save-turn1.png",
+      "transcript_full": "Saved: project codename is tamarind-977f.\nOne thing to flag: my note already had a codename, \"marigold-0469\", and before that \"tamarind-88b9\". I replaced it with tamarind-977f and kept those older values in the note as history. Tell me if you'd rather keep both names with separate meanings.\nUSER: Remember this: my project codename is tamarind-977f."
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "memory_note_added",
+      "gating": true,
+      "pass": true,
+      "detail": "new or changed notes containing 'tamarind-977f': ['d42d4f4e-b490-48f0-bf78-edadcdc7296e.md']; already present before: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 8.04,
+  "timeouts": [],
+  "memory_new_or_changed": [
+    "d42d4f4e-b490-48f0-bf78-edadcdc7296e.md"
+  ],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": null
+  }
+}

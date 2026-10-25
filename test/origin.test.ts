@@ -3,7 +3,7 @@ import test from "node:test";
 import { originHeaderAllowed, requestIsLoopback } from "../shared/origin.ts";
 
 test("loopback origins must match the request port", () => {
-  const req = "http://127.0.0.1:4320/eve/v1/session";
+  const req = "http://127.0.0.1:4320/api/chats";
   assert.equal(originHeaderAllowed(null, req), true);
   assert.equal(originHeaderAllowed("http://127.0.0.1:4320", req), true);
   assert.equal(originHeaderAllowed("http://localhost:4320", req), true);
@@ -14,7 +14,7 @@ test("loopback origins must match the request port", () => {
 });
 
 test("a missing origin is trusted and non-loopback origins are not", () => {
-  const req = "http://127.0.0.1:4320/eve/v1/session";
+  const req = "http://127.0.0.1:4320/api/chats";
   // The load-bearing contract every requireDesktop relies on: a same-origin
   // fetch may omit Origin, so absent must be allowed.
   assert.equal(originHeaderAllowed(null, req), true);

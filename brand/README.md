@@ -130,10 +130,10 @@ Locked by the owner on 2026-10-06. Use each line verbatim in its place; don't wr
 
 | Place | Copy |
 | --- | --- |
-| Social bios (X, LinkedIn, when the accounts exist), GitHub repo descriptions, README top line | Useful Bot is the free, open-source alternative to Grok Bot. Your own team of AI bots on your computer, on the AI plan you already pay for. |
-| Website title, og:title | Useful Bot: a team of AI bots on your computer |
-| Website meta description, og:description, JSON-LD | A free, open-source app that runs a team of AI bots on your computer, with the ChatGPT plan you already pay for, an API key or a local model. |
-| Website hero | Pill "Available on macOS"; headline "Meet [logo] Useful Bot"; line "Your own team of AI bots on your computer. Use the ChatGPT plan you already pay for, an API key or a local model." |
-| App welcome screen | Your own team of AI bots, on your computer. Use the AI plan you already pay for. |
+| Social bios (X, LinkedIn, when the accounts exist), GitHub repo descriptions, README top line | Useful Bot is the free, open-source alternative to Grok Bot. Your own AI bot on your computer, on the AI plan you already pay for. |
+| Website title, og:title | Useful Bot: your own AI bot on your computer |
+| Website meta description, og:description, JSON-LD | A free, open-source app that runs your own AI bot on your computer, with the ChatGPT plan you already pay for, an API key or a local model. |
+| Website hero | Pill "Available on macOS"; headline "Meet [logo] Useful Bot"; line "Your own AI bot on your computer. Use the ChatGPT plan you already pay for, an API key or a local model." |
+| App welcome screen | Your own AI bot, on your computer. Use the AI plan you already pay for. |
 
 Grok Bot is named only in the bio line. It stays off the website and out of the app. Never claim "no limits": the user's provider plan has its own limits.

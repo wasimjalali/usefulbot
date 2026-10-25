@@ -3,23 +3,17 @@ import SwiftUI
 import UsefulBotCore
 
 /// The chat column: header, transcript in a centered
-/// 768pt column, empty state, proposal and onboarding cards, composer.
+/// 768pt column, empty state, proposal cards, composer.
 struct ChatView: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.starterBotId) private var starterBotId
     @Environment(\.composerRisen) private var composerRisen
     @Environment(\.connectModel) private var connectModel
     @Environment(\.noModelPreview) private var noModelPreview
-    /// Starters are for a first conversation: gone for good once the owner
-    /// has sent a message from this app.
-    @AppStorage(StarterPrompt.sentKey) private var firstMessageSent = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    var onDeleteRequest: (ShellBot) -> Void
 
     /// Measured width of the chat column, so user bubbles cap at 85% of the
     /// column rather than 85% of the wider scroll container.
     @State private var columnWidth: CGFloat = 720
-    @State private var infoButtonFrame = CGRect.zero
     /// True while the transcript rests at its newest turn. Auto-scroll only
     /// fires then: streaming replies append below and stay pinned, while a
     /// scroll-up into history never yanks the reader back down.
@@ -34,35 +28,18 @@ struct ChatView: View {
     /// durable reload changes the list underneath them.
     @State private var holdingReplyAnchor = false
     /// The chat whose transcript rests at its newest turn. Until it names the
-    /// open chat, the transcript lays out hidden under the mascot, so a chat
-    /// never opens in the middle of its history while the replay settles.
+    /// open chat, the transcript lays out hidden under the loader, so a chat
+    /// never opens in the middle of its history while its rows settle.
     /// Keyed by chat rather than a flag, so a switch reads as not landed from
     /// its first frame instead of once the mount's task has run.
-    @State private var landedBotId: String?
+    @State private var landedChatKey: String?
     /// The transcript's latest scroll geometry, for the landing check. A
     /// plain object so the pin tracker's per-frame writes do not re-render
     /// the chat.
     @State private var scrollProbe = ScrollProbe()
-    /// The restored chat whose reload is slow to confirm its rows: the mascot
-    /// comes back rather than a blank pane. Keyed by chat, so a chat left
-    /// before it landed cannot hand its mascot to the next one.
-    @State private var slowRestoreBotId: String?
-    /// How long a stalled replay may keep the mascot up before the rows on
-    /// hand are shown anyway. A healthy replay lands well inside it: the
-    /// mascot stays until the newest turn is in, because rows shown before
-    /// then are replaced underneath the reader.
+    /// How long a stalled load may keep the loader up before the rows on
+    /// hand are shown anyway. A healthy load lands well inside it.
     private static let landingCap: TimeInterval = 10
-    /// How long a restored chat waits for its reload with nothing on screen.
-    /// The reload's answer (a durable read, a one-file probe, whatever the
-    /// session gained since the snapshot) takes about 70 ms, but its reply
-    /// can queue behind the transcript's own build on the main thread; one
-    /// still missing after this gets the mascot until it is in, so a chat
-    /// that gained a turn opens on it rather than showing it arrive.
-    private static let resumeConfirmWait: TimeInterval = 0.6
-    private static var fastLanding: Bool {
-        if #available(macOS 15.0, *) { return true }
-        return false
-    }
     /// Room for the user's message above the reply, so an answer that only
     /// just fits is left where it is.
     private static let replyAnchorSlack: CGFloat = 120
@@ -71,136 +48,113 @@ struct ChatView: View {
     private static let sendScrollWindow: TimeInterval = 0.1
     /// How far above the composer the transcript fades out.
     private static let bottomFade: CGFloat = 28
+    /// An approval preview taller than this scrolls inside its card.
+    private static let previewMaxHeight: CGFloat = 220
     /// The chat whose landing gate is running. A send while it runs does not
     /// land the chat early: the gate is already waiting for the rows.
-    @State private var gatingBotId: String?
+    @State private var gatingChatKey: String?
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                if let bot = model.selectedBot {
-                    // The header floats: the transcript runs under it, and
-                    // only the bot's pill and the panel control sit on top.
-                    ZStack(alignment: .top) {
-                    if model.hasThreadContent || model.pending {
-                        // Put back from a snapshot or a stash: it lands within
-                        // a few frames, so the mascot would only flash and the
-                        // fade would only delay it. macOS 14 has no scroll
-                        // geometry to land it that fast and keeps both.
-                        let restored = model.restoredFromCache && Self.fastLanding
-                        // A chat known to be empty that the owner has just
-                        // sent into has nothing to wait for: its only rows are
-                        // the send's own. It shows them from its first frame,
-                        // with no mascot and no fade; the mascot used to wave
-                        // for a fifth of a second between the empty state and
-                        // the owner's message.
-                        // Decided when the chat mounted: a send made while a
-                        // first load's gate is running waits for that gate.
-                        // Read live, the load finishing mid-gate flipped it and
-                        // showed the rows before their geometry settled.
-                        let landed = landedBotId == bot.id || (sentIntoReadyChat && gatingBotId != bot.id)
-                        transcript(bot)
-                            // The landing belongs to this mount. Without this a
-                            // chat left for an empty one, or remounted before
-                            // its replay, came back shown before it landed.
-                            .onDisappear {
-                                if landedBotId == bot.id { landedBotId = nil }
-                                if gatingBotId == bot.id { gatingBotId = nil }
-                            }
-                            // A new chat gets a new scroll view. Reusing one
-                            // across bots hands the next chat the offset the
-                            // last one was left at, which then has to be
-                            // corrected on screen.
-                            .id(bot.id)
-                            // Only the opacity fades. An animation on the whole
-                            // transaction also animated any layout still moving
-                            // in it, and the rows drifted while they faded in.
-                            .animation(restored ? nil : .easeOut(duration: 0.15)) {
-                                $0.opacity(landed ? 1 : 0)
-                            }
-                            .accessibilityHidden(!landed)
-                            .overlay {
-                                ZStack { if !landed, !restored || slowRestoreBotId == bot.id { loadingState } }
-                                    // A restored chat's rows show at once, so
-                                    // its mascot must not fade out over them.
-                                    // A slow one fades, so a confirmation just past
-                                    // the wait does not pop the mascot for a frame.
-                                    .animation(restored && slowRestoreBotId != bot.id ? nil : .easeOut(duration: 0.15), value: landed)
-                            }
-                    } else if model.transcriptReady {
-                        emptyState(bot)
-                            // The transcript's landing never mounts for a chat
-                            // with no rows; the performance guard's wait ends here.
-                            .task(id: bot.id) {
-                                PerfHarness.shared?.landed(botId: bot.id, reason: "empty", stats: model.perfStats)
-                            }
-                    } else {
-                        loadingState
-                    }
-                        header(bot)
-                    }
-                    // While the first load is still in flight the mascot waves
-                    // in the middle of the chat: the empty copy belongs to a
-                    // chat that is known empty, and flashing it in front of a
-                    // history that arrives a moment later reads as a jump.
-                    // Anything the bot needs an answer to docks here, between
-                    // the transcript and the composer, so the question sits
-                    // where the reply is typed instead of scrolling away.
-                    // Hangs above the column from a line of no height, so it
-                    // floats over the transcript's bottom edge and never takes
-                    // the transcript's height the way the banner did.
-                    Color.clear
-                        .frame(height: 0)
-                        .frame(maxWidth: .infinity)
-                        .overlay(alignment: .bottom) {
-                            if let note = model.threadError ?? model.saveError {
-                                ComposerNote(
-                                    text: note,
-                                    // A rail write that failed has nothing to re-read.
-                                    reload: model.threadError != nil ? { model.reloadFromNote() } : nil
-                                ) { model.dismissNote() }
-                                    .frame(maxWidth: DesignTokens.Space.chatColumnMax)
-                                    .padding(.horizontal, DesignTokens.Space.chatColumnPadding)
-                                    .padding(.bottom, 8)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .transition(.opacity)
-                            }
+        VStack(spacing: 0) {
+            if let bot = model.selectedBot {
+                // The header floats: the transcript runs under it, and
+                // only the bot's pill and the panel control sit on top.
+                ZStack(alignment: .top) {
+                if model.hasThreadContent || model.pending {
+                    let key = model.chatKey
+                    // A chat known to be empty that the owner has just
+                    // sent into has nothing to wait for: its only rows are
+                    // the send's own. It shows them from its first frame,
+                    // with no loader and no fade; the loader used to show
+                    // for a fifth of a second between the empty state and
+                    // the owner's message.
+                    // Decided when the chat mounted: a send made while a
+                    // first load's gate is running waits for that gate.
+                    // Read live, the load finishing mid-gate flipped it and
+                    // showed the rows before their geometry settled.
+                    let landed = landedChatKey == key || (sentIntoReadyChat && gatingChatKey != key)
+                    transcript(bot)
+                        // The landing belongs to this mount. Without this a
+                        // chat left for an empty one, or remounted before
+                        // its rows, came back shown before it landed.
+                        .onDisappear {
+                            if landedChatKey == key { landedChatKey = nil }
+                            if gatingChatKey == key { gatingChatKey = nil }
                         }
-                        .zIndex(1)
-                    askColumn(bot)
-                    composerColumn(bot)
-                } else if let note = model.threadError ?? model.saveError {
-                    // No bot to chat with (the last one was deleted, or the
-                    // first create failed): the note still says what went wrong.
-                    Spacer(minLength: 0)
-                    ComposerNote(text: note) { model.dismissNote() }
-                        .frame(maxWidth: DesignTokens.Space.chatColumnMax)
-                        .padding(DesignTokens.Space.chatColumnPadding)
+                        // A new chat gets a new scroll view. Reusing one
+                        // across chats hands the next chat the offset the
+                        // last one was left at, which then has to be
+                        // corrected on screen.
+                        .id(key)
+                        // Only the opacity fades. An animation on the whole
+                        // transaction also animated any layout still moving
+                        // in it, and the rows drifted while they faded in.
+                        .animation(.easeOut(duration: 0.15)) {
+                            $0.opacity(landed ? 1 : 0)
+                        }
+                        .accessibilityHidden(!landed)
+                        .overlay {
+                            ZStack { if !landed { loadingState } }
+                                .animation(.easeOut(duration: 0.15), value: landed)
+                        }
+                } else if model.transcriptReady {
+                    emptyState
+                        // The transcript's landing never mounts for a chat
+                        // with no rows; the performance guard's wait ends here.
+                        .task(id: model.chatKey) {
+                            PerfHarness.shared?.landed(chatKey: model.chatKey, reason: "empty", stats: model.perfStats)
+                        }
+                } else {
+                    loadingState
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if model.settingsOpen, let bot = model.selectedBot {
-                SettingsPaneView(bot: bot, onDeleteRequest: { onDeleteRequest(bot) })
-                    .dismissOnOutsideClick(triggers: { [infoButtonFrame] }) {
-                        model.settingsOpen = false
+                    header(bot)
+                }
+                // While the first load is still in flight the loader shows
+                // in the middle of the chat: the empty copy belongs to a
+                // chat that is known empty, and flashing it in front of a
+                // history that arrives a moment later reads as a jump.
+                // Anything the bot needs an answer to docks here, between
+                // the transcript and the composer, so the question sits
+                // where the reply is typed instead of scrolling away.
+                // Hangs above the column from a line of no height, so it
+                // floats over the transcript's bottom edge and never takes
+                // the transcript's height the way the banner did.
+                Color.clear
+                    .frame(height: 0)
+                    .frame(maxWidth: .infinity)
+                    .overlay(alignment: .bottom) {
+                        if let note = model.threadError ?? model.saveError {
+                            ComposerNote(
+                                text: note,
+                                // A rail write that failed, or a new chat (a gone
+                                // one lands there), has nothing to re-read.
+                                reload: model.threadError != nil && model.currentChatId != nil ? { model.reloadFromNote() } : nil
+                            ) { model.dismissNote() }
+                                .frame(maxWidth: DesignTokens.Space.chatColumnMax)
+                                .padding(.horizontal, DesignTokens.Space.chatColumnPadding)
+                                .padding(.bottom, 8)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .transition(.opacity)
+                        }
                     }
-                    .onExitCommand(perform: closePanes)
-            }
-
-            if model.detailsOpen, let bot = model.selectedBot {
-                ChatDetailsPaneView(bot: bot)
-                    .dismissOnOutsideClick(triggers: { [infoButtonFrame] }) {
-                        model.detailsOpen = false
-                    }
-                    .onExitCommand(perform: closePanes)
+                    .zIndex(1)
+                askColumn(bot)
+                composerColumn(bot)
+            } else if let note = model.threadError ?? model.saveError {
+                // No bot to chat with (the last one was deleted, or the
+                // first create failed): the note still says what went wrong.
+                Spacer(minLength: 0)
+                ComposerNote(text: note) { model.dismissNote() }
+                    .frame(maxWidth: DesignTokens.Space.chatColumnMax)
+                    .padding(DesignTokens.Space.chatColumnPadding)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.C.surface)
         .onReceive(NotificationCenter.default.publisher(for: .replyToMessage)) { note in
             guard let text = note.userInfo?["text"] as? String,
                   let botId = note.userInfo?["botId"] as? String else { return }
-            model.reply(to: text, author: note.userInfo?["author"] as? String, botId: botId)
+            model.reply(to: text, botId: botId)
         }
     }
 
@@ -210,22 +164,16 @@ struct ChatView: View {
         model.transcriptReady && model.pending && model.sentSinceOpen
     }
 
-    private func closePanes() {
-        model.pane = .none
-    }
-
     // MARK: - Asks
 
     /// Every open question, docked above the composer in the chat column:
-    /// approvals the bot is waiting on and proposals it wants confirmed. Each
-    /// one states what it is asking and puts its answers on the same row, the
-    /// way a coding agent prompts before it acts.
+    /// approvals the bot is waiting on and the question it asked. Each one
+    /// states what it is asking and puts its answers on the same row, the way
+    /// a coding agent prompts before it acts.
     @ViewBuilder
     private func askColumn(_ bot: ShellBot) -> some View {
         let hasAsk = !model.approvals.isEmpty
             || !model.openQuestions.isEmpty
-            || !model.pendingRequests.isEmpty
-            || !model.openProposals.isEmpty
             || model.approvalError != nil
         if hasAsk {
             VStack(spacing: 8) {
@@ -234,30 +182,6 @@ struct ChatView: View {
                 }
                 ForEach(model.openQuestions) { question in
                     questionAsk(question, bot: bot)
-                }
-                ForEach(model.pendingRequests) { request in
-                    WaitingCard(
-                        request: request,
-                        botName: bot.name,
-                        busy: model.busyRequests.contains(request.id)
-                    ) { option in model.answerRequest(request, option: option) }
-                    dismiss: { model.dismissRequest(request) }
-                }
-                if let store = model.store {
-                    ForEach(model.openProposals) { proposal in
-                        ProposalCardView(
-                            proposal: proposal,
-                            bots: store.bots,
-                            pending: model.busyProposals.contains(proposal.id),
-                            onDecision: { confirmed in
-                                model.decideProposal(proposal, confirmed: confirmed)
-                            },
-                            onReopen: { model.reopenConnect(proposal) },
-                            onConfirmSecret: { secret in
-                                model.decideProposal(proposal, confirmed: true, secret: secret)
-                            }
-                        )
-                    }
                 }
                 if let error = model.approvalError {
                     Text(error)
@@ -293,22 +217,41 @@ struct ChatView: View {
             // approval is the normal way this app works, and a yellow panel
             // over the composer reads as something having gone wrong.
             .foregroundStyle(Theme.C.inkMuted)
-            if let origin = item.originLabel(openBotId: model.selectedBotId, openSessionId: model.selectedBot?.sessionId) {
-                Text(origin)
+            if let origin = model.otherChat(for: item) {
+                HStack(spacing: 8) {
+                    Text("From another chat: \(origin.title)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.C.inkFaint)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Button("Open chat") { model.open(origin) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.C.ink)
+                        .pointerOnHover()
+                        .accessibilityIdentifier("approval-open-chat")
+                    Spacer(minLength: 0)
+                }
+            } else if model.approvalFromUnlistedChat(item) {
+                Text("From another chat")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.C.inkFaint)
             }
-            // The preview is what the owner is approving; a single truncated
-            // line hides the end of a command or an instruction they are
-            // agreeing to run.
-            Text(item.preview)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.C.ink)
-                .lineLimit(6)
-                .fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(.leading)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            // The preview is what the owner is approving, so all of it shows:
+            // a cut-off command can hide the line that matters (the risk reason
+            // leads, and a long command scrolls inside the card).
+            ScrollView(.vertical) {
+                Text(item.preview)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.C.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: Self.previewMaxHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("approval-preview")
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 NativeButton("Deny", kind: .danger, small: true, enabled: canDecide) {
@@ -419,46 +362,12 @@ struct ChatView: View {
 
     // MARK: - Header
 
-    /// The bot as a centered pill over a bare header, and one quiet control
-    /// on the right that opens the bot's panel.
+    /// An empty band over the transcript: the chat's title lives only in the
+    /// sidebar (owner, 2026-10-25). The band keeps the window's top inset.
     private func header(_ bot: ShellBot) -> some View {
-        ZStack {
-            HStack(spacing: 8) {
-                if bot.isGroup, !members(bot).isEmpty {
-                    AvatarStackView(bots: members(bot), size: 22, maxVisible: 3)
-                } else {
-                    BotAvatarView(bot: bot, size: 22)
-                }
-                Text(bot.name)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.C.ink)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .padding(.leading, 6)
-            .padding(.trailing, 14)
-            .frame(height: 34)
-            .background(Theme.C.surface)
-            .clipShape(Capsule())
-            .overlay(Capsule().strokeBorder(Theme.C.edge, lineWidth: 1))
-            .smShadow()
-            .padding(.horizontal, 56)
-            HStack {
-                Spacer(minLength: 0)
-                NativeIconButton(systemImage: "sidebar.right", size: 32, iconSize: 15) {
-                    model.detailsOpen.toggle()
-                }
-                .help("Bot settings")
-                .accessibilityLabel("Bot settings")
-                .trackWindowFrame($infoButtonFrame)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: DesignTokens.Space.chatHead)
-    }
-
-    private func members(_ bot: ShellBot) -> [ShellBot] {
-        groupMemberBots(bot, store: model.store)
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: DesignTokens.Space.chatHead)
     }
 
     // MARK: - Transcript
@@ -485,69 +394,6 @@ struct ChatView: View {
         scrollToBottom(proxy)
     }
 
-    /// A chat put back from its snapshot or its stash has its rows ready, so
-    /// it lands as soon as its reload confirms them and layout reads the true
-    /// bottom at one height on two frames in a row: checked every frame,
-    /// where a replayed chat waits out three 50 ms checks, and shown without
-    /// the fade.
-    @available(macOS 15.0, *)
-    private func landRestored(_ proxy: ScrollViewProxy, botId: String) async {
-        slowRestoreBotId = nil
-        let slowAfter = Date().addingTimeInterval(Self.resumeConfirmWait)
-        let deadline = Date().addingTimeInterval(Self.landingCap)
-        var lastHeight: CGFloat = -1
-        var reason = "cap"
-        while Date() < deadline {
-            try? await Task.sleep(nanoseconds: 16_000_000)
-            guard !Task.isCancelled else { return }
-            let height = scrollProbe.contentHeight
-            // Geometry that never reports has nothing to settle; it is given
-            // a moment to show up first.
-            let atBottom = scrollProbe.seen
-                ? scrollProbe.distance <= 1 || height <= scrollProbe.viewport + 1
-                : Date() >= slowAfter
-            // The reload's word that a snapshot's rows are the session, or a
-            // send of the owner's in this visit, which lands on its own rows.
-            // Rows from a stash are confirmed by a replay from zero, which
-            // they never waited for.
-            let confirmed = model.transcriptReady || (model.pending && model.sentSinceOpen)
-                || !model.restoredFromSnapshot
-            if !confirmed {
-                if slowRestoreBotId != botId, Date() >= slowAfter { slowRestoreBotId = botId }
-                // The two equal frames are counted on the confirmed rows only.
-                lastHeight = -1
-                continue
-            }
-            if atBottom, height == lastHeight {
-                // The newest rows alone do not fill the window: a short
-                // column sits at the top and would drop to the bottom once
-                // the rest mounted, so the rest mounts before anything shows.
-                if model.slimFirstPaint, scrollProbe.seen, height <= scrollProbe.viewport + 1 {
-                    model.finishFirstPaint()
-                    lastHeight = -1
-                    continue
-                }
-                reason = scrollProbe.seen ? "settled" : "no_geometry"
-                break
-            }
-            if scrollProbe.seen, !atBottom { scrollToBottom(proxy) }
-            lastHeight = height
-        }
-        pinnedToBottom = true
-        // `slowRestoreBotId` stays set through the landing, so a slow
-        // chat's mascot fades out; the next landing clears it.
-        landedBotId = botId
-        PerfHarness.shared?.landed(botId: botId, reason: reason, stats: model.perfStats)
-        guard model.slimFirstPaint else { return }
-        // Two frames, so the landed frame is committed before the rest of the
-        // window is built above it. Not tied to this task: a remount in those
-        // frames must not leave the window slim for the rest of the visit.
-        Task { @MainActor [model] in
-            try? await Task.sleep(nanoseconds: 34_000_000)
-            model.finishFirstPaint(for: botId)
-        }
-    }
-
     /// The newest turn, without animating the trip. Used where the bottom
     /// anchor is known to be the right place: the transcript's own mount.
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
@@ -558,34 +404,13 @@ struct ChatView: View {
         }
     }
 
-    /// A run is still out by what its card shows (working or quiet), not by
-    /// the parent's state alone: one nobody has heard from for hours is not.
-    private func cardIsLive(_ card: SubagentCardData) -> Bool {
-        model.liveCardIds.contains(card.id)
-    }
-
-    private func subagentCard(_ card: SubagentCardData, bot: ShellBot) -> some View {
-        SubagentGroupCard(
-            card: card,
-            chat: model.subagentCards,
-            bot: bot,
-            parentBusy: model.pending || model.backgroundWorking,
-            parked: !model.pendingRequests.isEmpty,
-            idleSince: model.parentIdleSince,
-            maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
-            store: model.subagentProgress
-        )
-    }
-
     private func transcript(_ bot: ShellBot) -> some View {
-        let roster = model.store?.bots ?? []
         // What the rows are handed. A row is skipped while its inputs compare
-        // equal, and a bot's session pointer and last preview change every
-        // time any bot says anything, which made every row in this chat
-        // unequal, and rebuilt its markdown, for a reply in another one.
+        // equal, and a bot's last preview changes every time the bot says
+        // anything, which made every row in this chat unequal, and rebuilt its
+        // markdown.
         let rowBot = bot.transcriptFace
-        let rowRoster = roster.map(\.transcriptFace)
-        let streaming = model.pending || model.backgroundWorking
+        let streaming = model.pending
         // Built once per transcript change in the model, not once per body.
         // This view re-evaluates on every keystroke in the composer, and
         // regrouping several hundred rows there is what made typing stutter.
@@ -593,51 +418,10 @@ struct ChatView: View {
         // newest turn, and older ones as the reader asks for them. The stack
         // stays eager on purpose (see `AppModel.transcriptWindow`).
         let window = model.transcriptWindow
-        // A bubble that follows a sub-agent card keeps the full gap: the card
-        // broke its turn's stack, and the tight stacking would sit it 8 pt under.
-        // A card sits under the block that draws its anchor row (a run of
-        // pictures draws several), and goes to the tail when none in the
-        // window does.
-        let cardsByBlock: [String: [SubagentCardData]] = model.subagentCards.reduce(into: [:]) { found, card in
-            guard let anchor = card.anchorRowId,
-                  let block = window.blocks.first(where: { $0.holds(rowId: anchor) }) else { return }
-            found[block.id, default: []].append(card)
-        }
-        // Only a card with no anchor, or whose anchor is nowhere in the chat,
-        // goes to the tail. One whose block is merely above the mounted window
-        // waits for "Show earlier" to mount it.
-        // A settled card with no row to follow is not drawn: at the tail it
-        // would sit under the newest message as if it were new.
-        let tailCards = model.subagentCards.filter { card in
-            if let anchor = card.anchorRowId, model.transcriptBlocks.contains(where: { $0.holds(rowId: anchor) }) {
-                return false
-            }
-            return cardIsLive(card)
-        }
-        // A card covers the sub-agent work only when it sits under its own
-        // reply and has a run still out. One parked at the tail does not, so
-        // a real working row is never hidden by it.
-        let hasActiveCard = cardsByBlock.values.flatMap { $0 }.contains { cardIsLive($0) }
-        var afterCard = Set<String>()
-        for (above, below) in zip(window.blocks, window.blocks.dropFirst()) where cardsByBlock[above.id] != nil {
-            afterCard.insert(below.id)
-        }
         return ScrollViewReader { proxy in
             ScrollView {
                     VStack(alignment: .leading, spacing: DesignTokens.Space.transcriptGap) {
-                        if model.showOnboarding {
-                            OnboardingCardView(
-                                name: bot.name,
-                                onFillForm: {
-                                    model.dismissOnboarding(botId: bot.id)
-                                    model.settingsOpen = true
-                                },
-                                onDismiss: { model.dismissOnboarding(botId: bot.id) }
-                            )
-                            // A host card on the bot side, under the bubble cap.
-                            .frame(maxWidth: DesignTokens.Space.bubbleMax)
-                        }
-                        if window.hidden > 0 {
+                        if window.hidden > 0 || model.hasEarlierRows {
                             ShowEarlierRow { model.showEarlierMessages() }
                         }
                         ForEach(window.blocks) { block in
@@ -645,7 +429,7 @@ struct ChatView: View {
                             switch block {
                             case .dayDivider(_, let label):
                                 DayDividerRow(label: label)
-                            case .message(let row, _) where row.kind == .failure:
+                            case .message(let row) where row.kind == .failure:
                                 // Only the newest failed turn keeps a live
                                 // Retry; older ones are the record.
                                 let live = row.id == model.retryableFailureRowId
@@ -656,35 +440,46 @@ struct ChatView: View {
                                     until: live ? model.failureRetryUntil : nil,
                                     maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85)
                                 ) { model.retryLastTurn() }
-                            case .message(let row, _) where row.kind == .unsent:
+                            case .message(let row) where row.kind == .unsent:
                                 UnsentRow(
                                     text: row.text,
-                                    retryEnabled: !model.pending,
+                                    retryEnabled: true,
                                     editEnabled: model.canEditUnsent,
                                     maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
                                     retry: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.retryUnsent(id) } },
                                     edit: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.editUnsent(id) } },
                                     dismiss: { if let id = UnsentMessage.id(fromLineRowId: row.id) { model.dismissUnsent(id) } }
                                 )
-                            case .message(let row, let recipients):
-                                if row.id == model.continuationRowId {
-                                    // The earlier session could not go on, so
-                                    // this one opened with a brief of it.
-                                    DayDividerRow(label: "Continued from an earlier session")
+                            case .message(let row) where row.kind == .card:
+                                // A connect card sits where the bot asked for
+                                // it; once it is answered it leaves.
+                                if let proposal = model.openProposals.first(where: { $0.id == row.text }) {
+                                    ProposalCardView(
+                                        proposal: proposal,
+                                        pending: model.busyProposals.contains(proposal.id),
+                                        onDecision: { confirmed in
+                                            model.decideProposal(proposal, confirmed: confirmed)
+                                        },
+                                        onReopen: { model.reopenConnect(proposal) },
+                                        onConfirmSecret: { secret in
+                                            model.decideProposal(proposal, confirmed: true, secret: secret)
+                                        }
+                                    )
                                 }
+                            case .message(let row):
                                 TranscriptRowView(
                                     row: row,
                                     bot: rowBot,
-                                    bots: rowRoster,
-                                    recipients: recipients,
                                     maxBubbleWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
-                                    queued: model.queuedRowIds.contains(row.id),
                                     // The reply still being written parses
                                     // into one replaceable slot. Part of the
                                     // row's equality, so the turn finishing
                                     // moves its final text into the shared
                                     // cache even when no delta follows.
-                                    streaming: streaming && model.latestReplyRunIds.contains(row.id)
+                                    streaming: streaming && model.latestReplyRunIds.contains(row.id),
+                                    // Only the newest finished reply offers
+                                    // its follow-ups; older ones drop them.
+                                    showsFollowUps: !streaming && model.latestReplyRunIds.contains(row.id)
                                 )
                                 .equatable()
                                 // One turn can post several bubbles; they
@@ -692,7 +487,6 @@ struct ChatView: View {
                                 // Not the first mounted bubble: the one it
                                 // would stack under is behind the row.
                                 .padding(.top, model.continuationIds.contains(row.id) && row.id != window.startId
-                                    && !afterCard.contains(row.id)
                                     ? DesignTokens.Space.bubbleStackGap - DesignTokens.Space.transcriptGap
                                     : 0)
                                 // Only the newest reply measures itself, and
@@ -710,41 +504,21 @@ struct ChatView: View {
                                         }
                                     }
                                 }
-                                // eve held this message behind a request and
-                                // never replayed it.
-                                if model.droppedRowIds.contains(row.id) {
-                                    FailureRow(
-                                        text: "\(bot.name) never got this message",
-                                        retryable: !Attachments.namesEchoedFile(row.text) && !model.resentRowIds.contains(row.id),
-                                        enabled: !model.pending,
-                                        until: nil,
-                                        maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85),
-                                        buttonTitle: "Send again"
-                                    ) { model.resendDropped(rowId: row.id, text: row.text) }
-                                    .padding(.top, DesignTokens.Space.bubbleStackGap - DesignTokens.Space.transcriptGap)
+                                // The row a search hit points at, for a moment.
+                                .background {
+                                    RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous)
+                                        .fill(Theme.C.sunken)
+                                        .padding(-6)
+                                        .opacity(model.highlightRowId == row.id ? 1 : 0)
+                                        .animation(.easeOut(duration: 0.3), value: model.highlightRowId)
                                 }
                             case .images(let rows):
                                 GeneratedImageRun(
                                     rows: rows,
                                     maxWidth: min(DesignTokens.Space.bubbleMax, columnWidth * 0.85)
                                 )
-                            case .summary(_, let count, let botIds):
-                                BotMetaRow(
-                                    prefix: "\(count) messages with",
-                                    botIds: botIds,
-                                    roster: roster
-                                )
-                            }
-                            // The sub-agents a turn launched sit under its reply.
-                            ForEach(cardsByBlock[block.id] ?? []) { card in
-                                subagentCard(card, bot: bot)
                             }
                           }
-                        }
-                        // A card with no row to follow, or whose row is gone,
-                        // goes at the tail where the working row would be.
-                        ForEach(tailCards) { card in
-                            subagentCard(card, bot: bot)
                         }
                         // Up for the whole turn, under whichever bubble is
                         // newest, so the owner can see the bot is still going
@@ -752,35 +526,24 @@ struct ChatView: View {
                         // when the row leaves: the content is bottom-aligned,
                         // and a row that vanished pulled everything down by
                         // its height.
-                        Group {
-                            if model.pending || model.backgroundWorking, !(model.activity.isSubagent && hasActiveCard) {
-                                WorkingRow(
-                                    bot: bot,
-                                    activity: model.activity,
-                                    since: model.activitySince,
-                                    toolkits: model.connectorApps,
-                                    runningModel: model.runningModelNote(for: bot.id)
-                                )
-                            } else if let since = model.runningTaskSince, !hasActiveCard {
-                                // The turn that started a sub-agent is over,
-                                // and the sub-agent is still at it.
-                                WorkingRow(bot: bot, activity: .subagent(finished: false), since: since, toolkits: [])
-                            }
-                        }
+                        WorkingSlot(
+                            working: model.pending,
+                            bot: bot,
+                            activity: model.activity,
+                            call: model.activityCall,
+                            since: model.activitySince,
+                            runningModel: model.runningModelNote(for: bot.id)
+                        )
                         .frame(height: WorkingRow.height, alignment: .leading)
-                        if !model.searchHits.isEmpty {
-                            SearchChipsRow(chips: model.searchHits)
-                        }
                         // Spacing only: the scroll target is the marker below,
                         // at the very bottom of the content.
                         Color.clear
                             .frame(height: 1)
                     }
-                    // The transcript spans the pane, not a centered column:
-                    // the owner's bubbles sit flush right and the bots' flush
-                    // left, however wide the window, with `bubbleMax` keeping
-                    // the far side empty.
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // A centered column as wide as the composer's: the owner's
+                    // bubbles sit at its right edge and the bot's at its left,
+                    // so a wide window doesn't push them to the pane's edges.
+                    .frame(maxWidth: DesignTokens.Space.chatColumnMax, alignment: .leading)
                     .background(
                         GeometryReader { proxy in
                             Color.clear.preference(key: ChatColumnWidthKey.self, value: proxy.size.width)
@@ -842,7 +605,7 @@ struct ChatView: View {
                     probe: scrollProbe,
                     onDrift: { repinAfterBannerChange(proxy) }
                 ))
-                // The transcript lands hidden under the mascot and is shown
+                // The transcript lands hidden under the loader and is shown
                 // only once it rests at its newest turn. Rows on screen before
                 // the replay is in (the durable rows, a cached copy) are
                 // replaced by it, and the swap left the view mid-history, so
@@ -869,18 +632,14 @@ struct ChatView: View {
                     // Shown from its first frame (see `sentIntoReadyChat`);
                     // this only records it, so the rows stay up once the turn
                     // ends and the condition no longer holds.
+                    let key = model.chatKey
                     if sentIntoReadyChat {
-                        landedBotId = bot.id
-                        PerfHarness.shared?.landed(botId: bot.id, reason: "sent", stats: model.perfStats)
-                        model.finishFirstPaint()
+                        landedChatKey = key
+                        PerfHarness.shared?.landed(chatKey: key, reason: "sent", stats: model.perfStats)
                         return
                     }
-                    gatingBotId = bot.id
-                    defer { if gatingBotId == bot.id { gatingBotId = nil } }
-                    if #available(macOS 15.0, *), model.restoredFromCache {
-                        await landRestored(proxy, botId: bot.id)
-                        return
-                    }
+                    gatingChatKey = key
+                    defer { if gatingChatKey == key { gatingChatKey = nil } }
                     let deadline = Date().addingTimeInterval(Self.landingCap)
                     var steady = 0
                     var lastHeight: CGFloat = -1
@@ -892,8 +651,7 @@ struct ChatView: View {
                         // A send counts only when it was made in this visit.
                         // One still running from before the chat was left
                         // sits on rows whose history may not be in yet.
-                        guard model.transcriptReady || (model.pending && model.sentSinceOpen)
-                                || (model.restoredFromCache && !model.restoredFromSnapshot) else {
+                        guard model.transcriptReady || (model.pending && model.sentSinceOpen) else {
                             scrollToBottom(proxy)
                             continue
                         }
@@ -907,7 +665,7 @@ struct ChatView: View {
                             let atBottom = !scrollProbe.seen
                                 || scrollProbe.distance <= 1
                                 || height <= scrollProbe.viewport + 1
-                            if atBottom, height == lastHeight || model.pending || model.backgroundWorking {
+                            if atBottom, height == lastHeight || model.pending {
                                 steady += 1
                             } else {
                                 steady = 0
@@ -941,7 +699,7 @@ struct ChatView: View {
                     }
                     // Hidden, the reader cannot have scrolled: it is pinned.
                     pinnedToBottom = true
-                    landedBotId = bot.id
+                    landedChatKey = key
                     if let perf = PerfHarness.shared {
                         var reason = steady >= 3 ? "settled" : "cap"
                         if #available(macOS 15.0, *) {
@@ -949,18 +707,27 @@ struct ChatView: View {
                         } else if steady >= 3 {
                             reason = "unmeasured"
                         }
-                        perf.landed(botId: bot.id, reason: reason, stats: model.perfStats)
+                        perf.landed(chatKey: key, reason: reason, stats: model.perfStats)
                     }
-                    model.finishFirstPaint()
                 }
                 // A replay slower than the cap finishes after the rows were
                 // shown; a reader still at the newest turn is kept there.
                 .onChange(of: model.transcriptReady) { _, ready in
-                    if ready, landedBotId == bot.id { repinAfterBannerChange(proxy) }
+                    if ready, landedChatKey == model.chatKey { repinAfterBannerChange(proxy) }
+                }
+                // A search hit: the chat goes to the row, wherever it is.
+                .onChange(of: model.highlightRowId) { _, id in
+                    guard let id else { return }
+                    pinnedToBottom = false
+                    holdingReplyAnchor = false
+                    scrollProbe.markAppScroll()
+                    var transaction = Transaction()
+                    transaction.disablesAnimations = true
+                    withTransaction(transaction) { proxy.scrollTo(id, anchor: .center) }
                 }
                 .onPreferenceChange(ReplyHeightKey.self) { replyHeight = $0 }
                 // `defaultScrollAnchor(.bottom)` holds the bottom as the content
-                // grows: opening a chat, switching bots, streaming and the
+                // grows: opening a chat, switching chats, streaming and the
                 // durable reload keep their place without being told to.
                 // Explicit bottom scrolls are kept to the few places that need
                 // one (the send below, the banner and landing re-pins), because
@@ -1005,7 +772,7 @@ struct ChatView: View {
                 // read from its first line, so the view moves there once, when
                 // the turn finishes. A reply that already fits is left alone.
                 .onChange(of: model.pending) { wasPending, nowPending in
-                    guard wasPending, !nowPending, landedBotId == bot.id, pinnedToBottom,
+                    guard wasPending, !nowPending, landedChatKey == model.chatKey, pinnedToBottom,
                           !scrollProbe.dragging,
                           // The viewport is already the area under the header.
                           replyHeight > viewportHeight - Self.replyAnchorSlack,
@@ -1025,14 +792,11 @@ struct ChatView: View {
 
     // MARK: - Empty state
 
-    /// The brand wave while the first transcript load is in flight. The empty
-    /// copy is only for a chat known to be empty; before then the mascot marks
+    /// The loader while the first transcript load is in flight. The empty
+    /// copy is only for a chat known to be empty; before then the loader marks
     /// the wait so a cold open never reads as a blank pane.
     private var loadingState: some View {
-        ZStack {
-            LoadingRing(size: 84)
-            BrandMotionView(size: 56)
-        }
+        DotsRing(size: 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.opacity)
             .accessibilityElement(children: .ignore)
@@ -1040,39 +804,36 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private func emptyState(_ bot: ShellBot) -> some View {
+    private var emptyState: some View {
         // Not under the no-model bar: a tap would fill a composer that can't send.
-        if bot.id == starterBotId, !bot.isGroup, !firstMessageSent,
-           !(model.noModelConnected || noModelPreview) {
-            starters(bot)
-        } else if model.noModelConnected || noModelPreview, !bot.isGroup {
-            connectFirst(bot)
+        if model.noModelConnected || noModelPreview {
+            connectFirst
         } else {
-            plainEmptyState(bot)
+            starters
         }
     }
 
-    /// The first chat's empty state: six things a local Mac agent does that
-    /// people may not expect, two of them making more bots. A tap fills the
-    /// composer with the full prompt and sends nothing; the tiles step back
-    /// while the composer holds text.
-    private func starters(_ bot: ShellBot) -> some View {
+    /// A new chat: the logo, what Useful Bot does and three things to start
+    /// from. A tap fills the composer with the full prompt and sends nothing;
+    /// the chips step back while the composer holds text.
+    private var starters: some View {
         let typing = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("What should we do first?")
-                    .font(.system(size: 22, weight: .semibold))
-                    .tracking(DesignTokens.Tracking.heading * 22)
-                    .foregroundStyle(Theme.C.ink)
-                Text("\(bot.name) can research, write, work with files and set up new bots for you.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.C.inkMuted)
-            }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(StarterPrompt.all) { prompt in
+        return VStack(spacing: 14) {
+            BrandAvatarView(size: 56)
+            Text("What should we do first?")
+                .font(.system(size: 22, weight: .semibold))
+                .tracking(DesignTokens.Tracking.heading * 22)
+                .foregroundStyle(Theme.C.ink)
+            Text("Useful Bot can research, write, work with files and run routines for you.")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.C.inkMuted)
+                .multilineTextAlignment(.center)
+            WrapHStack(spacing: 8, centered: true) {
+                ForEach(StarterPrompt.first) { prompt in
                     StarterPromptButton(text: prompt.label) { model.fillDraft(prompt.prompt) }
                 }
             }
+            .padding(.top, 6)
             // Faded, not removed, so the heading above doesn't move.
             .opacity(typing ? 0 : 1)
             .allowsHitTesting(!typing)
@@ -1081,19 +842,18 @@ struct ChatView: View {
         }
         .frame(maxWidth: DesignTokens.Space.bubbleMax)
         .padding(.horizontal, DesignTokens.Space.chatColumnPadding)
+        .padding(.bottom, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// A chat with nothing to answer it yet: one thing to do, and what the bot
-    /// can do once it can. The tiles are a preview, not buttons: a tap would
+    /// can do once it can. The chips are a preview, not buttons: a tap would
     /// fill a composer that can't send.
-    private func connectFirst(_ bot: ShellBot) -> some View {
+    private var connectFirst: some View {
         VStack(spacing: 28) {
             VStack(spacing: 10) {
-                BotFaceView(color: BrandAssets.colorID(for: bot), size: 64)
-                    .frame(width: 64, height: 64)
+                BrandAvatarView(size: 56)
                     .padding(.bottom, 6)
-                    .accessibilityHidden(true)
                 Text(model.noModelRetiredSentence == nil ? "Connect a model to start" : "Your connection was turned off")
                     .font(.system(size: DesignTokens.FontSize.emptyTitle, weight: .semibold))
                     .tracking(DesignTokens.Tracking.tight * DesignTokens.FontSize.emptyTitle)
@@ -1108,74 +868,22 @@ struct ChatView: View {
                 .padding(.top, 6)
                 .accessibilityIdentifier("no-model-connect")
             }
-            if bot.id == starterBotId {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Then try")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.C.inkFaint)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                        ForEach(StarterPrompt.all) { prompt in
-                            StarterPromptButton(text: prompt.label) {}
-                        }
+            VStack(spacing: 10) {
+                Text("Then try")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.C.inkFaint)
+                WrapHStack(spacing: 8, centered: true) {
+                    ForEach(StarterPrompt.first) { prompt in
+                        StarterPromptButton(text: prompt.label) {}
                     }
-                    .allowsHitTesting(false)
-                    .opacity(0.6)
                 }
+                .allowsHitTesting(false)
+                .opacity(0.6)
             }
         }
         .frame(maxWidth: DesignTokens.Space.bubbleMax)
         .padding(.horizontal, DesignTokens.Space.chatColumnPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func plainEmptyState(_ bot: ShellBot) -> some View {
-        VStack(spacing: 8) {
-            if !bot.isGroup {
-                BotFaceView(color: BrandAssets.colorID(for: bot), size: 64)
-                    .frame(width: 64, height: 64)
-                    .padding(.bottom, 8)
-                    .accessibilityHidden(true)
-            }
-            Text("What can I do for you?")
-                .font(.system(size: DesignTokens.FontSize.emptyTitle, weight: .semibold))
-                .tracking(DesignTokens.Tracking.tight * DesignTokens.FontSize.emptyTitle)
-                .foregroundStyle(Theme.C.ink)
-            if bot.isGroup {
-                Text(groupCopy(bot))
-                    .font(.system(size: DesignTokens.FontSize.emptyBody))
-                    .lineSpacing(6)
-                    .foregroundStyle(Theme.C.inkMuted)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 448)
-            } else {
-                everydayPrompts
-                    .padding(.top, 20)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// Four everyday things to start from. A tap fills the composer and sends
-    /// nothing; like the first chat's starters, the tiles step back while the
-    /// composer holds text.
-    private var everydayPrompts: some View {
-        let typing = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(StarterPrompt.everyday) { prompt in
-                StarterPromptButton(text: prompt.label) { model.fillDraft(prompt.prompt) }
-            }
-        }
-        .frame(maxWidth: 560)
-        .opacity(typing ? 0 : 1)
-        .allowsHitTesting(!typing)
-        .accessibilityHidden(typing)
-        .animation(Theme.ease(0.2), value: typing)
-    }
-
-    private func groupCopy(_ bot: ShellBot) -> String {
-        let names = members(bot).map(\.name)
-        return "Group chat with \(names.isEmpty ? "no members yet" : names.joined(separator: ", ")). Untargeted messages go to the orchestrator; @name directs one bot."
     }
 
     // MARK: - Composer column
@@ -1195,7 +903,7 @@ struct ChatView: View {
             // Setup was skipped, or every provider was removed: nothing to
             // chat with until one is connected.
             // Not over an empty chat: its middle already asks for the same.
-            if noModel, model.hasThreadContent || model.pending || bot.isGroup {
+            if noModel, model.hasThreadContent || model.pending {
                 HStack(spacing: 12) {
                     Text(model.noModelRetiredSentence == nil ? "Connect a model to start chatting." : "Your connection was turned off. See Providers.")
                         .font(.system(size: 14))
@@ -1304,8 +1012,8 @@ private struct FailureRow: View {
     }
 }
 
-/// The line under an owner message the server refused before the bot got it:
-/// what happened, then Retry and Edit. Right-aligned under the bubble it
+/// The line under an owner message the bot never got: what happened, then
+/// Send again, Edit and Dismiss. Right-aligned under the bubble it
 /// belongs to. Edit waits for an empty composer, since the text would
 /// otherwise stack on whatever is there.
 private struct UnsentRow: View {
@@ -1331,7 +1039,7 @@ private struct UnsentRow: View {
                     .multilineTextAlignment(.trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                NativeButton("Retry", kind: .secondary, small: true, enabled: retryEnabled, action: retry)
+                NativeButton("Send again", kind: .secondary, small: true, enabled: retryEnabled, action: retry)
                     .accessibilityIdentifier("unsent-retry")
                 NativeButton("Edit", kind: .secondary, small: true, enabled: editEnabled, action: edit)
                     .help(editEnabled ? "" : UnsentMessage.editBlockedHint)
@@ -1425,32 +1133,6 @@ private struct ChatColumnWidthKey: PreferenceKey {
     }
 }
 
-/// A spinner arc circling the mascot while a chat loads, so the wait reads
-/// as work in progress. Held still when the owner asks for reduced motion.
-private struct LoadingRing: View {
-    let size: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var spinning = false
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(Theme.C.edge, lineWidth: 2)
-            Circle()
-                .trim(from: 0, to: 0.28)
-                .stroke(Theme.C.inkMuted, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(spinning ? 360 : 0))
-                .animation(
-                    reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false),
-                    value: spinning
-                )
-        }
-        .frame(width: size, height: size)
-        .accessibilityHidden(true)
-        .onAppear { spinning = true }
-    }
-}
-
 /// The centered date rule from the Grok Bot reference: "Today 5:10 PM".
 /// The row above a windowed transcript. Mounts the next stretch of history;
 /// `defaultScrollAnchor(.bottom)` keeps what was on screen in place while
@@ -1495,52 +1177,36 @@ private struct DayDividerRow: View {
     }
 }
 
-/// The centered cross-bot strip: "Messaged Growth", "Message from CEO",
-/// "2 messages with 2 Bots". Centered over a bubble too, the way Grok sets
-/// every event line apart from what was said. Avatars come from the live roster; a deleted bot
-/// falls back to a plain count.
-private struct BotMetaRow: View {
-    let prefix: String
-    let botIds: [String]
-    var names: [String] = []
-    let roster: [ShellBot]
-
-    private var bots: [ShellBot] {
-        botIds.compactMap { id in roster.first { $0.id == id } }
-    }
-
-    private var label: String {
-        ChatAttribution.metaLabel(idCount: botIds.count, resolved: bots.map(\.name), names: names)
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                Text(prefix)
-                if !bots.isEmpty {
-                    AvatarStackView(bots: bots, size: 16, maxVisible: 2)
-                }
-                Text(label)
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.C.inkMuted)
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private extension ShellBot {
     /// This bot without the fields that move on every turn and that no
     /// transcript row draws: a row shows a name and a face, never a preview.
     var transcriptFace: ShellBot {
         var face = self
-        face.sessionId = nil
+        face.chatId = nil
         face.lastPreview = ""
         face.lastAt = nil
         return face
+    }
+}
+
+/// A file the owner attached, as a small chip under the message.
+private struct AttachmentChip: View {
+    let name: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "paperclip")
+                .font(.system(size: 11))
+            Text(name)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(Theme.C.inkMuted)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Theme.C.sunken, in: Capsule())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1649,66 +1315,24 @@ private struct UserBubbleView: View {
 struct TranscriptRowView: View, Equatable {
     let row: TranscriptRow
     let bot: ShellBot
-    var bots: [ShellBot] = []
-    var recipients: [String] = []
     var maxBubbleWidth: CGFloat = 612
-    /// eve is holding this owner message until a waiting card is answered.
-    var queued = false
     /// The bubble of a turn still running: its markdown is parsed into a
     /// transient slot instead of the shared cache, one entry per delta.
     var streaming = false
+    /// Draw the reply's closing "Follow-ups:" list under the bubble. Off, the
+    /// list is left out.
+    var showsFollowUps = false
 
     var body: some View {
         switch row.kind {
         case .user:
             userRow
-        case .handoff:
-            VStack(alignment: .leading, spacing: 8) {
-                BotMetaRow(
-                    prefix: "Messaged",
-                    botIds: recipients.isEmpty ? row.targetBotIds : recipients,
-                    names: ["a teammate"],
-                    roster: bots
-                )
-                replyRow(showsSpeaker: false)
-            }
-        case .post:
-            let author = row.author ?? ""
-            VStack(alignment: .leading, spacing: 8) {
-                // Always labelled: an unattributed post on the bot side would
-                // read as the chat's own bot speaking.
-                BotMetaRow(
-                    prefix: "Message from",
-                    botIds: row.authorBotId.map { [$0] } ?? [],
-                    // A deleted bot that stored no name still reads as a
-                    // teammate rather than as "1 Bot".
-                    names: [author.isEmpty ? "a teammate" : author],
-                    roster: bots
-                )
-                // Whatever a teammate posts, a question to this bot or an
-                // answer, is a bot speaking: it sits on the left in the bot
-                // bubble, under the "Message from" line that names it. Only
-                // the owner's words go on the right.
-                replyRow(showsSpeaker: false)
-            }
-        case .note where row.connectedName != nil:
-            connectedCard(name: row.connectedName ?? "")
         case .note:
-            // An event, not something said: one centered line with the
-            // face of whoever did it, like the cross-bot strips.
+            // An event, not something said: one centered line.
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    noteAvatar
-                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                    // The chat's own bot needs only its face; a teammate's
-                    // note says whose it is.
-                    if let name = noteAuthorName {
-                        Text(name).fontWeight(.semibold)
-                    }
-                    Text(row.text)
-                        .multilineTextAlignment(.center)
-                }
+                Text(row.text)
+                    .multilineTextAlignment(.center)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.C.inkMuted)
                 .frame(maxWidth: max(160, maxBubbleWidth))
@@ -1717,9 +1341,9 @@ struct TranscriptRowView: View, Equatable {
             }
             .padding(.vertical, 2)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel([noteAuthorName, row.text].compactMap { $0 }.joined(separator: ": "))
+            .accessibilityLabel(row.text)
         case .assistant:
-            replyRow(showsSpeaker: true)
+            replyRow
         case .widget:
             // A host card on the bot side, under the same width cap as every
             // bubble.
@@ -1736,16 +1360,18 @@ struct TranscriptRowView: View, Equatable {
         case .page:
             // The row's text is the page title; the id names the Library item.
             PageRow(mediaId: row.imageId ?? "", title: row.text)
-        case .failure, .unsent:
-            // Drawn by the transcript itself, which owns its Retry.
+        case .failure, .unsent, .card:
+            // Drawn by the transcript itself, which owns their buttons.
             EmptyView()
         }
     }
 
     private var userRow: some View {
         // Pictures the owner sent sit above their words, a size up from the
-        // composer's preview; the lines that name them are not shown.
-        let sent = Attachments.sentImages(in: row.text)
+        // composer's preview; other files are a chip each under them.
+        let images = row.attachments.filter(\.isImage).map(\.name)
+        let files = row.attachments.filter { !$0.isImage }
+        let sent = (text: row.text, images: images)
         return VStack(alignment: .trailing, spacing: 6) {
             if !sent.images.isEmpty {
                 HStack(spacing: 0) {
@@ -1757,6 +1383,17 @@ struct TranscriptRowView: View, Equatable {
                     }
                     .frame(maxWidth: max(160, maxBubbleWidth), alignment: .trailing)
                     .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            if !files.isEmpty {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 60)
+                    WrapHStack(spacing: 6) {
+                        ForEach(files.indices, id: \.self) { index in
+                            AttachmentChip(name: files[index].name)
+                        }
+                    }
+                    .frame(maxWidth: max(160, maxBubbleWidth), alignment: .trailing)
                 }
             }
             if !sent.text.isEmpty {
@@ -1771,28 +1408,20 @@ struct TranscriptRowView: View, Equatable {
                     }
                 }
             }
-            if queued { QueuedTag() }
+            if row.queued { QueuedTag() }
         }
     }
 
-    /// One message from a bot, in its own bubble. The avatar gutter shows only
-    /// in a room where more than one bot can answer.
-    private func replyRow(showsSpeaker: Bool) -> some View {
-        let attributed = showsSpeaker && row.authorBotId != nil && row.authorBotId != bot.id
-        let showsAvatar = attributed && speaker != nil
+    /// One message from a bot, in its own bubble.
+    private var replyRow: some View {
+        // While the reply streams a half-written list stays out of the bubble;
+        // it shows under the reply once the turn ends.
+        let followUps = FollowUps.split(row.text, partial: streaming)
+        let shown = followUps?.body ?? row.text
         return HStack(alignment: .top, spacing: 10) {
-            if showsAvatar, let speaker {
-                BotAvatarView(bot: speaker, size: 24)
-            }
             VStack(alignment: .leading, spacing: 4) {
-                if attributed, let speakerLabel {
-                    Text(speakerLabel)
-                        .font(.system(size: DesignTokens.FontSize.chatMeta, weight: .semibold))
-                        .tracking(DesignTokens.Tracking.label * DesignTokens.FontSize.chatMeta)
-                        .foregroundStyle(Theme.C.inkFaint)
-                }
-                MessageHoverActions(text: row.text, botId: bot.id, author: row.authorBotId != nil && row.authorBotId != bot.id ? (speaker?.name ?? row.author) : nil, enabled: !streaming) {
-                    ChatMarkdownView(text: row.text, expandsWidth: false, streamingKey: streaming ? row.id : nil)
+                MessageHoverActions(text: shown, botId: bot.id, enabled: !streaming) {
+                    ChatMarkdownView(text: shown, expandsWidth: false, streamingKey: streaming ? row.id : nil)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(Theme.C.bubbleBot)
@@ -1805,147 +1434,181 @@ struct TranscriptRowView: View, Equatable {
                 // block scrolls or wraps inside it rather than going full
                 // column.
                 .frame(maxWidth: max(160, maxBubbleWidth) + MessageHoverActionsWidth.value, alignment: .leading)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    /// The host's word that an app was added, written by the app and not by
-    /// the bot: a bubble with the logo, the name and the outcome.
-    private func connectedCard(name: String) -> some View {
-        HStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                AppLogo(name: name, url: row.connectedLogo)
-                Text(name)
-                    .font(Theme.font(DesignTokens.FontSize.chatBody, .semibold))
-                    .foregroundStyle(Theme.C.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 24)
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("Added")
-                        .font(.system(size: 12, weight: .medium))
+                if showsFollowUps, let questions = followUps?.questions, !questions.isEmpty {
+                    FollowUpList(questions: questions)
+                        .frame(maxWidth: max(160, maxBubbleWidth), alignment: .leading)
+                        .padding(.top, 6)
                 }
-                .foregroundStyle(Theme.C.success)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Theme.C.successSoft)
-                .clipShape(Capsule())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: 420)
-            .background(Theme.C.bubbleBot)
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
-            .cardLift(cornerRadius: DesignTokens.Radius.md)
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name) added")
     }
 
-    /// A note's face: the speaker's, the chat owner's for its own note, and
-    /// none at all when the author id names a bot the roster no longer has.
-    @ViewBuilder
-    private var noteAvatar: some View {
-        switch ChatAttribution.face(
-            authorBotId: row.authorBotId,
-            ownerBotId: bot.id,
-            speakerResolved: speaker != nil
-        ) {
-        case .speaker:
-            if let speaker { BotAvatarView(bot: speaker, size: 16) }
-        case .owner:
-            BotAvatarView(bot: bot, size: 16)
-        case .unknown:
-            // Centered, a missing face just leaves the line shorter.
-            EmptyView()
+}
+
+/// Questions the bot suggests asking next, under its newest reply: one per
+/// line in the muted ink, so they read as an offer, not part of the answer.
+/// Each sends itself. Only this view reads the model, so the transcript's
+/// other rows don't redraw with it.
+private struct FollowUpList: View {
+    @EnvironmentObject private var model: AppModel
+    let questions: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Follow-ups")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.C.inkFaint)
+                .padding(.bottom, 4)
+            // By position: the model can repeat a question.
+            ForEach(Array(questions.enumerated()), id: \.offset) { _, question in
+                // Sent on its own: a draft or files waiting in the composer stay there.
+                FollowUpRow(question: question, enabled: !model.pending) { model.sendFromCard(question) }
+            }
         }
+        .padding(.leading, 16)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Follow-ups")
     }
+}
 
-    /// The bot that spoke, when the row is attributed and it is not the chat
-    /// owner itself.
-    private var speaker: ShellBot? {
-        guard let id = row.authorBotId, id != bot.id else { return nil }
-        return bots.first { $0.id == id }
+private struct FollowUpRow: View {
+    let question: String
+    let enabled: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.C.inkFaint)
+                // Code marks read as noise in a one-line suggestion; the
+                // question is sent as written.
+                Text(question.replacingOccurrences(of: "`", with: ""))
+                    .font(.system(size: 13))
+                    .foregroundStyle(hovering && enabled ? Theme.C.ink : Theme.C.inkMuted)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .pointerOnHover()
+        .onHover { hovering = $0 }
+        .accessibilityLabel(question)
     }
+}
 
-    /// A note's author when it is not the chat's own bot.
-    private var noteAuthorName: String? {
-        // A note with only a stored name still says whose it is, unless the
-        // name is the chat's own bot.
-        guard row.authorBotId != bot.id else { return nil }
-        let name = speaker?.name ?? row.author ?? ""
-        if row.authorBotId == nil, name == bot.name { return nil }
-        return name.isEmpty ? nil : name
-    }
+/// The working row while a turn runs, and for the 50 ms the dots take to
+/// shrink away once it ends, so the mark leaves the way the spec draws it
+/// instead of being cut.
+private struct WorkingSlot: View {
+    let working: Bool
+    let bot: ShellBot
+    let activity: TurnActivity
+    let call: String?
+    let since: Date
+    var runningModel: String?
 
-    private var speakerLabel: String? {
-        guard speaker != nil || (row.authorBotId != nil && row.authorBotId != bot.id) else { return nil }
-        return ChatAttribution.label(speakerName: speaker?.name, author: row.author)
+    @State private var finishing = false
+    @State private var wasWorking = false
+
+    /// The label settles on the muted ink over 150 ms (WorkingLabel), and the
+    /// dots take 50 ms to vanish: the row stays up for the longer of the two,
+    /// plus a frame.
+    private static let linger = max(AgentMarkFrames.completionDuration, 0.15) + 1.0 / 60
+
+    var body: some View {
+        Group {
+            if working || finishing {
+                WorkingRow(
+                    bot: bot,
+                    activity: activity,
+                    call: call,
+                    since: since,
+                    runningModel: runningModel,
+                    done: !working
+                )
+            }
+        }
+        // Restarts on every change of `working`, so a new turn cancels a
+        // linger that is still counting.
+        .task(id: working) {
+            if working {
+                wasWorking = true
+                finishing = false
+                return
+            }
+            guard wasWorking else { return }
+            wasWorking = false
+            finishing = true
+            try? await Task.sleep(nanoseconds: UInt64(Self.linger * 1e9))
+            if !Task.isCancelled { finishing = false }
+        }
     }
 }
 
 private struct WorkingRow: View {
     let bot: ShellBot
     let activity: TurnActivity
+    /// The running step's call id, when the stream gave one.
+    let call: String?
     /// When this step began. The row counts up from it, a second at a time.
     let since: Date
-    /// The connected apps, for the logo and name of a connector step.
-    let toolkits: [ConnectorToolkit]
     /// The model this turn is still on when the owner has picked another
     /// since it started. Nil when they match.
     var runningModel: String?
+    /// The turn has ended: the dots shrink away and the label stops sweeping.
+    var done = false
+
+    /// False for the first beat of a fresh row, so the mark arrives alone and
+    /// the label follows (spec section 5). A row that opens on a turn already
+    /// under way shows its label at once.
+    @State private var labelShown = false
+    /// The label on screen: each one is held for at least 0.8 s, and the latest
+    /// offer wins when the hold ends. Empty until the first label arrives.
+    @State private var hold = LabelHold("", at: 0)
 
     /// The avatar's box, which is also the slot the transcript reserves.
     static let height: CGFloat = 24
 
-    /// A connected app's step: its logo leads the label, the way Claude
-    /// shows "Searching Gmail email threads" behind the Gmail mark.
-    private var connector: (logo: String, name: String, label: String)? {
-        guard case .tool("connector_execute", let detail?) = activity else { return nil }
-        let step = TurnActivity.connectorStep(detail, toolkits: toolkits.map { ($0.slug, $0.name) })
-        let slug = step.toolkit ?? String(detail.lowercased().prefix { $0 != "_" })
-        let logo = toolkits.first { $0.slug == slug }?.logo ?? "https://logos.composio.dev/api/\(slug)"
-        return (logo, slug, step.label)
-    }
-
     var body: some View {
-        let connector = connector
-        let step = connector?.label ?? activity.label
+        let step = activity.label
         let label = runningModel.map { "\(step) · \($0)" } ?? step
+        let shownLabel = hold.shown.isEmpty ? label : hold.shown
         // Sits where the reply will, so the text does not jump sideways
         // when the first token lands.
-        HStack(alignment: .center, spacing: 10) {
-            // The face is drawn a shade larger than a reply avatar, but its
-            // box is not, so the label keeps the reply's left edge. Its eyes
-            // say what the bot is doing; the label holds still.
-            BotFaceView(color: BrandAssets.colorID(for: bot), size: 28, pose: BotFacePose(activity: activity))
-                .frame(width: Self.height, height: Self.height)
+        // The label starts 16 pt from the mark's 24 pt box: 28 pt from the
+        // centre of the dots.
+        HStack(alignment: .center, spacing: 16) {
+            // A row that opens on a turn already past the arrival cuts in at
+            // the loop instead of replaying it.
+            AgentMark(
+                phase: done ? .done : (activity.runsCommand ? .command : .thinking),
+                arrives: Date().timeIntervalSince(since) < AgentMarkFrames.arrivalDuration,
+                step: commandStep
+            )
+            .frame(width: Self.height, height: Self.height)
             HStack(spacing: 8) {
-                if let connector {
-                    AppLogo(name: connector.name, url: connector.logo, size: 16)
-                        .transition(.opacity)
-                }
-                // Swapped in one frame, the way Claude's step line does: a
-                // crossfade between labels of different widths ran the old
-                // one over the timer beside it.
-                Text(label)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .font(.system(size: DesignTokens.FontSize.chatBody))
-                    .foregroundStyle(Theme.C.inkMuted)
-                // One text view redrawn once a second, not a clock ticking
-                // through the transcript.
+                // Slides up and crossfades in 120 ms. The outgoing text is an
+                // overlay clipped to the new label's width, so it never runs
+                // over the timer beside it.
+                WorkingLabel(text: shownLabel, visible: labelShown, done: done)
+                // Shown from 5 s, then once a second: one text view redrawn
+                // once a second, not a clock ticking through the transcript.
                 TimelineView(.periodic(from: since, by: 1)) { context in
-                    Text(Self.elapsed(from: since, to: context.date))
-                        .font(.system(size: DesignTokens.FontSize.chatBody).monospacedDigit())
-                        .foregroundStyle(Theme.C.inkFaint)
+                    if Self.elapsedSeconds(from: since, to: context.date) >= AgentShimmer.timerAfter {
+                        Text(Self.elapsed(from: since, to: context.date))
+                            .font(.system(size: DesignTokens.FontSize.chatBody).monospacedDigit())
+                            .foregroundStyle(Theme.C.inkMuted)
+                    }
                 }
                 .layoutPriority(1)
             }
-            .animation(.easeInOut(duration: DesignTokens.Motion.fast), value: connector?.logo)
             // The logo's own fade only. The first reply pushes
             // the row down in the same update that turns "Thinking"
             // into "Writing", and without this the label slid down
@@ -1955,71 +1618,65 @@ private struct WorkingRow: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+        .task {
+            guard !labelShown else { return }
+            let age = Date().timeIntervalSince(since)
+            guard age < AgentShimmer.firstLabelDelay else { labelShown = true; return }
+            try? await Task.sleep(nanoseconds: UInt64(AgentShimmer.firstLabelDelay * 1e9))
+            labelShown = true
+            // The hold counts from when the label could be seen.
+            hold.restart(at: Date.now.timeIntervalSinceReferenceDate)
+        }
+        // Restarts on every new label, so a label that arrives while another
+        // is waiting out its hold replaces it: only the latest shows.
+        // The reveal restarts the hold, which can move the due time while a
+        // label waits, so it is part of the key and the wait loops until
+        // nothing is pending.
+        .task(id: HoldKey(label: label, revealed: labelShown)) {
+            let now = Date.now.timeIntervalSinceReferenceDate
+            guard !hold.shown.isEmpty else {
+                hold = LabelHold(label, at: now)
+                return
+            }
+            hold.offer(label, at: now)
+            while let due = hold.due {
+                let wait = due - Date.now.timeIntervalSinceReferenceDate
+                if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1e9)) }
+                if Task.isCancelled { return }
+                hold.settle(at: Date.now.timeIntervalSinceReferenceDate)
+            }
+        }
+    }
+
+    private struct HoldKey: Hashable {
+        let label: String
+        let revealed: Bool
+    }
+
+    /// The command step being run, so the mark can tell one from the next: its
+    /// call id, which arrives just after the step starts.
+    private var commandStep: String? {
+        guard case .tool("bash", _) = activity else { return nil }
+        return call
+    }
+
+    static func elapsedSeconds(from start: Date, to now: Date) -> Int {
+        max(0, Int(now.timeIntervalSince(start)))
     }
 
     /// "0s", "9s", "1m 5s": whole seconds, never negative.
     static func elapsed(from start: Date, to now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
+        let seconds = elapsedSeconds(from: start, to: now)
         return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
     }
 }
 
-/// `.search-chip` row: wrapped pills that open the result in the browser.
-struct SearchChipsRow: View {
-    let chips: [SearchChip]
-
-    var body: some View {
-        WrapHStack(spacing: 8) {
-            // Two results can share a URL, so identity is by position.
-            ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
-                SearchChipView(chip: chip)
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-private struct SearchChipView: View {
-    let chip: SearchChip
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button {
-            open(chip.url)
-        } label: {
-            Text(chip.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.C.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(hovering ? Theme.C.sunken : Theme.C.surface)
-                .overlay(Capsule().strokeBorder(Theme.C.borderStrong, lineWidth: 1))
-                .clipShape(Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .pointerOnHover()
-        .onHover { hovering = $0 }
-        .help(chip.snippet.isEmpty ? chip.url : chip.snippet)
-    }
-
-    /// Tool output must not be able to send the browser at the local server
-    /// with its session cookie, so loopback and private hosts stay unopened.
-    private func open(_ string: String) {
-        guard
-            let url = URL(string: string),
-            let scheme = url.scheme?.lowercased(),
-            scheme == "http" || scheme == "https",
-            !LocalHost.isLocal(url.host)
-        else { return }
-        NSWorkspace.shared.open(url)
-    }
-}
 
 /// A minimal wrapping row so chips flow onto the next line like `flex-wrap`.
-struct WrapHStack: Layout {    var spacing: CGFloat = 8
+struct WrapHStack: Layout {
+    var spacing: CGFloat = 8
+    /// Each row sits in the middle of the width rather than at its start.
+    var centered = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
@@ -2040,19 +1697,27 @@ struct WrapHStack: Layout {    var spacing: CGFloat = 8
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        // Rows first, so a centered row knows its own width.
+        var rows: [[(index: Int, size: CGSize)]] = [[]]
         var x = bounds.minX
-        var y = bounds.minY
-        var rowHeight: CGFloat = 0
-        for subview in subviews {
+        for (index, subview) in subviews.enumerated() {
             let size = subview.sizeThatFits(.unspecified)
             if x > bounds.minX, x + size.width > bounds.maxX {
                 x = bounds.minX
-                y += rowHeight + spacing
-                rowHeight = 0
+                rows.append([])
             }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            rows[rows.count - 1].append((index, size))
             x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
+        }
+        var y = bounds.minY
+        for row in rows {
+            let width = row.reduce(0) { $0 + $1.size.width } + spacing * CGFloat(max(0, row.count - 1))
+            var x = centered ? bounds.minX + max(0, (bounds.width - width) / 2) : bounds.minX
+            for item in row {
+                subviews[item.index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += (row.map(\.size.height).max() ?? 0) + spacing
         }
     }
 }
@@ -2328,9 +1993,8 @@ private enum HoverActionsDebug {
 /// its row. They keep their room when hidden, so the bubble never shifts.
 private struct MessageHoverActions<Content: View>: View {
     let text: String
-    /// The chat the message is in, and who wrote it when that is a member.
+    /// The chat the message is in.
     let botId: String
-    var author: String?
     var enabled = true
     @ViewBuilder var content: Content
 
@@ -2382,9 +2046,7 @@ private struct MessageHoverActions<Content: View>: View {
     }
 
     private func reply() {
-        var info: [String: String] = ["text": text, "botId": botId]
-        if let author { info["author"] = author }
-        NotificationCenter.default.post(name: .replyToMessage, object: nil, userInfo: info)
+        NotificationCenter.default.post(name: .replyToMessage, object: nil, userInfo: ["text": text, "botId": botId])
     }
 
     private func copy() {
@@ -2410,11 +2072,16 @@ private struct StarterPromptButton: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.C.ink)
                 .multilineTextAlignment(.leading)
-                .padding(14)
-                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-                .background(hovering ? Self.hover : Theme.C.sunken,
-                            in: RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.md, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(hovering ? Theme.C.sunken : Theme.C.surface,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Theme.C.edge, lineWidth: 1)
+                )
+                .smShadow()
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .pointerOnHover()
@@ -2422,8 +2089,6 @@ private struct StarterPromptButton: View {
         .animation(Theme.ease(0.15), value: hovering)
         .accessibilityIdentifier("starter-prompt")
     }
-
-    private static let hover = Theme.adaptive(DesignTokens.Hex.border, DesignTokens.DarkHex.borderStrong)
 }
 
 /// One starter: the short label on the tile and the fuller prompt it puts in
@@ -2454,33 +2119,29 @@ struct StarterPrompt: Identifiable {
             prompt: "Research a topic I'll name, then save a short report with sources as a document on my Desktop."
         ),
         StarterPrompt(
-            label: "Create a bot that plans a Downloads tidy-up",
-            prompt: "Create a bot that looks through my Downloads folder, tells me what is in there and proposes a tidy-up plan I can approve before anything moves."
+            label: "Plan a Downloads tidy-up",
+            prompt: "Look through my Downloads folder, tell me what is in there and propose a tidy-up plan I can approve before anything moves."
         ),
         StarterPrompt(
-            label: "Create a copywriter bot for my brand",
-            prompt: "Create a copywriter bot for my brand. Ask me a few questions about my brand and voice first, then set it up."
+            label: "Write copy for my brand",
+            prompt: "Write copy for my brand. Ask me a few questions about my brand and voice first, then draft it."
         ),
     ]
 
-    /// Any empty chat's tiles: two bots worth making, the first step to
-    /// connecting apps and a routine, so the owner sees what's possible.
-    static let everyday = [
-        StarterPrompt(
-            label: "Create an inbox assistant",
-            prompt: "Create a bot that goes through my email every morning, sums up what needs me and shows me draft replies here to review. Ask me what to watch for first."
-        ),
-        StarterPrompt(
-            label: "Create a writer for my social posts",
-            prompt: "Create a bot that writes my social media posts in my voice. Ask me about my audience, my topics and a few posts I like first, then set it up."
-        ),
-        StarterPrompt(
-            label: "How do I connect my apps?",
-            prompt: "How do I connect my apps, like Gmail, Calendar and Drive, so you can work in them?"
-        ),
-        StarterPrompt(
-            label: "Get a morning news brief every day",
-            prompt: "Every day at 8:00, post a short news brief here with sources on topics I pick. Ask me the topics first, then set it up as a routine."
-        ),
-    ]
+    /// The three an empty chat shows.
+    static var first: [StarterPrompt] { Array(all.prefix(3)) }
+}
+
+/// Under an owner bubble the engine holds behind the running turn.
+struct QueuedTag: View {
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "clock")
+                .font(.system(size: 11))
+            Text("Queued")
+                .font(.system(size: 12))
+        }
+        .foregroundStyle(Theme.C.inkMuted)
+        .accessibilityElement(children: .combine)
+    }
 }

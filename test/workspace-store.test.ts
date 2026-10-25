@@ -30,26 +30,26 @@ test("permission parsing accepts the three modes, and the old name for Auto", ()
   assert.equal(parseWorkspacePermission(undefined), null);
 });
 
-test("grant upsert round-trips and a newer write wins per session", () => {
+test("grant upsert round-trips and a newer write wins per chat", () => {
   const path = tempStore();
   upsertSessionGrant(
-    { sessionId: "s1", path: "/tmp/a", permission: "auto" },
+    { chatId: "s1", path: "/tmp/a", permission: "auto" },
     new Date("2026-09-14T10:00:00Z"),
     path,
   );
   upsertSessionGrant(
-    { sessionId: "s1", path: "/tmp/b", permission: "full_access" },
+    { chatId: "s1", path: "/tmp/b", permission: "full_access" },
     new Date("2026-09-14T11:00:00Z"),
     path,
   );
   upsertSessionGrant(
-    { sessionId: "s2", path: "/tmp/c", permission: "read_only" },
+    { chatId: "s2", path: "/tmp/c", permission: "read_only" },
     new Date("2026-09-14T09:00:00Z"),
     path,
   );
   const store = readWorkspaceStore(path);
   assert.equal(store.grants.length, 2);
-  const s1 = store.grants.find((grant) => grant.sessionId === "s1");
+  const s1 = store.grants.find((grant) => grant.chatId === "s1");
   assert.equal(s1?.path, "/tmp/b");
   assert.equal(s1?.permission, "full_access");
   const grant = readSessionGrant("s1", path);
@@ -62,16 +62,16 @@ test("grant pruning keeps the newest window", () => {
   const path = tempStore();
   for (let i = 0; i < GRANTS_MAX + 10; i++) {
     upsertSessionGrant(
-      { sessionId: `s${i}`, path: `/tmp/${i}`, permission: "auto" },
+      { chatId: `s${i}`, path: `/tmp/${i}`, permission: "auto" },
       new Date(Date.UTC(2026, 0, 1, 0, 0, i)),
       path,
     );
   }
   const store = readWorkspaceStore(path);
   assert.equal(store.grants.length, GRANTS_MAX);
-  // Oldest sessions fall out; the newest stays.
-  assert.equal(store.grants.some((grant) => grant.sessionId === "s0"), false);
-  assert.equal(store.grants.some((grant) => grant.sessionId === `s${GRANTS_MAX + 9}`), true);
+  // Oldest chats fall out; the newest stays.
+  assert.equal(store.grants.some((grant) => grant.chatId === "s0"), false);
+  assert.equal(store.grants.some((grant) => grant.chatId === `s${GRANTS_MAX + 9}`), true);
 });
 
 test("projects dedupe by path, and remove by id", () => {
@@ -97,10 +97,10 @@ test("parse tolerates unknown and malformed records", () => {
   const parsed = parseWorkspaceStore({
     schemaVersion: 1,
     grants: [
-      { sessionId: "ok", path: "/tmp/x", permission: "auto", extra: "kept" },
-      { sessionId: "", path: "/tmp/y", permission: "auto" },
-      { sessionId: "badpath", path: "not-absolute", permission: "auto" },
-      { sessionId: "badmode", path: "/tmp/z", permission: "admin" },
+      { chatId: "ok", path: "/tmp/x", permission: "auto", extra: "kept" },
+      { chatId: "", path: "/tmp/y", permission: "auto" },
+      { chatId: "badpath", path: "not-absolute", permission: "auto" },
+      { chatId: "badmode", path: "/tmp/z", permission: "admin" },
       "junk",
     ],
     projects: [{ id: "p", path: "/tmp/p", name: "p", extra: true }, null],
@@ -114,14 +114,14 @@ test("parse tolerates unknown and malformed records", () => {
 test("detaching revokes the grant, not just the bot field", () => {
   const path = tempStore();
   upsertSessionGrant(
-    { sessionId: "s1", path: "/tmp/a", permission: "full_access" },
+    { chatId: "s1", path: "/tmp/a", permission: "full_access" },
     new Date(),
     path,
   );
   assert.ok(readSessionGrant("s1", path));
   removeSessionGrant("s1", path);
   assert.equal(readSessionGrant("s1", path), null);
-  // Revoking an unknown session is a no-op, not an error.
+  // Revoking an unknown chat is a no-op, not an error.
   removeSessionGrant("never-existed", path);
 });
 
@@ -133,8 +133,8 @@ test("duplicate rows keep the newest, not first-in-file", () => {
       schemaVersion: 1,
       // Older record first in file order; the newer one must win.
       grants: [
-        { sessionId: "s1", path: "/tmp/old", permission: "read_only", updatedAt: "2026-09-14T10:00:00Z" },
-        { sessionId: "s1", path: "/tmp/new", permission: "full_access", updatedAt: "2026-09-14T11:00:00Z" },
+        { chatId: "s1", path: "/tmp/old", permission: "read_only", updatedAt: "2026-09-14T10:00:00Z" },
+        { chatId: "s1", path: "/tmp/new", permission: "full_access", updatedAt: "2026-09-14T11:00:00Z" },
       ],
       projects: [
         { id: "p1", path: "/tmp/p", name: "old name", lastUsedAt: "2026-09-14T10:00:00Z" },
@@ -153,7 +153,7 @@ test("a corrupt store is backed up before a write starts from the seed", () => {
   const path = tempStore();
   writeFileSync(path, "{corrupt", { encoding: "utf8" });
   upsertSessionGrant(
-    { sessionId: "s1", path: "/tmp/a", permission: "auto" },
+    { chatId: "s1", path: "/tmp/a", permission: "auto" },
     new Date(),
     path,
   );
@@ -168,7 +168,7 @@ test("a grant on the filesystem root is refused", () => {
   const path = tempStore();
   assert.throws(
     () => upsertSessionGrant(
-      { sessionId: "s1", path: "/", permission: "auto" },
+      { chatId: "s1", path: "/", permission: "auto" },
       new Date(),
       path,
     ),
@@ -182,7 +182,7 @@ test("a grant on a credential folder is refused at the store, not only the route
   for (const bad of ["/Users/someone/Library/Keychains", "/Users/someone/.ssh", "/Users/someone/secrets"]) {
     assert.throws(
       () => upsertSessionGrant(
-        { sessionId: "s1", path: bad, permission: "read_only" },
+        { chatId: "s1", path: bad, permission: "read_only" },
         new Date(),
         path,
       ),
@@ -197,7 +197,7 @@ test("an unknown permission is refused at upsert instead of dropping on read", (
   assert.throws(
     () => upsertSessionGrant(
       // A JS caller can pass anything the type forbids; the store is the guard.
-      { sessionId: "s1", path: "/tmp/a", permission: "admin" as never },
+      { chatId: "s1", path: "/tmp/a", permission: "admin" as never },
       new Date(),
       path,
     ),
@@ -210,13 +210,13 @@ test("a hand-edited grant on the filesystem root does not read back", () => {
   const store = parseWorkspaceStore({
     schemaVersion: 1,
     grants: [
-      { sessionId: "s1", path: "/", permission: "full_access", updatedAt: new Date().toISOString() },
-      { sessionId: "s2", path: "/tmp/ok", permission: "auto", updatedAt: new Date().toISOString() },
+      { chatId: "s1", path: "/", permission: "full_access", updatedAt: new Date().toISOString() },
+      { chatId: "s2", path: "/tmp/ok", permission: "auto", updatedAt: new Date().toISOString() },
     ],
     projects: [],
   });
   assert.equal(store.grants.length, 1);
-  assert.equal(store.grants[0].sessionId, "s2");
+  assert.equal(store.grants[0].chatId, "s2");
   assert.equal(path.length > 0, true);
 });
 
@@ -243,7 +243,7 @@ test("the credential folders added in round 3 are refused as grant roots", () =>
   for (const bad of refused) {
     assert.throws(
       () => upsertSessionGrant(
-        { sessionId: "s1", path: bad, permission: "read_only" },
+        { chatId: "s1", path: bad, permission: "read_only" },
         new Date(),
         path,
       ),
@@ -253,7 +253,7 @@ test("the credential folders added in round 3 are refused as grant roots", () =>
   }
   // A project that merely mentions one of these words is still grantable.
   upsertSessionGrant(
-    { sessionId: "s1", path: "/Users/someone/keychain-viewer-app", permission: "auto" },
+    { chatId: "s1", path: "/Users/someone/keychain-viewer-app", permission: "auto" },
     new Date(),
     path,
   );
@@ -262,15 +262,15 @@ test("the credential folders added in round 3 are refused as grant roots", () =>
 
 test("a grant with no folder carries the permission alone and survives a round-trip", () => {
   const path = tempStore();
-  upsertSessionGrant({ sessionId: "s1", path: null, permission: "read_only" }, new Date(), path);
+  upsertSessionGrant({ chatId: "s1", path: null, permission: "read_only" }, new Date(), path);
   const grant = readSessionGrant("s1", path);
   assert.equal(grant?.path, null);
   assert.equal(grant?.permission, "read_only");
   // A folder can still be attached later, and detached back to none.
-  upsertSessionGrant({ sessionId: "s1", path: "/tmp/a", permission: "auto" }, new Date(Date.now() + 1000), path);
+  upsertSessionGrant({ chatId: "s1", path: "/tmp/a", permission: "auto" }, new Date(Date.now() + 1000), path);
   assert.equal(readSessionGrant("s1", path)?.path, "/tmp/a");
-  upsertSessionGrant({ sessionId: "s1", path: null, permission: "auto" }, new Date(Date.now() + 2000), path);
+  upsertSessionGrant({ chatId: "s1", path: null, permission: "auto" }, new Date(Date.now() + 2000), path);
   assert.equal(readSessionGrant("s1", path)?.path, null);
   // The root of the disk is still not a folder anyone can be granted.
-  assert.throws(() => upsertSessionGrant({ sessionId: "s2", path: "/", permission: "auto" }, new Date(), path), /workspace_path_invalid/);
+  assert.throws(() => upsertSessionGrant({ chatId: "s2", path: "/", permission: "auto" }, new Date(), path), /workspace_path_invalid/);
 });

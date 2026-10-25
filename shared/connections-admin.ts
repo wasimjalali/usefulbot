@@ -1,4 +1,5 @@
 import { rmSync } from "node:fs";
+import { type ConnectorRisk } from "../agent/lib/connector-risk.ts";
 import { parseBundle, refreshLockPath, withRefreshLock } from "./connection-auth.ts";
 import { cancelDiscovery, discoverConnection, discoveryRunning, settleAllDiscoveries } from "./connection-tools.ts";
 import { connectionIcon, removeConnectionIcon, settleIcons, startDueIcons } from "./connection-icons.ts";
@@ -23,7 +24,7 @@ import { connectionSecretService, keychainDel, keychainGet } from "./keychain.ts
 import { dropOauthPendingForProposal, startMcpOAuth } from "./mcp-oauth.ts";
 
 /**
- * What the Connectors page can do with a direct (MCP or OpenAPI) connection:
+ * What the Connectors page can do with a direct MCP connection:
  * read it, list it again, sign it in again, remove it. The route is a thin
  * layer over these so they can be exercised without a signed-in session.
  * Nothing here returns a token, a header or the Keychain item.
@@ -41,7 +42,7 @@ export type PublicConnection = {
   lastError: { code: string; message: string } | null;
   checkedAt: string | null;
   toolCount: number | null;
-  tools: Array<{ name: string; description: string }>;
+  tools: Array<{ name: string; description: string; risk: ConnectorRisk }>;
   /** A data: URI found once for the server's site, or null. */
   icon: string | null;
 };
@@ -79,7 +80,9 @@ export function publicConnection(entry: ConnectionEntry): PublicConnection {
     lastError: status?.lastError ?? null,
     checkedAt: status?.checkedAt ?? index?.fetchedAt ?? null,
     toolCount: status?.toolCount ?? (index && !index.failed ? index.tools.length : null),
-    tools: (index?.tools ?? []).map((tool) => ({ name: tool.name, description: oneLine(tool.description, 200) })),
+    // Every MCP tool is a write here, whatever its name: `mcpToolGate` asks for all of them in Auto,
+    // so the page must not promise a `read_*` tool runs without asking.
+    tools: (index?.tools ?? []).map((tool) => ({ name: tool.name, description: oneLine(tool.description, 200), risk: "write" as const })),
     icon: connectionIcon(entry.id),
   };
 }

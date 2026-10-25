@@ -9,7 +9,7 @@ router/.env
 secrets/
 *.pem
 
-# eve runtime state and build output
+# build output (.eve/ is what an older checkout may still hold)
 .eve/
 dist/
 router/dist/
@@ -51,4 +51,12 @@ web/tsconfig.tsbuildinfo
 /.playwright-mcp/
 /cli-verify-*.png
 /ownapp-*.png
+# verification screenshots and recordings, per branch (global rules: Verification)
+/verify/
+# agent worktrees (global rules: Parallel work and worktrees)
+/.claude/worktrees/
 yarn.lock
+
+# Golden eval screenshots show the dev app sidebar with other chat titles: kept locally, copied to verify/golden-eval/shots/
+evals/golden/runs/*/shots/
+evals/golden/__pycache__/

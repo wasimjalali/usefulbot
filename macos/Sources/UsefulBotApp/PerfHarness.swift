@@ -6,7 +6,7 @@ import UsefulBotCore
 ///
 /// Off unless the app is launched with `-UsefulBotPerfRun <scenario.json>`.
 /// Then it writes timed marks to the scenario's result file and runs its
-/// steps itself: select a bot, wait for its chat to land, pause, send a
+/// steps itself: open a fixture chat, wait for it to land, pause, send a
 /// fixture turn, quit. Driving the app from inside keeps accessibility off
 /// (an AX click switches on SwiftUI's accessibility tree, which inflates the
 /// very row builds being timed) and has no input-queue delay to subtract.
@@ -14,9 +14,10 @@ import UsefulBotCore
 /// Times are `CLOCK_UPTIME_RAW` nanoseconds: the clock the runner and the
 /// frame recorder read too, so all three line up without conversion.
 ///
-/// It only ever selects or sends to bots whose name starts with "Perf ": the
-/// owner's bots hold real conversations. The one exception is `restore`,
-/// which puts back the bot the owner had open before the run.
+/// It only ever opens or sends to chats whose title starts with "Perf ": the
+/// owner's chats hold real conversations. The one exception is `restore`,
+/// which puts back the chat the owner had open before the run. The fixture
+/// chats are listed by the engine only for the dev stack (`includeFixtures`).
 @MainActor
 final class PerfHarness {
     static let shared: PerfHarness? = PerfHarness.fromArguments()
@@ -25,17 +26,15 @@ final class PerfHarness {
     struct Scenario: Decodable {
         let runId: String
         let resultFile: String
-        /// Bot ids whose disk snapshot is removed at launch, for the case
-        /// that measures a first open with no snapshot to start from.
-        let dropSnapshots: [String]?
-        /// The owner's selection before the run, for `restore`.
-        let restoreBotId: String?
+        /// The chat the owner had open before the run, for `restore`.
+        let restoreChatId: String?
         let steps: [Step]
     }
 
     struct Step: Decodable {
-        /// create | select | pause | send | post | stop | deny | wait_prewarm | restore | quit
+        /// select | pause | send | post | stop | deny | restore | quit
         let op: String
+        /// The fixture chat's title ("Perf Long Replies").
         let bot: String?
         let label: String?
         let ms: Int?
@@ -43,16 +42,15 @@ final class PerfHarness {
     }
 
     private struct Landing {
-        let botId: String
+        let chatKey: String
         let t: UInt64
     }
 
     private let scenario: Scenario
     private let output: FileHandle
     private var landings: [Landing] = []
-    private var landingWaiters: [(botId: String, after: UInt64, resume: CheckedContinuation<Bool, Never>)] = []
+    private var landingWaiters: [(chatKey: String, after: UInt64, resume: CheckedContinuation<Bool, Never>)] = []
     private var started = false
-    private var prewarmEnded = false
     private var aborted = false
     /// The responsiveness probe of the latest landing. A select waits it out,
     /// so the next step's work is never counted as this landing's stall.
@@ -111,31 +109,25 @@ final class PerfHarness {
         }
         output.write(data)
         output.write(Data([0x0A]))
-        if event == "prewarm_end" { prewarmEnded = true }
     }
 
-    /// Snapshot files to remove before the first restore reads them. The store
-    /// is not loaded yet, so these ids cannot be checked against "Perf " names
-    /// here: the runner only ever passes fixture ids. The files are a cache.
-    var snapshotsToDrop: [String] { scenario.dropSnapshots ?? [] }
-
     /// Called by ChatView when a chat has landed (its rows are shown).
-    func landed(botId: String, reason: String, stats: [String: Any]) {
+    func landed(chatKey: String, reason: String, stats: [String: Any]) {
         let t = Self.now()
         var fields = stats
-        fields["bot"] = botId
+        fields["chat"] = chatKey
         fields["reason"] = reason
         mark("landed", fields, at: t)
-        landings.append(Landing(botId: botId, t: t))
-        let ready = landingWaiters.filter { $0.botId == botId && $0.after <= t }
-        landingWaiters.removeAll { $0.botId == botId && $0.after <= t }
+        landings.append(Landing(chatKey: chatKey, t: t))
+        let ready = landingWaiters.filter { $0.chatKey == chatKey && $0.after <= t }
+        landingWaiters.removeAll { $0.chatKey == chatKey && $0.after <= t }
         for waiter in ready { waiter.resume.resume(returning: true) }
-        probeResponsiveness(botId: botId, landedAt: t)
+        probeResponsiveness(chatKey: chatKey, landedAt: t)
     }
 
     /// Deferred row building can freeze a picture that no longer changes, so
     /// the main thread is sampled for a second after each landing.
-    private func probeResponsiveness(botId: String, landedAt: UInt64) {
+    private func probeResponsiveness(chatKey: String, landedAt: UInt64) {
         lastProbe = Task { @MainActor [weak self] in
             var worst: UInt64 = 0
             for _ in 0..<60 {
@@ -144,18 +136,18 @@ final class PerfHarness {
                 let took = Self.now() - before
                 if took > 16_000_000 { worst = max(worst, took - 16_000_000) }
             }
-            self?.mark("responsive", ["bot": botId, "landedAt": landedAt, "stallMaxMs": Double(worst) / 1_000_000])
+            self?.mark("responsive", ["chat": chatKey, "landedAt": landedAt, "stallMaxMs": Double(worst) / 1_000_000])
         }
     }
 
-    private func waitLanded(botId: String, after: UInt64, timeoutMs: Int) async -> Bool {
-        if landings.contains(where: { $0.botId == botId && $0.t >= after }) { return true }
+    private func waitLanded(chatKey: String, after: UInt64, timeoutMs: Int) async -> Bool {
+        if landings.contains(where: { $0.chatKey == chatKey && $0.t >= after }) { return true }
         return await withCheckedContinuation { resume in
-            landingWaiters.append((botId, after, resume))
+            landingWaiters.append((chatKey, after, resume))
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: Self.nanos(timeoutMs))
                 guard let self, let index = self.landingWaiters.firstIndex(where: {
-                    $0.botId == botId && $0.after == after
+                    $0.chatKey == chatKey && $0.after == after
                 }) else { return }
                 self.landingWaiters.remove(at: index).resume.resume(returning: false)
             }
@@ -171,48 +163,30 @@ final class PerfHarness {
         Task { @MainActor in
             await self.execute(model: model)
             // A run that stopped early still gives the owner their chat back.
-            if self.aborted, let id = self.scenario.restoreBotId, model.selectedBotId != id,
-               model.store?.bots.contains(where: { $0.id == id }) == true {
-                model.select(id)
-                // The selection is saved through a queued write; the runner
-                // quits the app once it reads the abort.
+            if self.aborted, let id = self.scenario.restoreChatId, model.currentChatId != id {
+                model.openChat(id)
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                self.mark("restored", ["bot": id])
+                self.mark("restored", ["chat": id])
             }
         }
     }
 
     private func execute(model: AppModel) async {
-        mark("ready", ["bot": model.selectedBotId ?? ""])
-        if let first = model.selectedBotId,
-           !(await waitLanded(botId: first, after: 0, timeoutMs: 30_000)) {
+        mark("ready", ["chat": model.currentChatId ?? ""])
+        if let first = model.currentChatId,
+           !(await waitLanded(chatKey: first, after: 0, timeoutMs: 30_000)) {
             return abort("the first chat never landed")
         }
         // The first landing's stall probe is waited out like any select's, so
         // step 1's work is never counted as the launch's stall.
         await lastProbe?.value
+        // The fixture chat the steps work in, by id.
+        var openChatId: String? = model.currentChatId
         for (index, step) in scenario.steps.enumerated() {
             let label = step.label ?? step.op
             switch step.op {
-            case "create":
-                guard let name = step.bot, name.hasPrefix(Self.fixturePrefix) else {
-                    return abort("step \(index): only Perf bots may be created")
-                }
-                if model.store?.bots.contains(where: { $0.name == name }) == true {
-                    mark("create_skipped", ["name": name])
-                    continue
-                }
-                model.createBot(name: name, petname: name, label: "",
-                                description: "Performance fixture. Keep it frozen.", sectionId: nil)
-                var made = false
-                for _ in 0..<100 where !made {
-                    try? await Task.sleep(nanoseconds: 100_000_000)
-                    made = model.store?.bots.contains(where: { $0.name == name }) == true
-                }
-                guard made else { return abort("step \(index): \(name) was not created") }
-                mark("created", ["name": name])
             case "deny":
-                // Approvals are not tied to a bot here, so only cards whose
+                // Approvals are not tied to a chat here, so only cards whose
                 // preview starts with one of the fixture's own commands (one
                 // per line of `text`) are touched. Ends once none has shown
                 // for 20 s.
@@ -232,29 +206,24 @@ final class PerfHarness {
                     }
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
-            case "wait_prewarm":
-                // The prewarm snapshots every chat after a new build; a
-                // measured launch must not share the machine with it.
-                let deadline = Date().addingTimeInterval(Double(Self.nanos(step.ms ?? 180_000)) / 1_000_000_000)
-                while !prewarmEnded, Date() < deadline {
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                }
-                guard prewarmEnded else { return abort("step \(index): the prewarm did not finish") }
             case "pause":
                 try? await Task.sleep(nanoseconds: Self.nanos(step.ms ?? 1000))
             case "select", "send", "post", "stop":
-                guard let name = step.bot, name.hasPrefix(Self.fixturePrefix),
-                      let bot = model.store?.bots.first(where: { $0.name == name }) else {
-                    return abort("step \(index): \(step.bot ?? "no bot") is not a Perf bot here")
+                guard let name = step.bot, name.hasPrefix(Self.fixturePrefix) else {
+                    return abort("step \(index): \(step.bot ?? "no chat") is not a Perf chat")
                 }
-                if step.op == "select" || model.selectedBotId != bot.id {
-                    guard model.selectedBotId != bot.id else {
+                let alreadyOpen = model.currentChatId != nil && model.chatTitle(model.currentChatId) == name
+                if step.op == "select" || !alreadyOpen {
+                    guard !alreadyOpen else {
                         return abort("step \(index): \(name) is already open, a select would be a no-op")
                     }
                     let t = Self.now()
-                    mark("step", ["label": label, "bot": bot.id, "name": name, "index": index], at: t)
-                    model.select(bot.id)
-                    guard await waitLanded(botId: bot.id, after: t, timeoutMs: step.ms ?? 30_000) else {
+                    mark("step", ["label": label, "name": name, "index": index], at: t)
+                    guard let id = await model.openFixtureChat(title: name) else {
+                        return abort("step \(index): \(name) is not a chat of this stack")
+                    }
+                    openChatId = id
+                    guard await waitLanded(chatKey: id, after: t, timeoutMs: step.ms ?? 30_000) else {
                         return abort("step \(index): \(name) never landed")
                     }
                     await lastProbe?.value
@@ -262,35 +231,31 @@ final class PerfHarness {
                 if step.op == "post" {
                     // A send that is not waited out, for checking a turn while
                     // it runs (an approval card, a step row).
-                    guard let text = step.text, !text.isEmpty, model.selectedBotId == bot.id,
-                          model.store?.bots.first(where: { $0.id == bot.id })?.name.hasPrefix(Self.fixturePrefix) == true,
-                          !model.pending, !model.backgroundWorking else {
-                        return abort("step \(index): post needs text, the open Perf bot and no turn running")
+                    guard let text = step.text, !text.isEmpty, model.currentChatId == openChatId, !model.pending else {
+                        return abort("step \(index): post needs text, the open Perf chat and no turn running")
                     }
                     model.send(text)
                     guard model.pending else { return abort("step \(index): the post was refused") }
                     mark("post", ["index": index])
                 }
                 if step.op == "stop" {
-                    guard model.selectedBotId == bot.id else { return abort("step \(index): stop needs the open Perf bot") }
-                    let running = model.pending || model.backgroundWorking
+                    guard model.currentChatId == openChatId else { return abort("step \(index): stop needs the open Perf chat") }
+                    let running = model.pending
                     model.cancel()
                     mark("stop", ["index": index, "turnWasRunning": running, "cardsBefore": model.approvals.count])
                 }
                 if step.op == "send" {
                     guard let text = step.text, !text.isEmpty else { return abort("step \(index): send has no text") }
-                    guard await sendAndWait(model: model, botId: bot.id, text: text, index: index) else { return }
+                    guard await sendAndWait(model: model, chatId: openChatId, text: text, index: index) else { return }
                 }
             case "restore":
-                guard let id = scenario.restoreBotId, model.store?.bots.contains(where: { $0.id == id }) == true else {
+                guard let id = scenario.restoreChatId else {
                     mark("restore_skipped")
                     continue
                 }
-                if model.selectedBotId != id { model.select(id) }
-                mark("restored", ["bot": id])
+                if model.currentChatId != id { model.openChat(id) }
+                mark("restored", ["chat": id])
             case "quit":
-                // `select` saves the selection through a queued write; an exit
-                // straight after `restore` could drop it.
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 mark("quit")
                 try? output.synchronize()
@@ -304,17 +269,17 @@ final class PerfHarness {
     }
 
     /// A fixture turn: sent, then waited out until the bot is idle again.
-    private func sendAndWait(model: AppModel, botId: String, text: String, index: Int) async -> Bool {
-        // `send` goes to whatever chat is open when it runs. A selection echoed
-        // from elsewhere since the step began would post fixture text into a
-        // real conversation, and a turn already running would be measured as
-        // this one.
-        guard model.selectedBotId == botId,
-              model.store?.bots.first(where: { $0.id == botId })?.name.hasPrefix(Self.fixturePrefix) == true else {
-            abort("step \(index): the open chat is no longer the Perf bot")
+    private func sendAndWait(model: AppModel, chatId: String?, text: String, index: Int) async -> Bool {
+        // `send` goes to whatever chat is open when it runs. A chat opened from
+        // elsewhere since the step began would post fixture text into a real
+        // conversation, and a turn already running would be measured as this
+        // one.
+        guard let chatId, model.currentChatId == chatId,
+              model.chatTitle(chatId)?.hasPrefix(Self.fixturePrefix) == true else {
+            abort("step \(index): the open chat is no longer the Perf chat")
             return false
         }
-        guard !model.pending, !model.backgroundWorking else {
+        guard !model.pending else {
             abort("step \(index): a turn is already running in this chat")
             return false
         }
@@ -332,7 +297,7 @@ final class PerfHarness {
         }
         while Date() < deadline {
             try? await Task.sleep(nanoseconds: 500_000_000)
-            if !model.pending && !model.backgroundWorking {
+            if !model.pending {
                 if let error = model.threadError {
                     abort("step \(index): the turn failed: \(error)")
                     return false

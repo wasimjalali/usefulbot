@@ -1,0 +1,34 @@
+{
+  "epoch": "e7a1c0de-0000-4000-8000-000000000001",
+  "chats": [
+    {
+      "chatId": "c4a7f00d-1111-4111-8111-111111111111",
+      "running": {
+        "turnId": "7a1e0001-0000-4000-8000-00000000a003",
+        "activity": {
+          "kind": "tool",
+          "tool": "bash",
+          "detail": "Running a command"
+        }
+      },
+      "waitingOnOwner": "approval",
+      "replyReadySince": null,
+      "lastTurn": {
+        "turnId": "7a1e0001-0000-4000-8000-00000000a002",
+        "outcome": "failed",
+        "endedAt": "2026-10-25T12:00:14.000Z"
+      }
+    },
+    {
+      "chatId": "c4a7f00d-2222-4222-8222-222222222222",
+      "running": null,
+      "waitingOnOwner": null,
+      "replyReadySince": "2026-10-25T12:00:06.000Z",
+      "lastTurn": {
+        "turnId": "7a1e0001-0000-4000-8000-00000000a001",
+        "outcome": "completed",
+        "endedAt": "2026-10-25T12:00:06.000Z"
+      }
+    }
+  ]
+}

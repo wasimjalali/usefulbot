@@ -6,6 +6,10 @@
 set -eu
 cd "$(dirname "$0")"
 sh ./test-build-guard.sh
+# Same link flags as build-app.sh, so tests run against the real SDK, not in
+# AppKit's old-SDK mode (swiftlang/swift-driver#2240).
+SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+set -- -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDK_PATH" "$@"
 CLT="/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 XCODE="/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks"
 FRAMEWORKS=""
@@ -51,7 +55,8 @@ EOF
   fi
   swift build --build-tests \
     -Xswiftc -F -Xswiftc "$FRAMEWORKS" \
-    -Xlinker -rpath -Xlinker "$FRAMEWORKS"
+    -Xlinker -rpath -Xlinker "$FRAMEWORKS" \
+    -Xswiftc -Xclang-linker -Xswiftc -isysroot -Xswiftc -Xclang-linker -Xswiftc "$SDK_PATH"
   BIN_DIR="$(swift build --show-bin-path --build-tests)"
   cp -R "$FRAMEWORKS/Testing.framework" "$BIN_DIR/"
   cp "$INTEROP" "$BIN_DIR/"

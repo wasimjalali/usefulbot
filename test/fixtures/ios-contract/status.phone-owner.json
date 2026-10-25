@@ -1,5 +1,5 @@
 {
-  "note": "requireOwner over the phone session: apiVersion + eve probe.",
+  "note": "requireOwner over the phone session: apiVersion + engine probe.",
   "request": {
     "method": "GET",
     "path": "/api/status",
@@ -17,7 +17,7 @@
       "ok": true,
       "apiVersion": 1,
       "profile": "phone",
-      "eve": "available",
+      "engine": "available",
       "operator": {
         "name": "Devin",
         "initials": "DE"

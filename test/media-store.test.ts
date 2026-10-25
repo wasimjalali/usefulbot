@@ -14,11 +14,10 @@ import {
   saveImage,
   titleFromPrompt,
 } from "../shared/media-store.ts";
-import { readImage, writeImage } from "../shared/images-store.ts";
-import { appendAgentEvent } from "../shared/agent-store.ts";
-import { readShell, writeShell } from "../shared/shell-io.ts";
-import { isExcalidrawWidget, migrateDrawings, migrateLegacyImages } from "../web/lib/media-migrate.ts";
-import { writeWidget } from "../shared/widgets-store.ts";
+import { deleteImage, readImage } from "../shared/images-store.ts";
+import { readShell } from "../shared/shell-io.ts";
+import { isExcalidrawWidget, saveWidgetDrawing } from "../web/lib/widget-drawing.ts";
+import type { WidgetRecord } from "../shared/widgets-store.ts";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
@@ -32,9 +31,11 @@ test("an image is a real file filed by bot and month, and reads back by id", () 
   const when = new Date(2026, 8, 23, 11, 5);
   const item = saveImage({
     id: "imgfox000001", mime: "image/png", bytes: PNG, prompt: "A red fox: in the snow", model: "flux", provider: "openrouter",
-    botId: "bot-1", botName: "Test/Bot", createdAt: when,
+    botId: "bot-1", botName: "Test/Bot", chatId: "chat-fox", createdAt: when,
   }, root, index);
   assert.equal(item.path, join(root, "Test Bot", "2026-09", "2026-09-23 11.05 A red fox.png"));
+  assert.equal(item.chatId, "chat-fox");
+  assert.equal(findMedia("imgfox000001", index)?.chatId, "chat-fox");
   assert.deepEqual(readFileSync(item.path), PNG);
   const read = readMediaBytes("imgfox000001", index);
   assert.equal(read.status, "ok");
@@ -43,16 +44,16 @@ test("an image is a real file filed by bot and month, and reads back by id", () 
   // The same title in the same minute never overwrites.
   const second = saveImage({
     id: "imgfox000002", mime: "image/png", bytes: PNG, prompt: "A red fox", model: "", provider: "",
-    botId: "bot-1", botName: "Test/Bot", createdAt: when,
+    botId: "bot-1", botName: "Test/Bot", chatId: null, createdAt: when,
   }, root, index);
   assert.equal(second.path, join(root, "Test Bot", "2026-09", "2026-09-23 11.05 A red fox 2.png"));
-  assert.throws(() => saveImage({ id: "../escape", mime: "image/png", bytes: PNG, prompt: "", model: "", provider: "", botId: "", botName: "" }, root, index), /media_id/);
-  assert.throws(() => saveImage({ id: "imghtml00001", mime: "text/html", bytes: PNG, prompt: "", model: "", provider: "", botId: "", botName: "" }, root, index), /image_type/);
+  assert.throws(() => saveImage({ id: "../escape", mime: "image/png", bytes: PNG, prompt: "", model: "", provider: "", botId: "", botName: "", chatId: null }, root, index), /media_id/);
+  assert.throws(() => saveImage({ id: "imghtml00001", mime: "text/html", bytes: PNG, prompt: "", model: "", provider: "", botId: "", botName: "", chatId: null }, root, index), /image_type/);
 });
 
 test("a moved file reads as moved, Locate relinks it, and only to the same kind", () => {
   const { root, index, dir } = box();
-  const item = saveImage({ id: "imgmove00001", mime: "image/png", bytes: PNG, prompt: "cat", model: "", provider: "", botId: "b", botName: "B" }, root, index);
+  const item = saveImage({ id: "imgmove00001", mime: "image/png", bytes: PNG, prompt: "cat", model: "", provider: "", botId: "b", botName: "B", chatId: null }, root, index);
   const moved = join(dir, "elsewhere.png");
   renameSync(item.path, moved);
   assert.equal(readMediaBytes("imgmove00001", index).status, "moved");
@@ -73,7 +74,7 @@ test("a moved file reads as moved, Locate relinks it, and only to the same kind"
   relinkMedia("imgmove00001", moved, index);
   assert.equal(readMediaBytes("imgmove00001", index).status, "ok");
   // Two entries never share one file: trashing one would break the other.
-  const other = saveImage({ id: "imgother0001", mime: "image/png", bytes: PNG, prompt: "dog", model: "", provider: "", botId: "b", botName: "B" }, root, index);
+  const other = saveImage({ id: "imgother0001", mime: "image/png", bytes: PNG, prompt: "dog", model: "", provider: "", botId: "b", botName: "B", chatId: null }, root, index);
   renameSync(other.path, join(dir, "gone.png"));
   assert.throws(() => relinkMedia("imgother0001", moved, index), /media_in_use/);
   // A file swapped for a link, or for something that is not an image, stops
@@ -93,16 +94,18 @@ test("a drawing saves as a .excalidraw scene without camera steps, and the Libra
     botId: "bot-2",
     botName: "Designer",
     provider: "excalidraw",
+    chatId: "chat-draw",
   }, root, index);
   assert.ok(drawing.path.endsWith(" Drawing - Flow.excalidraw"));
+  assert.equal(drawing.chatId, "chat-draw");
   // A replayed chat posts the same drawing again: no second file.
-  const again = saveDrawing({ id: "call_drawing01", elements: "[]", title: "Drawing - Flow", botId: "bot-2", botName: "Designer", provider: "excalidraw" }, root, index);
+  const again = saveDrawing({ id: "call_drawing01", elements: "[]", title: "Drawing - Flow", botId: "bot-2", botName: "Designer", provider: "excalidraw", chatId: null }, root, index);
   assert.equal(again.path, drawing.path);
   assert.deepEqual(readdirSync(dirname(drawing.path)).length, 1);
   const scene = JSON.parse(readFileSync(drawing.path, "utf8")) as { type: string; elements: Array<{ type: string }> };
   assert.equal(scene.type, "excalidraw");
   assert.deepEqual(scene.elements.map((el) => el.type), ["rectangle"]);
-  saveImage({ id: "imglib000001", mime: "image/png", bytes: PNG, prompt: "a lighthouse at dusk", model: "", provider: "", botId: "bot-1", botName: "One" }, root, index);
+  saveImage({ id: "imglib000001", mime: "image/png", bytes: PNG, prompt: "a lighthouse at dusk", model: "", provider: "", botId: "bot-1", botName: "One", chatId: null }, root, index);
   assert.deepEqual(listMedia({ kind: "drawing" }, index).map((row) => row.id), ["call_drawing01"]);
   assert.deepEqual(listMedia({ botId: "bot-1" }, index).map((row) => row.id), ["imglib000001"]);
   assert.deepEqual(listMedia({ query: "LIGHTHOUSE" }, index).map((row) => row.id), ["imglib000001"]);
@@ -114,14 +117,14 @@ test("a drawing saves as a .excalidraw scene without camera steps, and the Libra
   assert.equal(listMedia({}, index).some((row) => row.id === "imglib000001"), false);
   assert.equal(readMediaBytes("imglib000001", index).status, "missing");
   assert.equal(existsSync(kept.path), true);
-  saveImage({ id: "imglib000001", mime: "image/png", bytes: PNG, prompt: "a lighthouse at dusk", model: "", provider: "", botId: "bot-1", botName: "One" }, root, index);
+  saveImage({ id: "imglib000001", mime: "image/png", bytes: PNG, prompt: "a lighthouse at dusk", model: "", provider: "", botId: "bot-1", botName: "One", chatId: null }, root, index);
   assert.equal(listMedia({}, index).some((row) => row.id === "imglib000001"), false);
 });
 
 test("an unreadable index refuses writes instead of dropping every entry", () => {
   const { root, index } = box();
   writeFileSync(index, "{ not json");
-  assert.throws(() => saveImage({ id: "imgbad000001", mime: "image/png", bytes: PNG, prompt: "x", model: "", provider: "", botId: "b", botName: "B" }, root, index), /media_index_unreadable/);
+  assert.throws(() => saveImage({ id: "imgbad000001", mime: "image/png", bytes: PNG, prompt: "x", model: "", provider: "", botId: "b", botName: "B", chatId: null }, root, index), /media_index_unreadable/);
   assert.equal(readFileSync(index, "utf8"), "{ not json");
   // And the Library says so instead of showing an empty grid over real files.
   assert.throws(() => listMedia({}, index), /media_index_unreadable/);
@@ -132,7 +135,7 @@ test("an unreadable index refuses writes instead of dropping every entry", () =>
 test("entries this version cannot read survive a save", () => {
   const { root, index } = box();
   writeFileSync(index, JSON.stringify({ schemaVersion: 1, items: [{ id: "future000001", kind: "video", path: "/x.mp4" }] }));
-  saveImage({ id: "imgnow000001", mime: "image/png", bytes: PNG, prompt: "x", model: "", provider: "", botId: "b", botName: "B" }, root, index);
+  saveImage({ id: "imgnow000001", mime: "image/png", bytes: PNG, prompt: "x", model: "", provider: "", botId: "b", botName: "B", chatId: null }, root, index);
   const raw = JSON.parse(readFileSync(index, "utf8")) as { items: Array<{ id: string }> };
   assert.deepEqual(raw.items.map((row) => row.id).sort(), ["future000001", "imgnow000001"]);
 });
@@ -147,66 +150,33 @@ test("titles come from the prompt's first clause", () => {
   assert.equal(titleFromPrompt("...", "Image"), "Image");
 });
 
-test("legacy base64 records move into the media folder under their bot, keeping their ids", () => {
+test("a widget saves as a drawing dated when it was first drawn, and only an Excalidraw scene does", () => {
   const { root, index, dir } = box();
-  const previous = {
-    media: process.env.UB_MEDIA_DIR, index: process.env.UB_MEDIA_INDEX_PATH, images: process.env.UB_IMAGES_DIR,
-    agents: process.env.UB_AGENT_STORE_PATH, shell: process.env.UB_SHELL_PATH,
-  };
-  process.env.UB_MEDIA_DIR = root;
-  process.env.UB_MEDIA_INDEX_PATH = index;
-  process.env.UB_IMAGES_DIR = join(dir, "legacy");
-  process.env.UB_AGENT_STORE_PATH = join(dir, "agents.json");
-  process.env.UB_SHELL_PATH = join(dir, "shell.json");
-  try {
-    const shell = readShell();
-    const bot = shell.bots[0]!;
-    writeShell(shell);
-    writeImage({ id: "imglegacy001", mime: "image/png", b64: PNG.toString("base64"), prompt: "old sunset", provider: "openai", model: "gpt-image-1" });
-    appendAgentEvent(bot.id, { kind: "image", text: "old sunset", imageId: "imglegacy001", id: "img_imglegacy001" });
-    assert.deepEqual(migrateLegacyImages(), { moved: 1, failed: 0 });
-    const item = findMedia("imglegacy001", index);
-    assert.equal(item?.botId, bot.id);
-    assert.ok(item?.path.startsWith(join(root, bot.name.replace(/[/\\:]/g, " "))));
-    assert.deepEqual(readFileSync(item!.path), PNG);
-    assert.equal(existsSync(join(dir, "legacy", "imglegacy001.json")), false);
-    assert.deepEqual(migrateLegacyImages(), { moved: 0, failed: 0 });
-  } finally {
-    for (const [key, value] of Object.entries({
-      UB_MEDIA_DIR: previous.media, UB_MEDIA_INDEX_PATH: previous.index, UB_IMAGES_DIR: previous.images,
-      UB_AGENT_STORE_PATH: previous.agents, UB_SHELL_PATH: previous.shell,
-    })) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
-});
-
-test("drawings still in a chat backfill into the Library, dated when first drawn, Excalidraw only", () => {
-  const { root, index, dir } = box();
-  const keys = ["UB_MEDIA_DIR", "UB_MEDIA_INDEX_PATH", "UB_WIDGETS_DIR", "UB_AGENT_STORE_PATH", "UB_SHELL_PATH"] as const;
+  const keys = ["UB_MEDIA_DIR", "UB_MEDIA_INDEX_PATH", "UB_SHELL_PATH"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   process.env.UB_MEDIA_DIR = root;
   process.env.UB_MEDIA_INDEX_PATH = index;
-  process.env.UB_WIDGETS_DIR = join(dir, "widgets");
-  process.env.UB_AGENT_STORE_PATH = join(dir, "agents.json");
   process.env.UB_SHELL_PATH = join(dir, "shell.json");
   try {
-    const shell = readShell();
-    const bot = shell.bots[0]!;
-    writeShell(shell);
-    const drawing = { connectionId: "excalidraw", toolName: "excalidraw__create_view", resourceUri: null, result: null, createdAt: new Date().toISOString() };
-    writeWidget({ ...drawing, id: "call_old00001", arguments: { elements: JSON.stringify([{ type: "rectangle", label: { text: "Old" } }]) } });
-    writeWidget({ ...drawing, id: "call_chart0001", connectionId: "charts", toolName: "charts__plot", arguments: { elements: [] } });
-    appendAgentEvent(bot.id, { kind: "widget", text: "Drawing", widgetId: "call_old00001", id: "wgt_call_old00001" });
-    appendAgentEvent(bot.id, { kind: "widget", text: "Drawing", widgetId: "call_chart0001", id: "wgt_call_chart0001" });
-    assert.deepEqual(migrateDrawings(), { saved: 1, failed: 0 });
+    const bot = readShell().bots[0]!;
+    const base = { chatId: "chat-1", resourceUri: null, result: null, createdAt: "2026-10-01T09:30:00.000Z" };
+    const scene: WidgetRecord = { ...base, id: "call_old00001", connectionId: "excalidraw", toolName: "excalidraw__create_view", arguments: { elements: JSON.stringify([{ type: "rectangle", label: { text: "Old" } }]) } };
+    const chart: WidgetRecord = { ...base, id: "call_chart0001", connectionId: "charts", toolName: "charts__plot", arguments: { elements: [] } };
+    saveWidgetDrawing(scene, bot.id, bot.name, scene.createdAt);
+    saveWidgetDrawing(chart, bot.id, bot.name, chart.createdAt);
     const item = findMedia("call_old00001", index)!;
     assert.equal(item.title, "Drawing - Old");
     assert.equal(item.botId, bot.id);
+    assert.equal(item.chatId, "chat-1");
+    assert.equal(item.createdAt, "2026-10-01T09:30:00.000Z");
     assert.equal(findMedia("call_chart0001", index), null);
-    assert.deepEqual(migrateDrawings(), { saved: 0, failed: 0 });
+    // Posted again whenever the app replays the widget: still one file.
+    saveWidgetDrawing(scene, bot.id, bot.name, "2026-10-25T00:00:00.000Z");
+    assert.equal(listMedia({ kind: "drawing" }, index).length, 1);
+    assert.equal(findMedia("call_old00001", index)?.createdAt, "2026-10-01T09:30:00.000Z");
     assert.equal(isExcalidrawWidget({ connectionId: "other", toolName: "other__x", arguments: { elements: [] } }), false);
+    assert.equal(isExcalidrawWidget({ connectionId: "other", toolName: "excalidraw__create_view", arguments: { elements: [] } }), true);
+    assert.equal(isExcalidrawWidget({ connectionId: "excalidraw", toolName: "x", arguments: {} }), false);
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) delete process.env[key];
@@ -217,20 +187,19 @@ test("drawings still in a chat backfill into the Library, dated when first drawn
 
 test("Regenerate redraws a lost image from the stored prompt under the same id, and refuses one that is there", async () => {
   const { root, index, dir } = box();
-  const keys = ["UB_MEDIA_DIR", "UB_MEDIA_INDEX_PATH", "UB_IMAGES_DIR", "UB_AGENT_STORE_PATH", "UB_SHELL_PATH", "UB_ROUTER_DESKTOP_TOKEN"] as const;
+  const keys = ["UB_MEDIA_DIR", "UB_MEDIA_INDEX_PATH", "UB_IMAGES_DIR", "UB_SHELL_PATH", "UB_ROUTER_DESKTOP_TOKEN"] as const;
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const realFetch = globalThis.fetch;
   process.env.UB_MEDIA_DIR = root;
   process.env.UB_MEDIA_INDEX_PATH = index;
   process.env.UB_IMAGES_DIR = join(dir, "legacy");
-  process.env.UB_AGENT_STORE_PATH = join(dir, "agents.json");
   process.env.UB_SHELL_PATH = join(dir, "shell.json");
   process.env.UB_ROUTER_DESKTOP_TOKEN = "router-token-test";
   try {
-    const shell = readShell();
-    const bot = shell.bots[0]!;
-    writeShell(shell);
-    appendAgentEvent(bot.id, { kind: "image", text: "a red kite over dunes", imageId: "imglost00001", id: "img_imglost00001" });
+    const bot = readShell().bots[0]!;
+    // The Library entry holds the prompt; the file is then lost.
+    const lost = saveImage({ id: "imglost00001", mime: "image/png", bytes: PNG, prompt: "a red kite over dunes", model: "flux", provider: "openrouter", botId: bot.id, botName: bot.name, chatId: null });
+    renameSync(lost.path, join(dir, "lost.png"));
     const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       sent.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
@@ -284,7 +253,7 @@ test("Regenerate redraws a lost image from the stored prompt under the same id, 
     await assert.rejects(() => regenerateImage("imglost00001"), /regenerate_timeout/);
 
     // The folder cannot take the file: the paid bytes land in the app's own
-    // store under the same id, and the next migration puts them back.
+    // store under the same id, and the image route serves them from there.
     globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ b64_json: PNG.toString("base64"), mime: "image/png" }] }))) as typeof fetch;
     const blocked = join(dir, "blocked");
     writeFileSync(blocked, "not a folder");
@@ -292,9 +261,10 @@ test("Regenerate redraws a lost image from the stored prompt under the same id, 
     assert.deepEqual(await regenerateImage("imglost00001"), { path: "" });
     assert.equal(readImage("imglost00001")?.prompt, "a red kite over dunes");
     await assert.rejects(() => regenerateImage("imglost00001"), /image_present/);
+    // The folder works again: the owner asks for it once more, and it goes back there.
     process.env.UB_MEDIA_DIR = root;
-    assert.equal(migrateLegacyImages().moved, 1);
-    assert.equal(readImage("imglost00001"), null);
+    deleteImage("imglost00001");
+    await regenerateImage("imglost00001");
     assert.equal(readMediaBytes("imglost00001", index).status, "ok");
 
     // What the owner does while it is drawn wins. A file put back at its
@@ -357,7 +327,7 @@ test("an HTML page is indexed where the bot wrote it, once per file, and stays r
   mkdirSync(dirname(path), { recursive: true });
   const html = "<html><head><title>Q3 &amp; Q4 report</title></head><body>hi</body></html>";
   writeFileSync(path, html);
-  const first = recordPage({ path, html, botId: "b", botName: "B" }, index);
+  const first = recordPage({ path, html, botId: "b", botName: "B", chatId: null }, index);
   assert.equal(first.added, true);
   assert.equal(first.item.kind, "page");
   assert.equal(first.item.title, "Q3 & Q4 report");
@@ -367,19 +337,19 @@ test("an HTML page is indexed where the bot wrote it, once per file, and stays r
   assert.equal(readMediaBytes(first.item.id, index).status, "ok");
   assert.deepEqual(listMedia({ kind: "page" }, index).map((item) => item.id), [first.item.id]);
   // A rewrite keeps the one entry and takes the new title.
-  const again = recordPage({ path, html: "<title>Final report</title>", botId: "b", botName: "B" }, index);
+  const again = recordPage({ path, html: "<title>Final report</title>", botId: "b", botName: "B", chatId: null }, index);
   assert.equal(again.added, false);
   assert.equal(again.item.id, first.item.id);
   assert.equal(findMedia(first.item.id, index)?.title, "Final report");
   // No <title>: the file name.
   const bare = join(dir, "site", "landing page.htm");
   writeFileSync(bare, "<p>x</p>");
-  assert.equal(recordPage({ path: bare, html: "<p>x</p>", botId: "b", botName: "B" }, index).item.title, "landing page");
+  assert.equal(recordPage({ path: bare, html: "<p>x</p>", botId: "b", botName: "B", chatId: null }, index).item.title, "landing page");
   // Only .html files, only real files.
   const text = join(dir, "notes.txt");
   writeFileSync(text, "x");
-  assert.throws(() => recordPage({ path: text, html: "x", botId: "b", botName: "B" }, index), /media_type/);
-  assert.throws(() => recordPage({ path: join(dir, "missing.html"), html: "x", botId: "b", botName: "B" }, index), /media_type/);
+  assert.throws(() => recordPage({ path: text, html: "x", botId: "b", botName: "B", chatId: null }, index), /media_type/);
+  assert.throws(() => recordPage({ path: join(dir, "missing.html"), html: "x", botId: "b", botName: "B", chatId: null }, index), /media_type/);
   // A page never relinks to an image, nor an image to a page.
   const png = join(dir, "pic.png");
   writeFileSync(png, PNG);
@@ -390,18 +360,43 @@ test("an HTML page is indexed where the bot wrote it, once per file, and stays r
   // Removed from the Library: a later write does not bring it back.
   assert.equal(forgetMedia(first.item.id, index), true);
   writeFileSync(path, html);
-  const after = recordPage({ path: join(dir, "moved.html"), html, botId: "b", botName: "B" }, index);
+  const after = recordPage({ path: join(dir, "moved.html"), html, botId: "b", botName: "B", chatId: null }, index);
   assert.equal(after.added, false);
   assert.equal(after.item.forgotten, true);
   // A new file at the path a relinked page left gets an entry of its own.
   const other = join(dir, "other.html");
   writeFileSync(other, "<title>Other</title>");
-  const second = recordPage({ path: other, html: "<title>Other</title>", botId: "b", botName: "B" }, index);
+  const second = recordPage({ path: other, html: "<title>Other</title>", botId: "b", botName: "B", chatId: null }, index);
   renameSync(other, join(dir, "other-moved.html"));
   relinkMedia(second.item.id, join(dir, "other-moved.html"), index);
   writeFileSync(other, "<title>Fresh</title>");
-  const fresh = recordPage({ path: other, html: "<title>Fresh</title>", botId: "b", botName: "B" }, index);
+  const fresh = recordPage({ path: other, html: "<title>Fresh</title>", botId: "b", botName: "B", chatId: null }, index);
   assert.equal(fresh.added, true);
   assert.notEqual(fresh.item.id, second.item.id);
   assert.equal(findMedia(second.item.id, index)?.title, "Other");
+});
+
+test("a page keeps the chat that first filed it, and listMedia returns chatId", () => {
+  const { dir, index } = box();
+  const path = join(dir, "chatpage.html");
+  writeFileSync(path, "<title>Chat page</title>");
+  const first = recordPage({ path, html: "<title>Chat page</title>", botId: "b", botName: "B", chatId: "chat-page" }, index);
+  assert.equal(first.item.chatId, "chat-page");
+  // A rewrite from another chat does not move the page to it.
+  const again = recordPage({ path, html: "<title>Chat page</title>", botId: "b", botName: "B", chatId: "chat-other" }, index);
+  assert.equal(again.item.chatId, "chat-page");
+  assert.equal(listMedia({}, index)[0]?.chatId, "chat-page");
+});
+
+test("an index entry written without chatId reads as null, and a bad chatId is left untouched", () => {
+  const { dir, root, index } = box();
+  const saved = saveImage({ id: "imgnochat001", mime: "image/png", bytes: PNG, prompt: "old", model: "", provider: "", botId: "b", botName: "B", chatId: "chat-1" }, root, index);
+  const raw = JSON.parse(readFileSync(index, "utf8")) as { items: Array<Record<string, unknown>> };
+  delete raw.items[0]!.chatId;
+  raw.items.push({ ...raw.items[0]!, id: "imgbadchat001", chatId: 7 });
+  writeFileSync(index, JSON.stringify(raw));
+  assert.equal(findMedia(saved.id, index)?.chatId, null);
+  assert.equal(findMedia("imgbadchat001", index), null);
+  assert.equal(listMedia({}, index)[0]?.chatId, null);
+  assert.ok(dir);
 });

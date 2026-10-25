@@ -2,320 +2,160 @@ import AppKit
 import SwiftUI
 import UsefulBotCore
 
-/// The wide instructions editor, a sheet over the window. It starts at a
-/// comfortable height and grows with the text up to its maximum (652 pt, or
-/// the window less margins), then the text scrolls. The draft is never
-/// clipped: past the limit Save is off and the footer says by how much.
-struct InstructionsEditorView: View {
-    @EnvironmentObject private var model: AppModel
-    let botId: String
-    let onClose: () -> Void
+// MARK: - Text box
 
-    @State private var draft = ""
-    /// The stored description this draft started from.
-    @State private var base = ""
-    @State private var confirmingDiscard = false
-    /// The Discard confirm was opened by Reload, so Discard takes the stored
-    /// text instead of closing.
-    @State private var reloadPending = false
-    @State private var seeded = false
-    @State private var context: BotContextInfo?
-    @State private var saving = false
-    @State private var saveFailed = false
+/// The app's multi-line field (Instructions, a routine's instruction,
+/// feedback): it grows with its text from `minHeight` to `maxHeight`, then
+/// scrolls. The padding sits inside the scrolling text, so the first and last
+/// lines keep their air and the text scrolls to the box's edge in between.
+struct TextBox: View {
+    @Binding var text: String
+    var placeholder = ""
+    var minHeight: CGFloat = 96
+    var maxHeight: CGFloat = 260
+    var editable = true
+    /// Take the caret on appear. Off when the field sits in a page the owner
+    /// is only reading.
+    var focusOnAppear = false
+    var invalid = false
+    var accessibilityLabel: String
+    var accessibilityIdentifier: String
+    /// Esc in the field.
+    var onCancel: () -> Void = { NSApp.keyWindow?.makeFirstResponder(nil) }
+    /// Whether the field holds the caret, for a page that must not overwrite
+    /// a draft while it's being typed.
+    var focused: Binding<Bool>? = nil
+
     @State private var textHeight: CGFloat = 0
-
-    private static let width: CGFloat = 720
-    private static let headerHeight: CGFloat = 56
-    private static let footerHeight: CGFloat = 64
-    private static let textTop: CGFloat = 4
-    private static let minHeight: CGFloat = 360
-    private static let maxHeight: CGFloat = 652
-    private static let windowMargin: CGFloat = 48
-
-    private var bot: ShellBot? { model.store?.bots.first { $0.id == botId } }
-    private var name: String { bot?.name ?? "Bot" }
-    private var dirty: Bool { draft != base }
-    /// The stored text moved since the editor opened (another window or a bot
-    /// edited it), so a plain Save would overwrite that change.
-    private var changedElsewhere: Bool { seeded && dirty && (bot?.description ?? "") != base }
-
-    private var restoreText: String? {
-        guard botId == Threads.defaultBotId, let seed = context?.seed, draft != seed.text else { return nil }
-        return seed.text
-    }
+    @State private var hasFocus = false
 
     var body: some View {
-        GeometryReader { proxy in
-            let ceiling = min(Self.maxHeight, max(Self.minHeight, proxy.size.height - 2 * Self.windowMargin))
-            let chrome = Self.headerHeight + Self.textTop + Self.footerHeight
-            let height = min(ceiling, max(Self.minHeight, chrome + textHeight))
-            ZStack {
-                Theme.C.overlay
-                    .ignoresSafeArea()
-                    // A draft is never lost to a stray click.
-                    .onTapGesture { if !dirty { onClose() } }
-                dialog(height: height, chrome: chrome)
-                    .frame(width: min(Self.width, proxy.size.width - 48), height: height)
-                    .background(Theme.C.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: DesignTokens.Radius.dialog, style: .continuous)
-                            .strokeBorder(Theme.C.edge, lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.dialog, style: .continuous))
-                    .popShadow()
-                    .animation(.easeOut(duration: 0.12), value: height)
-                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        BoxTextView(
+            text: $text,
+            height: $textHeight,
+            focused: Binding(get: { hasFocus }, set: { hasFocus = $0; focused?.wrappedValue = $0 }),
+            editable: editable,
+            focusOnAppear: focusOnAppear,
+            accessibilityLabel: accessibilityLabel,
+            accessibilityIdentifier: accessibilityIdentifier,
+            onCancel: onCancel
+        )
+        .frame(height: min(maxHeight, max(minHeight, textHeight)))
+        .overlay(alignment: .topLeading) {
+            if text.isEmpty, !placeholder.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: BoxTextView.fontSize))
+                    .foregroundStyle(Theme.C.inkFaint)
+                    .lineSpacing(BoxTextView.lineSpacing)
+                    .padding(.top, BoxTextView.inset.height)
+                    // Past the caret, which an empty focused field draws at
+                    // the first glyph's x.
+                    .padding(.leading, BoxTextView.inset.width + 2)
+                    .padding(.trailing, BoxTextView.inset.width)
+                    .allowsHitTesting(false)
             }
         }
-        .onExitCommand(perform: cancel)
-        .onAppear(perform: seed)
-        .task { context = await model.botContext(botId: botId) }
-        .onChange(of: bot?.description) { _, live in
-            // A clean draft follows the stored text; only a dirty one has a
-            // change of its own to protect.
-            guard seeded, !saving, !dirty else { return }
-            let text = live ?? ""
-            if text != base { base = text; draft = text }
-        }
-        .onChange(of: draft) { _, next in
-            saveFailed = false
-            confirmingDiscard = false
-            // Kept in the model until saved or discarded, so closing the
-            // window or the editor never loses it.
-            if seeded { model.instructionDrafts[botId] = next == base ? nil : InstructionDraft(base: base, text: next) }
-        }
-    }
-
-    private func dialog(height: CGFloat, chrome: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("\(name) instructions")
-                    .font(.system(size: DesignTokens.FontSize.settingsTitle, weight: .semibold))
-                    .foregroundStyle(Theme.C.ink)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                NativeIconButton(systemImage: "xmark", size: 32, iconSize: 14, action: cancel)
-                    .accessibilityLabel("Close")
-            }
-            .padding(.leading, 28)
-            .padding(.trailing, 12)
-            .frame(height: Self.headerHeight)
-
-            InstructionsTextView(text: $draft, height: $textHeight, editable: !saving, onCancel: cancel)
-                .padding(.horizontal, 28)
-                .padding(.top, Self.textTop)
-                .frame(maxHeight: .infinity)
-
-            footer
-        }
-    }
-
-    private var footer: some View {
-        VStack(spacing: 0) {
-            Hairline()
-            HStack(spacing: 12) {
-                if let restoreText, !saving {
-                    Button {
-                        draft = restoreText
-                    } label: {
-                        Text("Restore default")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.C.inkMuted)
-                            .padding(.horizontal, 6)
-                            .frame(height: 32)
-                    }
-                    .buttonStyle(.plain)
-                    .pointerOnHover()
-                    .accessibilityIdentifier("instructions-restore")
-                }
-                status
-                Spacer(minLength: 0)
-                if confirmingDiscard {
-                    NativeButton("Keep editing", kind: .secondary, small: true) {
-                        confirmingDiscard = false
-                        reloadPending = false
-                    }
-                        .accessibilityIdentifier("instructions-keep")
-                    NativeButton("Discard", kind: .danger, small: true, action: discard)
-                        .accessibilityIdentifier("instructions-discard")
-                } else {
-                    NativeButton("Cancel", kind: .secondary, small: true, action: cancel)
-                        .accessibilityIdentifier("instructions-cancel")
-                    if changedElsewhere {
-                        NativeButton("Reload", kind: .secondary, small: true, action: requestReload)
-                            .accessibilityIdentifier("instructions-reload")
-                    }
-                    NativeButton(
-                        saveFailed ? "Try again" : (changedElsewhere ? "Save anyway" : "Save"),
-                        kind: .primary,
-                        small: true,
-                        enabled: InstructionsLimit.canSave(draft, max: limit) && !saving,
-                        action: save
-                    )
-                    .accessibilityIdentifier("instructions-save")
-                }
-            }
-            .padding(.leading, 22)
-            .padding(.trailing, 20)
-            .frame(height: Self.footerHeight - 1)
-        }
-    }
-
-    private var limit: Int { context?.max ?? InstructionsLimit.max }
-
-    @ViewBuilder
-    private var status: some View {
-        if confirmingDiscard {
-            Text("Discard changes?")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.C.ink)
-        } else if saveFailed {
-            Text("Couldn't save. Your text is kept here.")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.C.danger)
-        } else if changedElsewhere {
-            Text("This changed since you opened it.")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.C.warning)
-        } else {
-            switch InstructionsLimit.footer(for: draft, max: limit) {
-            case .none:
-                EmptyView()
-            case .near(let text):
-                Text(text)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.C.inkMuted)
-                    .monospacedDigit()
-            case .over(let text):
-                Text(text)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.C.danger)
-                    .monospacedDigit()
-            }
-        }
-    }
-
-    private func seed() {
-        guard !seeded else { return }
-        let live = bot?.description ?? ""
-        if let kept = model.instructionDrafts[botId] {
-            base = kept.base
-            draft = kept.text
-        } else {
-            base = live
-            draft = live
-        }
-        seeded = true
-    }
-
-    /// Esc, the close button and Cancel: a dirty draft asks first.
-    private func cancel() {
-        if confirmingDiscard { confirmingDiscard = false; reloadPending = false; return }
-        if dirty { confirmingDiscard = true } else { onClose() }
-    }
-
-    private func discard() {
-        if reloadPending {
-            reloadPending = false
-            confirmingDiscard = false
-            reload()
-            return
-        }
-        model.instructionDrafts[botId] = nil
-        onClose()
-    }
-
-    /// Reload over a dirty draft asks first, through the Discard confirm.
-    private func requestReload() {
-        if dirty {
-            reloadPending = true
-            confirmingDiscard = true
-        } else {
-            reload()
-        }
-    }
-
-    /// Take the stored text over the draft.
-    private func reload() {
-        let live = bot?.description ?? ""
-        base = live
-        draft = live
-        model.instructionDrafts[botId] = nil
-    }
-
-    private func save() {
-        guard !saving else { return }
-        guard dirty else { onClose(); return }
-        saving = true
-        saveFailed = false
-        model.patchBot(botId: botId, ["description": draft]) { ok in
-            saving = false
-            if ok {
-                model.instructionDrafts[botId] = nil
-                onClose()
-            } else {
-                saveFailed = true
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.C.surface)
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous)
+                .strokeBorder(invalid ? Theme.C.danger : hasFocus ? Theme.C.ink : Theme.C.borderStrong, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous))
     }
 }
 
 // MARK: - Text view
 
-/// A plain text view at 14/22 that reports its laid-out height, so the
-/// dialog can grow with it. The scroller only matters once the dialog stops
-/// growing.
-private struct InstructionsTextView: NSViewRepresentable {
+/// A plain text view at 14/22 that reports its laid-out height, so the box
+/// around it can grow with it. TextKit 1: a field's text is short, and laying
+/// it all out once keeps scrolling free of the per-frame layout TextKit 2 does.
+struct BoxTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var height: CGFloat
+    @Binding var focused: Bool
     var editable = true
+    var focusOnAppear = false
+    var accessibilityLabel: String
+    var accessibilityIdentifier: String
     var onCancel: () -> Void
 
-    private static let font = NSFont.systemFont(ofSize: 14)
-    private static let lineHeight: CGFloat = 22
-    /// Air under the last line, so the caret never sits on the footer rule.
-    private static let bottomPad: CGFloat = 16
+    static let fontSize = DesignTokens.FontSize.fieldInput
+    static let lineHeight: CGFloat = 22
+    /// Inside the scrolling text: 12 pt above the first line and below the
+    /// last, 12 pt at the sides.
+    static let inset = NSSize(width: 12, height: 12)
+    private static let font = NSFont.systemFont(ofSize: fontSize)
+    /// The gap that puts lines `lineHeight` apart; the placeholder uses it too.
+    static let lineSpacing = max(0, lineHeight - ceil(font.ascender - font.descender + font.leading))
 
     private static var attributes: [NSAttributedString.Key: Any] {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = max(0, lineHeight - ceil(font.ascender - font.descender + font.leading))
+        style.lineSpacing = lineSpacing
         return [.font: font, .foregroundColor: NSColor.labelColor, .paragraphStyle: style]
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scroll = NSScrollView()
+        let scroll = ContainedScrollView()
+        scroll.onWidthChange = { [weak coordinator = context.coordinator] in coordinator?.report() }
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         scroll.borderType = .noBorder
+        // A field inside a page has no bars to clear: automatic insets shifted
+        // its top, and the box opened a few points into the text.
+        scroll.automaticallyAdjustsContentInsets = false
+        scroll.contentInsets = NSEdgeInsetsZero
 
-        let view = NSTextView()
+        let view = FocusTextView(usingTextLayoutManager: false)
+        // Async: a resign while SwiftUI removes the field lands mid-update.
+        view.onFocus = { [weak coordinator = context.coordinator] focused in
+            DispatchQueue.main.async { coordinator?.parent.focused = focused }
+        }
         view.drawsBackground = false
         view.isRichText = false
         view.allowsUndo = true
+        // What the owner types is what is saved: no smart dashes, symbol
+        // replacements or autocorrect.
         view.isAutomaticQuoteSubstitutionEnabled = false
+        view.isAutomaticDashSubstitutionEnabled = false
+        view.isAutomaticTextReplacementEnabled = false
+        view.isAutomaticSpellingCorrectionEnabled = false
         view.isContinuousSpellCheckingEnabled = true
-        view.textContainerInset = .zero
+        view.textContainerInset = Self.inset
         view.textContainer?.lineFragmentPadding = 0
         view.textContainer?.widthTracksTextView = true
+        // A container that starts at zero width drew nothing in this build
+        // (see ComposerTextView); it follows the view's width from here.
+        view.textContainer?.containerSize = NSSize(width: max(1, scroll.contentSize.width), height: .greatestFiniteMagnitude)
         view.isVerticallyResizable = true
         view.isHorizontallyResizable = false
         view.autoresizingMask = [.width]
         view.typingAttributes = Self.attributes
         view.defaultParagraphStyle = Self.attributes[.paragraphStyle] as? NSParagraphStyle
         view.insertionPointColor = NSColor.labelColor
-        view.setAccessibilityIdentifier("instructions-editor")
-        view.setAccessibilityLabel("Instructions")
+        view.setAccessibilityIdentifier(accessibilityIdentifier)
+        view.setAccessibilityLabel(accessibilityLabel)
         view.delegate = context.coordinator
         scroll.documentView = view
         context.coordinator.view = view
         view.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: Self.attributes))
+        let focus = focusOnAppear
         DispatchQueue.main.async {
-            view.window?.makeFirstResponder(view)
-            view.setSelectedRange(NSRange(location: view.string.utf16.count, length: 0))
+            if focus {
+                view.window?.makeFirstResponder(view)
+                view.setSelectedRange(NSRange(location: view.string.utf16.count, length: 0))
+            }
             context.coordinator.report()
+            // The box takes its height on the next pass, and growing it left
+            // the text a few points scrolled: a field opens at its first line.
+            guard !focus else { return }
+            DispatchQueue.main.async {
+                scroll.contentView.scroll(to: .zero)
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
         }
         return scroll
     }
@@ -330,15 +170,23 @@ private struct InstructionsTextView: NSViewRepresentable {
             let selection = view.selectedRange()
             view.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: Self.attributes))
             view.setSelectedRange(NSRange(location: min(selection.location, text.utf16.count), length: 0))
-            DispatchQueue.main.async { context.coordinator.report() }
+            let typing = view.window?.firstResponder === view
+            DispatchQueue.main.async {
+                context.coordinator.report()
+                // New text (another routine, Restore default) opens at its top.
+                if !typing {
+                    scroll.contentView.scroll(to: .zero)
+                    scroll.reflectScrolledClipView(scroll.contentView)
+                }
+            }
         }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: InstructionsTextView
+        var parent: BoxTextView
         weak var view: NSTextView?
 
-        init(_ parent: InstructionsTextView) { self.parent = parent }
+        init(_ parent: BoxTextView) { self.parent = parent }
 
         func textDidChange(_ notification: Notification) {
             guard let view else { return }
@@ -352,12 +200,111 @@ private struct InstructionsTextView: NSViewRepresentable {
             return true
         }
 
+        /// The text's height with both insets, for the box to grow to.
         func report() {
             guard let view, let layout = view.layoutManager, let container = view.textContainer else { return }
             layout.ensureLayout(for: container)
             let used = layout.usedRect(for: container).height
-            let next = ceil(used + InstructionsTextView.bottomPad)
+            let next = ceil(used + BoxTextView.inset.height * 2)
             if abs(parent.height - next) > 0.5 { parent.height = next }
+        }
+    }
+}
+
+/// An `NSTextView` that says when it takes and gives up the caret.
+private final class FocusTextView: NSTextView {
+    var onFocus: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let took = super.becomeFirstResponder()
+        if took { onFocus?(true) }
+        return took
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let gave = super.resignFirstResponder()
+        if gave { onFocus?(false) }
+        return gave
+    }
+}
+
+/// The field's scroll view. A swipe or wheel flick that starts inside the
+/// field stays in it, momentum included, so the page behind doesn't move with
+/// it; one that starts with the field already at that edge scrolls the page. Its text view
+/// fills the box, so a click anywhere in the field places the caret, and a
+/// width change re-measures the text.
+private final class ContainedScrollView: NSScrollView {
+    var onWidthChange: (() -> Void)?
+    private var lastWidth: CGFloat = 0
+    /// Where the current trackpad swipe goes, once its direction is known.
+    private var swipeToPage: Bool?
+    private var lastWheel: TimeInterval = 0
+    /// A swipe's opening events, held until its direction is known.
+    private var held: [NSEvent] = []
+
+    override func scrollWheel(with event: NSEvent) {
+        guard abs(event.scrollingDeltaY) >= abs(event.scrollingDeltaX),
+              let document = documentView,
+              document.frame.height > contentView.bounds.height + 1 else {
+            // Held opening events go first, so the field sees its swipe in order.
+            held.forEach { super.scrollWheel(with: $0) }
+            held = []
+            super.scrollWheel(with: event)
+            return
+        }
+        let dy = event.scrollingDeltaY
+        let clip = contentView.bounds
+        // A positive delta scrolls toward the top; the text view is flipped.
+        let atEdge = dy > 0 ? clip.minY <= 0.5 : dy < 0 ? clip.maxY >= document.frame.height - 0.5 : false
+        // A mouse wheel has no phases: notches less than 0.35 s apart are one
+        // flick, decided like a swipe by where it started.
+        let wheel = event.phase.isEmpty && event.momentumPhase.isEmpty
+        if event.phase == .began || event.phase == .mayBegin
+            || (wheel && event.timestamp - lastWheel > 0.35) {
+            swipeToPage = nil
+            held = []
+        }
+        if wheel { lastWheel = event.timestamp }
+        // A swipe's first events can carry no movement yet: they wait until
+        // its direction says where the whole swipe goes, so it isn't split.
+        if swipeToPage == nil, dy == 0, event.phase == .began || event.phase == .mayBegin {
+            held.append(event)
+            return
+        }
+        // Any other still event with no direction yet (a swipe that ended
+        // without moving, a stray momentum tail) goes to the field with what
+        // was held.
+        if swipeToPage == nil, dy == 0 {
+            held.forEach { super.scrollWheel(with: $0) }
+            held = []
+            super.scrollWheel(with: event)
+            return
+        }
+        if swipeToPage == nil { swipeToPage = atEdge }
+        let toPage = swipeToPage ?? false
+        let pending = held
+        held = []
+        for early in pending {
+            if toPage { nextResponder?.scrollWheel(with: early) } else { super.scrollWheel(with: early) }
+        }
+        if toPage {
+            nextResponder?.scrollWheel(with: event)
+        } else if !atEdge {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    override func tile() {
+        super.tile()
+        if let text = documentView as? NSTextView, text.minSize.height != contentSize.height {
+            text.minSize = NSSize(width: 0, height: contentSize.height)
+            // A lower floor alone leaves a shrunk box's text view tall, and
+            // it then looked scrollable and kept the page's swipes.
+            text.sizeToFit()
+        }
+        if abs(contentSize.width - lastWidth) > 0.5 {
+            lastWidth = contentSize.width
+            DispatchQueue.main.async { [weak self] in self?.onWidthChange?() }
         }
     }
 }

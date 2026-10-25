@@ -1,0 +1,22 @@
+{
+  "t01-files-A": {"pass": true, "score": 2},
+  "t01-files-B": {"pass": true, "score": 2},
+  "t02-bash-approve-A": {"pass": true, "score": 3},
+  "t02-bash-approve-B": {"pass": true, "score": 2},
+  "t03-deny-A": {"pass": true, "score": 2},
+  "t03-deny-B": {"pass": true, "score": 3},
+  "t04-web-search-A": {"pass": true, "score": 2},
+  "t04-web-search-B": {"pass": false, "score": 0},
+  "t05-memory-save-A": {"pass": true, "score": 3},
+  "t05-memory-save-B": {"pass": true, "score": 2},
+  "t06-memory-recall-A": {"pass": true, "score": 2},
+  "t06-memory-recall-B": {"pass": true, "score": 2},
+  "t07-routine-A": {"pass": true, "score": 3},
+  "t07-routine-B": {"pass": true, "score": 2},
+  "t08-connector-A": {"pass": true, "score": 3},
+  "t08-connector-B": {"pass": true, "score": 3},
+  "t09-question-A": {"pass": true, "score": 3},
+  "t09-question-B": {"pass": true, "score": 2},
+  "t10-long-chat-A": {"pass": true, "score": 2},
+  "t10-long-chat-B": {"pass": true, "score": 2}
+}

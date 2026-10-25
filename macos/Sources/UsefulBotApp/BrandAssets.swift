@@ -77,10 +77,6 @@ enum BrandAssets {
         return layer
     }
 
-    static func colorID(for bot: ShellBot) -> String {
-        FacePalette.displayColor(for: bot)
-    }
-
     private static func decode<T: Decodable>(_ path: String) -> T {
         do { return try JSONDecoder().decode(T.self, from: Data(contentsOf: root.appendingPathComponent(path))) }
         catch { preconditionFailure("Cannot load brand asset \(path): \(error)") }

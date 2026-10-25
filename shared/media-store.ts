@@ -46,6 +46,11 @@ export type MediaItem = {
   mime: string;
   createdAt: string;
   /**
+   * The chat that made it, so the Library can open it. Null for an item with
+   * no chat to name (an index written before chats were tracked here).
+   */
+  chatId: string | null;
+  /**
    * The owner removed it from the Library. The entry stays as a tombstone so
    * a replayed chat that posts the same drawing again does not bring it back.
    */
@@ -85,7 +90,8 @@ const DRAWING_MIME = "application/vnd.excalidraw+json";
 const LOCK_TIMEOUT_MS = 2_000;
 const LOCK_STALE_MS = 10_000;
 const TITLE_MAX = 60;
-const PROMPT_MAX = 2_000;
+/** The most of an image prompt the index keeps: the whole of one a bot can send. */
+const PROMPT_MAX = 4_000;
 
 /** Under the test runner a write must name temp folders: a default here is the owner's real Documents. */
 function assertNotRealUnderTest(value: string | undefined, name: string): void {
@@ -119,6 +125,7 @@ function isItem(value: unknown): value is MediaItem {
     && typeof rec.title === "string" && typeof rec.prompt === "string"
     && typeof rec.model === "string" && typeof rec.provider === "string"
     && typeof rec.mime === "string" && typeof rec.createdAt === "string"
+    && (rec.chatId === undefined || rec.chatId === null || typeof rec.chatId === "string")
     && (rec.forgotten === undefined || typeof rec.forgotten === "boolean");
 }
 
@@ -134,7 +141,7 @@ function readIndexOrNull(path: string): MediaIndex | null {
     if (raw?.schemaVersion !== 1 || !Array.isArray(raw.items)) return null;
     return {
       schemaVersion: 1,
-      items: raw.items.filter(isItem),
+      items: raw.items.filter(isItem).map((item) => ({ ...item, chatId: item.chatId ?? null })),
       extra: raw.items.filter((row) => !isItem(row)),
     };
   } catch {
@@ -180,7 +187,7 @@ function lockOwner(lock: string): string | null {
 }
 
 /**
- * Cross-process read/merge/write: eve saves images, the web service saves
+ * Cross-process read/merge/write: the engine saves images, the web service saves
  * drawings. The lock is a directory holding its owner's token. A lock left by
  * a process that died is moved aside whole (a rename, so two waiters cannot
  * both take it) and removed. A holder checks the token is still its own just
@@ -300,6 +307,7 @@ function saveFile(input: {
   prompt: string;
   model: string;
   provider: string;
+  chatId: string | null;
   createdAt?: Date;
   /**
    * Regenerate: the id's file is gone, and a new one takes its place under
@@ -331,6 +339,7 @@ function saveFile(input: {
     provider: input.provider.slice(0, 80),
     mime: input.mime,
     createdAt: when.toISOString(),
+    chatId: input.chatId,
   };
   try {
     const kept = withIndex((index) => {
@@ -381,6 +390,8 @@ export function saveImage(input: {
   provider: string;
   botId: string;
   botName: string;
+  /** The chat that asked for it. A regenerate keeps the one the entry already has. */
+  chatId: string | null;
   createdAt?: Date;
   replace?: boolean;
   revive?: boolean;
@@ -409,6 +420,7 @@ export function saveDrawing(input: {
   botId: string;
   botName: string;
   provider: string;
+  chatId: string | null;
   createdAt?: Date;
 }, root = mediaRoot(), indexPath = mediaIndexPath()): MediaItem {
   let elements = input.elements;
@@ -434,6 +446,7 @@ export function saveDrawing(input: {
     prompt: "",
     model: "",
     provider: input.provider,
+    chatId: input.chatId,
     createdAt: input.createdAt,
   }, root, indexPath);
 }
@@ -463,6 +476,7 @@ export function recordPage(input: {
   html: string;
   botId: string;
   botName: string;
+  chatId: string | null;
   createdAt?: Date;
 }, indexPath = mediaIndexPath()): { item: MediaItem; added: boolean } {
   if (!isAbsolute(input.path) || !isPagePath(input.path)) throw new Error("media_type");
@@ -482,6 +496,7 @@ export function recordPage(input: {
     provider: "",
     mime: PAGE_MIME,
     createdAt: (input.createdAt ?? new Date()).toISOString(),
+    chatId: input.chatId,
   };
   return withIndex((index) => {
     // By where the file is now first: a page relinked after a move keeps

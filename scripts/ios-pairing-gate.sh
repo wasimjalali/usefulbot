@@ -5,7 +5,7 @@
 # credential store, so the legs are separate xcodebuild invocations and the
 # phone credential flips between them.
 #
-# Prereqs: the dev stack running (npm run web:dev + router/eve), a phone
+# Prereqs: the dev stack running (npm run web:dev + router/engine), a phone
 # credential enrolled (setup-local.mjs --pair-phone), a booted iOS sim.
 # Usage: SIM_ID=<device-udid> scripts/ios-pairing-gate.sh
 #   XCB overrides the xcodebuild binary; SIM_NAME/OS select the destination
@@ -97,12 +97,12 @@ disable_password_autofill
 PAIR_FILE=/tmp/ub-pair.json
 REVOKED_FLAG=/tmp/ub-pair-revoked
 WEB_DOWN_FLAG=/tmp/ub-web-down
-EVE_DOWN_FLAG=/tmp/ub-eve-down
+ENGINE_DOWN_FLAG=/tmp/ub-engine-down
 STUB_UP_FLAG=/tmp/ub-stub-up
 STUB_PORT=59999
 STUB_PID=""
 WEB_PID=""
-EVE_KILLED=""
+ENGINE_KILLED=""
 
 payload() {
   # --print-pairing answers {"error":"not_paired"} on a dead credential —
@@ -169,11 +169,11 @@ start_secure_watcher() {
 }
 
 cleanup() {
-  rm -f "$PAIR_FILE" "$REVOKED_FLAG" "$WEB_DOWN_FLAG" "$EVE_DOWN_FLAG" "$STUB_UP_FLAG"
+  rm -f "$PAIR_FILE" "$REVOKED_FLAG" "$WEB_DOWN_FLAG" "$ENGINE_DOWN_FLAG" "$STUB_UP_FLAG"
   [ -n "$WATCHER_PID" ] && kill "$WATCHER_PID" 2>/dev/null || true
   rm -f /tmp/ub-shots/.hold-* /tmp/ub-shots/.done-* 2>/dev/null || true
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null || true
-  [ -n "$EVE_KILLED" ] && start_eve || true
+  [ -n "$ENGINE_KILLED" ] && start_engine || true
 }
 trap cleanup EXIT
 
@@ -220,19 +220,19 @@ start_web() {
   rm -f "$WEB_DOWN_FLAG"
 }
 
-# Runtime-down banner: web stays up but its eve probe (:4321) must fail, so
-# kill the daily eve chain. Scoped to the listener on the daily eve port and
-# its own ancestors up to the `service.mjs eve` supervisor, so a dev stack's
-# eve (another port, another supervisor) is never touched. Same env-capture
+# Runtime-down banner: web stays up but its engine probe (:4321) must fail, so
+# kill the daily engine chain. Scoped to the listener on the daily engine port
+# and its own ancestors up to the `service.mjs engine` supervisor, so a dev
+# stack's engine (another port, another supervisor) is never touched. Same env-capture
 # dance as web.
-EVE_ENV=""
-stop_eve() {
+ENGINE_ENV=""
+stop_engine() {
   local sup="" pid chain="" p hops=0
   pid=$(lsof -ti tcp:4321 -sTCP:LISTEN | head -1)
   p="$pid"
   while [ -n "$p" ] && [ "$p" != "1" ] && [ "$hops" -lt 6 ]; do
     chain="$chain $p"
-    if ps -o command= -p "$p" 2>/dev/null | grep -q "service.mjs eve"; then
+    if ps -o command= -p "$p" 2>/dev/null | grep -q "service.mjs engine"; then
       sup="$p"
       break
     fi
@@ -240,7 +240,7 @@ stop_eve() {
     hops=$((hops + 1))
   done
   if [ -n "$sup" ]; then
-    EVE_ENV=$(ps eww -p "$sup" | tr ' ' '\n' | grep '^UB_' | tr '\n' ' ')
+    ENGINE_ENV=$(ps eww -p "$sup" | tr ' ' '\n' | grep '^UB_' | tr '\n' ' ')
     # Supervisor first so it cannot restart what is killed next.
     kill "$sup" 2>/dev/null || true
     for p in $chain; do
@@ -254,19 +254,19 @@ stop_eve() {
     lsof -ti tcp:4321 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 0.5
   done
-  touch "$EVE_DOWN_FLAG"
-  EVE_KILLED=1
+  touch "$ENGINE_DOWN_FLAG"
+  ENGINE_KILLED=1
 }
 
-start_eve() {
-  (cd "$ROOT" && env $EVE_ENV UB_ROUTER_CONFIG="${UB_ROUTER_CONFIG:-$HOME/.useful-bot/config.json}" \
-    nohup /usr/local/bin/node scripts/service.mjs eve >/tmp/ub-eve.log 2>&1 &)
+start_engine() {
+  (cd "$ROOT" && env $ENGINE_ENV UB_ROUTER_CONFIG="${UB_ROUTER_CONFIG:-$HOME/.useful-bot/config.json}" \
+    nohup /usr/local/bin/node scripts/service.mjs engine >/tmp/ub-engine.log 2>&1 &)
   for _ in $(seq 1 90); do
     lsof -ti tcp:4321 -sTCP:LISTEN >/dev/null 2>&1 && break
     sleep 1
   done
-  rm -f "$EVE_DOWN_FLAG"
-  EVE_KILLED=""
+  rm -f "$ENGINE_DOWN_FLAG"
+  ENGINE_KILLED=""
 }
 
 # The enrolled credential is the fixture: pair if nothing is live yet.
@@ -329,7 +329,7 @@ wait_banked paired
 # Readiness banners: the paired app is left on the sim from the journeys.
 # No network first (UB_OFFLINE pins the monitor), then web down for "Your
 # Mac is unreachable" — and inside that window, the signed-out error and
-# offline shots (sign-out is offline-pure by spec). Resign before eve-down
+# offline shots (sign-out is offline-pure by spec). Resign before engine-down
 # so the runtime-down leg still launches a paired app.
 leg testOfflineBanner ShotsUITests
 stop_web
@@ -339,9 +339,9 @@ wait_banked signedOut
 start_web
 leg testResignIn ShotsUITests
 wait_banked paired
-stop_eve
+stop_engine
 leg testRuntimeDownBanner ShotsUITests
-start_eve
+start_engine
 
 # Connecting / failed states: the stall stub holds the exchange open, then
 # a dead loopback port fails it. No live credential needed.

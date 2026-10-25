@@ -30,16 +30,46 @@ struct UsefulBotDesktopApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesButton(updater: updater)
             }
-            CommandGroup(after: .newItem) {
+            // One window, so New Window gives way to New chat on ⌘N.
+            CommandGroup(replacing: .newItem) {
+                Button("New chat") {
+                    model.newChatOrFocusComposer()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
                 Button("Search") {
                     model.searchOpen.toggle()
                 }
                 .keyboardShortcut("k", modifiers: .command)
 
-                Button("Reload Thread") {
+                Button("Reload chat") {
                     Task { await model.reloadThread() }
                 }
                 .keyboardShortcut("r", modifiers: .command)
+
+                Button("Stop") {
+                    model.cancel()
+                }
+                .keyboardShortcut(".", modifiers: .command)
+                .disabled(!model.pending)
+
+                Button("Previous chat") {
+                    model.openAdjacentChat(-1)
+                }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+                .disabled(!model.chatSwitchKeysEnabled)
+
+                Button("Next chat") {
+                    model.openAdjacentChat(1)
+                }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+                .disabled(!model.chatSwitchKeysEnabled)
+
+                Button("Delete chat") {
+                    model.requestDeleteCurrentChat()
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(!model.canDeleteCurrentChat)
             }
         }
     }

@@ -5,23 +5,22 @@ import Foundation
 public struct UnsentQuote: Codable, Equatable, Sendable {
     public var botId: String
     public var text: String
-    public var author: String?
 
-    public init(botId: String, text: String, author: String?) {
+    public init(botId: String, text: String) {
         self.botId = botId
         self.text = text
-        self.author = author
     }
 }
 
-/// A message the owner sent that the server refused before eve took the turn.
-/// eve never stored it, so a reload cannot bring it back: it is kept here,
+/// A message the owner sent that the server refused before the engine took
+/// the turn. The engine never stored it, so a reload cannot bring it back: it is kept here,
 /// per bot, and drawn as the owner's bubble with a failed line under it.
 public struct UnsentMessage: Codable, Identifiable, Equatable, Sendable {
     public var id: String
-    /// What a resend posts: the composed text, files and quote included.
+    /// What a resend posts: the owner's text, a reply quote included. The
+    /// files ride beside it.
     public var message: String
-    /// What the bubble shows: the message with a `[file: ...]` line per image.
+    /// What the bubble shows.
     public var echo: String
     /// The composer's own text, which is what Edit puts back.
     public var draft: String
@@ -101,7 +100,7 @@ public struct UnsentMessage: Codable, Identifiable, Equatable, Sendable {
         attachmentCount == 0 && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// The composer note for a send that never reached eve.
+    /// The composer note for a send that never reached the engine.
     public static func note(reason: String) -> String { "Your message wasn't sent. \(reason)" }
 
     /// Why a send was refused, in words. A server that never answered has no
@@ -128,13 +127,13 @@ public struct UnsentMessage: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// One bot's refused messages, oldest first.
+/// One chat's refused messages, oldest first.
 public struct UnsentList: Equatable, Sendable {
     public private(set) var items: [UnsentMessage]
 
     public init(_ items: [UnsentMessage] = []) { self.items = items }
 
-    /// Most refused messages kept per bot; the oldest go first.
+    /// Most refused messages kept per chat; the oldest go first.
     public static let cap = 20
 
     public mutating func add(_ message: UnsentMessage) {
@@ -166,20 +165,20 @@ public struct UnsentList: Equatable, Sendable {
     public mutating func clear() { items = [] }
 }
 
-/// The refused messages on disk, one JSON file per bot, so they outlive a
+/// The refused messages on disk, one JSON file per chat, so they outlive a
 /// chat switch and a relaunch.
 public struct UnsentStore: Sendable {
     public let directory: URL
 
     public init(directory: URL) { self.directory = directory }
 
-    private func file(_ botId: String) -> URL {
-        // A bot id is a path piece here, never a path.
-        directory.appendingPathComponent(URL(fileURLWithPath: botId).lastPathComponent + ".json")
+    private func file(_ chatId: String) -> URL {
+        // A chat id is a path piece here, never a path.
+        directory.appendingPathComponent(URL(fileURLWithPath: chatId).lastPathComponent + ".json")
     }
 
-    public func load(botId: String) -> [UnsentMessage] {
-        let url = file(botId)
+    public func load(chatId: String) -> [UnsentMessage] {
+        let url = file(chatId)
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         do {
             return try JSONDecoder().decode([UnsentMessage].self, from: Data(contentsOf: url))
@@ -190,8 +189,8 @@ public struct UnsentStore: Sendable {
     }
 
     /// An empty list removes the file.
-    public func save(_ messages: [UnsentMessage], botId: String) throws {
-        let url = file(botId)
+    public func save(_ messages: [UnsentMessage], chatId: String) throws {
+        let url = file(chatId)
         guard !messages.isEmpty else {
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
             return
@@ -201,8 +200,8 @@ public struct UnsentStore: Sendable {
         try data.write(to: url, options: .atomic)
     }
 
-    public func clear(botId: String) {
-        let url = file(botId)
+    public func clear(chatId: String) {
+        let url = file(chatId)
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         do {
             try FileManager.default.removeItem(at: url)

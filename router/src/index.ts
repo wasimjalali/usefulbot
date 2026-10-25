@@ -14,13 +14,13 @@ import { RouterError, errorBody } from "./errors.ts";
 import { LimitStore, estimateInputUnits } from "./limits.ts";
 import { entryFor, loadRegistry } from "./registry.ts";
 import { search } from "./search.ts";
-import { completeUpstream, resolveFor } from "./upstreams/opencode.ts";
+import { completeUpstream, outputCapFor, resolveFor } from "./upstreams/opencode.ts";
 import { generateImage, IMAGE_USAGE_TOKENS } from "./upstreams/images.ts";
 import { readCapped } from "./read-capped.ts";
 import { usageFromPayload, usageFromSseBlock, type ObservedUsage } from "../../shared/usage-parse.ts";
-import { settleCompletion, settleStreamBlock } from "./tool-finish.ts";
 import { requestSignal } from "./request-signal.ts";
-import { createThinkStream, flushThinkStream, noteInlineThink, splitThinkBlock, splitThinkCompletion } from "./inline-think.ts";
+import { createThinkStream, flushThinkStream, isToolImageCarrier, noteInlineThink, splitThinkBlock, splitThinkCompletion } from "./inline-think.ts";
+import { REASONING_TEXT_FIELDS } from "../../shared/inline-think.ts";
 
 const NODE_MAJOR = Number(process.versions.node.split(".")[0]);
 if (NODE_MAJOR !== POLICY_NODE_MAJOR) {
@@ -66,6 +66,7 @@ const ALLOWED_COMPLETION_KEYS = new Set([
   "messages",
   "stream",
   "max_tokens",
+  "max_completion_tokens",
   "n",
   "tools",
   "tool_choice",
@@ -294,7 +295,7 @@ function validateToolChoice(choice: unknown): void {
  * never asked to fetch something on the caller's behalf, and no other part
  * kinds. Anything else is `message_content_part`.
  */
-function validateContentPart(part: unknown, imagesSoFar: number): number {
+function validateContentPart(part: unknown, imagesSoFar: number, maxImages: number): number {
   if (!part || typeof part !== "object") throw validationError("unsupported_parameter", "message_content_part");
   const rec = part as Record<string, unknown>;
   const keys = Object.keys(rec);
@@ -317,7 +318,7 @@ function validateContentPart(part: unknown, imagesSoFar: number): number {
     if (typeof url !== "string" || url.length > MAX_IMAGE_DATA_URL_CHARS || !IMAGE_DATA_URL.test(url)) {
       throw validationError("unsupported_parameter", "message_content_image");
     }
-    if (imagesSoFar + 1 > MAX_IMAGE_PARTS) throw validationError("unsupported_parameter", "message_content_images");
+    if (imagesSoFar + 1 > maxImages) throw validationError("unsupported_parameter", "message_content_images");
     return imagesSoFar + 1;
   }
   throw validationError("unsupported_parameter", "message_content_part");
@@ -333,9 +334,12 @@ function validateMessages(messages: unknown[]): void {
     throw validationError("unsupported_parameter", `messages_count:${messages.length}>${MAX_MESSAGE_COUNT}`);
   }
   const outstanding = new Set<string>();
-  for (const item of messages) {
+  for (const [index, item] of messages.entries()) {
     if (!item || typeof item !== "object") throw validationError("invalid_request");
     const message = item as Record<string, unknown>;
+    // OpenAI's newer name for the instruction role. Pi sends it when a compat
+    // flag is set wrong; every upstream here knows it as `system`.
+    if (message.role === "developer") message.role = "system";
     const role = message.role;
     if (typeof role !== "string" || !ALLOWED_MESSAGE_ROLES.has(role)) {
       throw validationError("invalid_request");
@@ -345,13 +349,29 @@ function validateMessages(messages: unknown[]): void {
       // tool message with an array is a shape this build has not reasoned
       // about, and it stays refused.
       if (role !== "user") throw validationError("unsupported_parameter", "message_content_array");
+      // Pi's carrier holds the images of every tool result it follows, so it
+      // gets the owner's per-message allowance once per tool result.
+      let maxImages = MAX_IMAGE_PARTS;
+      if (isToolImageCarrier(messages, index)) {
+        let toolResults = 0;
+        while (index - toolResults - 1 >= 0 && (messages[index - toolResults - 1] as Record<string, unknown> | null)?.role === "tool") toolResults += 1;
+        maxImages = MAX_IMAGE_PARTS * toolResults;
+      }
       let images = 0;
-      for (const part of message.content) images = validateContentPart(part, images);
+      for (const part of message.content) images = validateContentPart(part, images, maxImages);
     } else if (message.content !== undefined && message.content !== null && typeof message.content !== "string") {
       throw validationError("invalid_request");
     }
-    if (message.reasoning_content !== undefined && typeof message.reasoning_content !== "string") {
-      throw validationError("invalid_request");
+    for (const field of REASONING_TEXT_FIELDS) {
+      if (message[field] !== undefined && typeof message[field] !== "string") {
+        throw validationError("invalid_request", `message_${field}`);
+      }
+    }
+    if (message.reasoning_details !== undefined) {
+      const details = message.reasoning_details;
+      if (!Array.isArray(details) || details.some((detail) => !detail || typeof detail !== "object" || Array.isArray(detail))) {
+        throw validationError("invalid_request", "message_reasoning_details");
+      }
     }
     if (role === "assistant" && message.tool_calls !== undefined) {
       if (!Array.isArray(message.tool_calls)) throw validationError("invalid_request");
@@ -379,9 +399,8 @@ function validateMessages(messages: unknown[]): void {
 }
 
 /**
- * Sampling knobs the router accepts and throws away. eve's compaction call
- * sends `temperature: 0`, and eve ends the whole session, not the turn, on
- * any 4xx from here: refusing it retired every chat that grew past its
+ * Sampling knobs the router accepts and throws away. A compaction call sends
+ * `temperature: 0`, and refusing it would fail every chat that grew past its
  * model's window. Neither key moves spend, effort or where the call goes,
  * and several upstream models refuse them, so they never travel on.
  */
@@ -390,7 +409,20 @@ const DISCARDED_SAMPLING_KEYS: Record<string, { min: number; max: number }> = {
   top_p: { min: 0, max: 1 },
 };
 
-/** Remove the discarded sampling keys, refusing a value out of range. */
+/**
+ * Keys an OpenAI client sends that the router decides for itself, accepted
+ * and thrown away: Pi's `openai-completions` client adds them when a compat
+ * flag is set wrong. Effort rides in the selection header, the router sets
+ * its own OpenAI cache key, and nothing here is ever stored upstream.
+ */
+const DISCARDED_CLIENT_KEYS: Record<string, "boolean" | "string"> = {
+  store: "boolean",
+  reasoning_effort: "string",
+  prompt_cache_key: "string",
+  prompt_cache_retention: "string",
+};
+
+/** Remove the discarded keys, refusing a sampling value out of range or a client key of the wrong type. */
 export function discardSamplingKeys(rec: Record<string, unknown>): void {
   for (const [key, range] of Object.entries(DISCARDED_SAMPLING_KEYS)) {
     if (!(key in rec)) continue;
@@ -398,6 +430,12 @@ export function discardSamplingKeys(rec: Record<string, unknown>): void {
     if (value !== null && (typeof value !== "number" || !Number.isFinite(value) || value < range.min || value > range.max)) {
       throw validationError("unsupported_parameter", `${key}_range`);
     }
+    delete rec[key];
+  }
+  for (const [key, type] of Object.entries(DISCARDED_CLIENT_KEYS)) {
+    if (!(key in rec)) continue;
+    const value = rec[key];
+    if (value !== null && typeof value !== type) throw validationError("unsupported_parameter", `${key}_type`);
     delete rec[key];
   }
 }
@@ -436,9 +474,20 @@ function validateCompletion(body: unknown): { model: string; stream: boolean; ma
     }
   }
   const stream = rec.stream === true;
+  // OpenAI's newer name for the same limit, and the one Pi sends by default.
+  // It becomes `max_tokens` here so every adapter reads one field.
+  if (rec.max_completion_tokens !== undefined) {
+    if (rec.max_tokens !== undefined && rec.max_tokens !== rec.max_completion_tokens) {
+      throw validationError("invalid_request", "max_tokens_conflict");
+    }
+    rec.max_tokens = rec.max_completion_tokens;
+    delete rec.max_completion_tokens;
+  }
   const maxTokens = rec.max_tokens;
-  if (maxTokens !== undefined && (typeof maxTokens !== "number" || maxTokens < 1 || maxTokens > 4096)) {
-    throw validationError("invalid_request");
+  // Any size is taken; the router clamps it to the model's output cap once the
+  // model is known (see the completions route).
+  if (maxTokens !== undefined && (typeof maxTokens !== "number" || !Number.isSafeInteger(maxTokens) || maxTokens < 1)) {
+    throw validationError("invalid_request", "max_tokens");
   }
   return { model: rec.model, stream, max_tokens: typeof maxTokens === "number" ? maxTokens : undefined };
 }
@@ -611,6 +660,13 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
           }
         }
         const resolved = resolveFor(entry.alias, selection);
+        // A caller may ask for more output than the model is allowed (Pi asks
+        // for the model's whole maxTokens); it is clamped here, before the
+        // reservation, so the meter and the upstream see the same number.
+        if (parsed.max_tokens !== undefined) {
+          parsed.max_tokens = Math.min(parsed.max_tokens, outputCapFor(entry, resolved));
+          (body as Record<string, unknown>).max_tokens = parsed.max_tokens;
+        }
         const circuitId = circuitKey(entry.alias, resolved.connection.id, resolved.modelId);
         circuit.assertClosed(circuitId);
         const release = concurrency.acquire(ConcurrencyGate.key(caller.callerId, sessionId));
@@ -750,7 +806,6 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             const reader = upstream.response.body.getReader();
             const decoder = new TextDecoder();
             let leftover = "";
-            const toolSeen = { toolCall: false };
             // A think block written into the answer moves to the reasoning
             // field on the way through (see inline-think.ts).
             const thinkStream = createThinkStream(() => learnInlineThink(requestId, upstream.providerId, upstream.model));
@@ -788,7 +843,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
                   });
                 }
                 // Whole blocks are relayed, not raw chunks, so a block can be
-                // repaired on its way through (see tool-finish.ts); a partial
+                // rewritten on its way through (see inline-think.ts); a partial
                 // block waits in `leftover` for the rest of it.
                 let out = "";
                 for (const part of parts) {
@@ -802,7 +857,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
                   }
                   const usage = usageFromSseBlock(part);
                   if (usage) record(usage);
-                  out += `${splitThinkBlock(settleStreamBlock(part, toolSeen), thinkStream)}\n\n`;
+                  out += `${splitThinkBlock(part, thinkStream)}\n\n`;
                 }
                 if (!firstEvent) {
                   firstEvent = true;
@@ -838,7 +893,7 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             if (leftover.trim()) {
               const usage = usageFromSseBlock(leftover);
               if (usage) record(usage);
-              tail = `${splitThinkBlock(settleStreamBlock(leftover, toolSeen), thinkStream)}\n\n`;
+              tail = `${splitThinkBlock(leftover, thinkStream)}\n\n`;
             }
             // Text still held back by the think split, when the stream ended
             // with neither a finish reason nor [DONE] to release it.
@@ -875,7 +930,6 @@ export function startRouter(options?: { port?: number; configPath?: string; lock
             (json as { model: string }).model = parsed.model;
           }
           record(usageFromPayload(json));
-          settleCompletion(json);
           if (splitThinkCompletion(json)) learnInlineThink(requestId, upstream.providerId, upstream.model);
           send(res, upstream.response.status, json, outHeaders);
           usageOutcome = "ok";

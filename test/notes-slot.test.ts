@@ -1,50 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { MemoryStore, resetMemoryDir } from "../agent/lib/memory.ts";
-import { forgetRecallCache, NOTES_RECORD_ID, notesScope, recallNotes, renderNotesFor } from "../agent/memory/notes.ts";
-import notes from "../agent/memory/notes.ts";
-import { markOutside, seenOutside } from "../agent/lib/outside-content.ts";
-import { ensureTurnSnapshot } from "../agent/lib/turn-snapshot.ts";
-import { applyShellAction } from "../shared/shell-store.ts";
-import { readShell, writeShell } from "../shared/shell-io.ts";
-import { bindSession } from "../shared/session-bindings.ts";
+import { notesBlockFor } from "../shared/notes-block.ts";
 
-const KEYS = ["UB_SESSION_OWNERS_PATH", "UB_BINDING_WAIT_MS", "UB_SHELL_PATH", "UB_WORKSPACE_STORE_PATH", "UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH"] as const;
-const GO = "opencode-go:plan";
-
-async function withWorld<T>(fn: (world: { alpha: string; beta: string }) => Promise<T> | T): Promise<T> {
-  const dir = mkdtempSync(join(tmpdir(), "ub-notes-"));
-  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
-  process.env.UB_SESSION_OWNERS_PATH = join(dir, "session-owners.json");
-  process.env.UB_BINDING_WAIT_MS = "100";
-  process.env.UB_SHELL_PATH = join(dir, "shell.json");
-  process.env.UB_WORKSPACE_STORE_PATH = join(dir, "workspace.json");
-  process.env.UB_PROVIDERS_PATH = join(dir, "providers.json");
-  process.env.UB_MODELS_CACHE_PATH = join(dir, "models-cache.json");
-  writeFileSync(process.env.UB_PROVIDERS_PATH, JSON.stringify({
-    schemaVersion: 2,
-    connections: {
-      [GO]: { id: GO, providerId: "opencode-go", mode: "plan", credential: { kind: "key", key: "go-key-12345678" }, fields: {}, updatedAt: new Date().toISOString(), lastError: null },
-    },
-    activeConnectionId: GO, selectedModel: "glm-5.3-flash", effort: null, speed: "standard", roles: {},
-  }));
-  let store = readShell();
-  const alpha = applyShellAction(store, { type: "createBot", name: "Alpha" });
-  store = alpha.store;
-  const beta = applyShellAction(store, { type: "createBot", name: "Beta" });
-  writeShell(beta.store);
-  try {
-    return await fn({ alpha: alpha.createdId as string, beta: beta.createdId as string });
-  } finally {
-    for (const key of KEYS) {
-      if (saved[key] === undefined) delete process.env[key];
-      else process.env[key] = saved[key];
-    }
-  }
-}
+// "Your notes" in the per-turn context: the bot's own memory, rendered from the
+// store each time it is asked for (no replay digest, no cache).
 
 function freshStore(): MemoryStore {
   const root = mkdtempSync(join(tmpdir(), "ub-notes-mem-"));
@@ -59,121 +22,75 @@ function put(store: MemoryStore, botId: string, title: string, body: string, ext
   });
 }
 
-const recallCtx = (operationId: string, botId: string) => ({ operationId, memory: { scope: { value: botId } } });
-const contentOf = (result: ReturnType<typeof recallNotes>) => result?.messages[0].content ?? null;
-
-async function quiet<T>(fn: () => Promise<T> | T): Promise<T> {
-  const real = console.error;
-  console.error = () => {};
-  try {
-    return await fn();
-  } finally {
-    console.error = real;
-  }
-}
-
-test("scope is the claimed bot, and null (slot off) when nothing can be bound or the claim disagrees", async () => {
-  await withWorld(async ({ alpha, beta }) => {
-    const session = (id: string, claim?: string) => ({ session: { id, auth: { current: claim ? { attributes: { botId: claim } } : null } } });
-    assert.equal(await notesScope(session("s-scope", alpha)), alpha);
-    assert.equal(await quiet(() => notesScope(session("s-scope", beta))), null, "mismatched claim");
-    assert.equal(await quiet(() => notesScope(session("s-none"))), null, "neither claim nor binding");
-    // The defined slot uses the same function.
-    const scope = (notes as unknown as { scope: (ctx: unknown) => Promise<string | null> }).scope;
-    assert.equal(await scope(session("s-scope", alpha)), alpha);
-  });
-});
-
-test("scope never throws: a store failure reads as null", async () => {
-  const hostile = { session: { id: "s", get parent(): unknown { throw new Error("boom"); } } };
-  assert.equal(await quiet(() => notesScope(hostile as never)), null);
-});
-
-test("an empty bot gets the sentinel under the fixed record id, never blank", () => {
+test("an empty bot gets the sentinel, never a blank block", () => {
   const store = freshStore();
-  const out = recallNotes(recallCtx("op-empty", "bot-a"), () => store);
-  assert.equal(out?.messages[0].id, NOTES_RECORD_ID);
-  assert.equal(NOTES_RECORD_ID, "bot-notes");
-  assert.match(contentOf(out) ?? "", /No notes yet/);
-  assert.ok((contentOf(out) ?? "").trim().length > 0);
+  const text = notesBlockFor("bot-a", () => store);
+  assert.match(text, /^# Your notes/);
+  assert.match(text, /No notes yet/);
+  assert.match(text, /memory save/);
+  assert.ok(text.trim().length > 0);
 });
 
-test("recall holds only this bot's notes, newest first, with the outside-content mark", () => {
+test("the block holds only this bot's notes, newest first, with the outside-content mark", () => {
   const store = freshStore();
   put(store, "bot-a", "Mine", "my body");
   put(store, "bot-b", "Theirs", "their-canary");
   store.upsert({ expectedRevision: null, title: "From web", tags: [], body: "web body", botId: "bot-a", source: "model-after-outside-content", expiresAt: null, sessionId: "s" });
-  const text = contentOf(recallNotes(recallCtx("op-own", "bot-a"), () => store)) ?? "";
+  const text = notesBlockFor("bot-a", () => store);
   assert.match(text, /Mine/);
+  assert.match(text, /my body/);
   assert.match(text, /written after reading outside content/);
+  assert.doesNotMatch(text, /web body|From web/, "an outside-sourced note shows neither title nor body");
   assert.doesNotMatch(text, /their-canary|Theirs/);
 });
 
-test("a replayed operation returns the same bytes even after the owner edits a note", () => {
+test("the same notes give the same bytes, and an edit shows in the next call", () => {
   const store = freshStore();
-  const n = put(store, "bot-a", "Plan", "first");
-  const before = contentOf(recallNotes(recallCtx("op-replay", "bot-a"), () => store));
-  put(store, "bot-a", "Plan", "second", { id: n.id, expectedRevision: 1 });
-  assert.equal(contentOf(recallNotes(recallCtx("op-replay", "bot-a"), () => store)), before);
-  // A new operation sees the edit.
-  assert.match(contentOf(recallNotes(recallCtx("op-after", "bot-a"), () => store)) ?? "", /second/);
+  const note = put(store, "bot-a", "Plan", "first");
+  const before = notesBlockFor("bot-a", () => store);
+  assert.equal(notesBlockFor("bot-a", () => store), before, "deterministic");
+  put(store, "bot-a", "Plan", "second", { id: note.id, expectedRevision: 1 });
+  const after = notesBlockFor("bot-a", () => store);
+  assert.notEqual(after, before);
+  assert.match(after, /second/);
+  assert.doesNotMatch(after, /first/);
 });
 
-test("a replay after a restart returns the persisted bytes, even after the owner edits a note", () => {
-  const store = freshStore();
-  const n = put(store, "bot-a", "Plan", "v1");
-  const first = contentOf(recallNotes(recallCtx("op-restart", "bot-a"), () => store));
-  put(store, "bot-a", "Plan", "v2", { id: n.id, expectedRevision: 1 });
-  forgetRecallCache();
-  assert.equal(contentOf(recallNotes(recallCtx("op-restart", "bot-a"), () => store)), first);
-  assert.match(contentOf(recallNotes(recallCtx("op-restart-new", "bot-a"), () => store)) ?? "", /v2/);
-});
-
-test("the persisted renders are bounded at 256 files", () => {
-  const store = freshStore();
-  put(store, "bot-a", "Plan", "v1");
-  for (let index = 0; index < 300; index += 1) recallNotes(recallCtx(`op-cap-${index}`, "bot-a"), () => store);
-  const files = readdirSync(join(dirname(store.notesDir), "recall")).filter((name) => name.endsWith(".txt"));
-  assert.ok(files.length <= 256 && files.length > 200, `kept ${files.length}`);
-});
-
-test("renderNotesFor counts \"more\" against the true note count and shows the newest bodies in full", () => {
+test("\"more\" counts against the true note count and the newest bodies show in full", () => {
   const store = freshStore();
   for (let index = 0; index < 70; index += 1) {
-    store.upsert({
-      expectedRevision: null, title: `Note ${String(index).padStart(2, "0")}`, tags: [], body: `body-${index}`, botId: "bot-a",
-      source: "model", expiresAt: null, sessionId: "s",
-    });
+    put(store, "bot-a", `Note ${String(index).padStart(2, "0")}`, `body-${index}`);
   }
-  const text = renderNotesFor("bot-a", () => store);
+  const text = notesBlockFor("bot-a", () => store);
   // 6 full + 50 titles are shown: 14 of 70 are behind "more".
-  assert.match(text, /14 more: use memory_search\./);
+  assert.match(text, /14 more: use memory search\./);
   assert.equal((text.match(/body-\d+/g) ?? []).length, 6, "six bodies, the newest");
-  assert.deepEqual(text, renderNotesFor("bot-a", () => store), "deterministic");
+  assert.ok(text.length <= 6000, `block is ${text.length} chars`);
 });
 
-test("recall never throws: a store error returns null and is logged", async () => {
+test("the block names the merged memory tool, not the four it replaced", () => {
+  const store = freshStore();
+  for (let index = 0; index < 60; index += 1) put(store, "bot-a", `T${index}`, `b${index}`);
+  const text = `${notesBlockFor("bot-a", () => store)}\n${notesBlockFor("bot-empty", () => store)}`;
+  assert.match(text, /memory read/);
+  assert.doesNotMatch(text, /memory_(read|search|upsert|delete)/);
+});
+
+test("a note deleted between the list and the read is skipped, not a failed send", () => {
+  const store = freshStore();
+  put(store, "bot-a", "Stays", "still here");
+  const gone = put(store, "bot-a", "Vanishes", "deleted meanwhile");
+  const racing = Object.create(store) as MemoryStore;
+  racing.readCard = (id: string, botId: string) => {
+    if (id === gone.id) throw new Error("memory_not_found");
+    return store.readCard(id, botId);
+  };
+  const text = notesBlockFor("bot-a", () => racing);
+  assert.match(text, /still here/);
+  assert.doesNotMatch(text, /Vanishes|deleted meanwhile/);
+});
+
+test("a store failure is not hidden: the call throws", () => {
   const broken = () => { throw new Error("index locked"); };
-  const out = await quiet(() => recallNotes(recallCtx("op-broken", "bot-a"), broken as never));
-  assert.equal(out, null);
-  assert.equal(recallNotes({ operationId: "op-badscope", memory: { scope: { value: ["a", "b"] } } }, () => freshStore()) !== undefined, true);
-});
-
-test("a handoff delivery claim marks the turn as having read outside content, an owner delivery does not", async () => {
-  await withWorld(async ({ alpha }) => {
-    bindSession("s-handoff", alpha);
-    bindSession("s-owner", alpha);
-    const ctx = (id: string, delivery: string) => ({
-      session: { id, turn: { id: "t1" }, auth: { current: { attributes: { botId: alpha, delivery } } } },
-    });
-    await ensureTurnSnapshot(ctx("s-handoff", "handoff"), "t1");
-    await ensureTurnSnapshot(ctx("s-owner", "owner"), "t1");
-    assert.equal(seenOutside(ctx("s-handoff", "handoff")), true);
-    assert.equal(seenOutside(ctx("s-owner", "owner")), false);
-    // A tool marks its own turn only.
-    markOutside(ctx("s-owner", "owner"));
-    assert.equal(seenOutside(ctx("s-owner", "owner")), true);
-    assert.equal(seenOutside({ session: { id: "s-owner", turn: { id: "t2" } } }), false);
-    assert.equal(seenOutside(undefined), false);
-  });
+  assert.throws(() => notesBlockFor("bot-a", broken as never), /index locked/);
 });

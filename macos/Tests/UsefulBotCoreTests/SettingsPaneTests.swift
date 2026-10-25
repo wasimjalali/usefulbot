@@ -3,59 +3,6 @@ import Testing
 @testable import UsefulBotCore
 
 @Suite struct SettingsPaneTests {
-    // MARK: Palette
-
-    private struct Entry: Decodable {
-        let label: String
-        let fill: String
-        let legacy: Bool?
-    }
-
-    private func palette() throws -> [String: Entry] {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("brand/source/avatar-palette.json")
-        return try JSONDecoder().decode([String: Entry].self, from: Data(contentsOf: url))
-    }
-
-    @Test func gridAndLegacyIdsAllResolveInThePaletteFile() throws {
-        let palette = try palette()
-        #expect(FacePalette.gridColors.count == 30)
-        #expect(Set(FacePalette.gridColors).count == 30)
-        #expect(FacePalette.legacyColors.count == 10)
-        #expect(Set(palette.keys) == Set(FacePalette.colors))
-        for id in FacePalette.gridColors {
-            #expect(palette[id] != nil, "grid id \(id) missing")
-            #expect(palette[id]?.legacy != true, "grid id \(id) is marked legacy")
-        }
-        for id in FacePalette.legacyColors {
-            #expect(palette[id]?.legacy == true, "legacy id \(id) is not marked legacy")
-        }
-        for (id, entry) in palette {
-            #expect(entry.fill.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil, "bad fill for \(id)")
-        }
-    }
-
-    @Test func gridKeepsTheOriginalIdAndNamesEachTone() throws {
-        let palette = try palette()
-        #expect(FacePalette.gridColors.first == "ink")
-        #expect(palette["ink"]?.label == "Original")
-        #expect(palette["red-light"]?.label == "Light red")
-        #expect(palette["teal-deep"]?.label == "Deep teal")
-        #expect(palette["neutral-mid"]?.label == "Mid neutral")
-        // Row-major: ten hues per tone row.
-        #expect(FacePalette.gridColors[10] == "neutral-mid")
-        #expect(FacePalette.gridColors[29] == "lilac-deep")
-    }
-
-    @Test func newBotsPickOnlyGridColors() {
-        for seed in stride(from: UInt64(0), through: 20_000, by: 37) {
-            let color = FacePalette.randomFace(seed: seed &* 2_654_435_761).color
-            #expect(FacePalette.gridColors.contains(color), "legacy color \(color) for seed \(seed)")
-        }
-    }
-
     // MARK: Notifier decision
 
     private func decide(

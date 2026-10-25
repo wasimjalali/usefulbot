@@ -18,8 +18,7 @@ import {
   writeProviderStore,
 } from "../shared/providers.ts";
 import { generateImage } from "../router/src/upstreams/images.ts";
-import listModels from "../agent/tools/list_models.ts";
-import { ensureTurnSnapshot } from "../agent/lib/turn-snapshot.ts";
+import { buildSnapshot } from "../agent/lib/turn-snapshot.ts";
 import { renderContext } from "../shared/context-blocks.ts";
 import { readShell } from "../shared/shell-io.ts";
 import { RouterError } from "../router/src/errors.ts";
@@ -163,7 +162,7 @@ test("OpenRouter image models fill the image picker and stay out of the chat lis
   }
 });
 
-test("list_models shows chat and image models and the bot knows its model", async () => {
+test("the turn context names the bot's model and the image model", async () => {
   await withImageStore(async (dir) => {
     const store = setActiveConnection(setProviderKey(emptyProviderStore(), "openrouter", "api", "sk-or-12345678"), "openrouter:api");
     writeProviderStore(setComposer(store, { modelId: "openai/gpt-4.1-mini" }), join(dir, "providers.json"));
@@ -180,34 +179,16 @@ test("list_models shows chat and image models and the bot knows its model", asyn
         },
       },
     }, join(dir, "models-cache.json"));
-    const out = await listModels.execute({ query: "flux" } as never, {} as never) as {
-      current: { chat: { id: string } | null; image: { id: string } | null };
-      chat: { total: number; models: Array<{ id: string }> };
-      image: { total: number; models: Array<{ id: string; connectionId: string }> };
-    };
-    assert.equal(out.current.chat?.id, "openai/gpt-4.1-mini");
-    assert.equal(out.current.image?.id, "google/gemini-3.1-flash-image");
-    assert.equal(out.chat.total, 0);
-    assert.deepEqual(out.image.models, [{ id: "black-forest-labs/flux.2-pro", label: "Flux.2 Pro", provider: "OpenRouter", connectionId: "openrouter:api" }]);
-    const onlyChat = await listModels.execute({ kind: "chat" } as never, {} as never) as Record<string, unknown>;
-    assert.equal("image" in onlyChat, false);
-
-    // The turn's own snapshot names the model and image model, and list_models
-    // inside the same turn reports the same ones.
+    // The turn's own snapshot names the model and the image model.
     const previousShell = process.env.UB_SHELL_PATH;
     process.env.UB_SHELL_PATH = join(dir, "shell.json");
     readShell();
     try {
-      const ctx = { session: { id: "sess-img", turn: { id: "turn-1" }, auth: { current: { attributes: { botId: "bot-useful" } } } } };
-      const snapshot = await ensureTurnSnapshot(ctx, "turn-1");
-      assert.equal(snapshot?.status, "ok");
-      const context = snapshot?.status === "ok" ? renderContext(snapshot.context) : "";
+      const snapshot = buildSnapshot("bot-useful", "sess-img", "turn-1");
+      assert.equal(snapshot.status, "ok");
+      const context = renderContext(snapshot.context);
       assert.match(context, /Model: .*\(openai\/gpt-4\.1-mini\) via OpenRouter/);
       assert.match(context, /generate_image uses .*\(google\/gemini-3\.1-flash-image\)/);
-      const inTurn = await listModels.execute({ kind: "chat" } as never, ctx as never) as { current: { chat: { id: string; provider: string }; image: { id: string } } };
-      assert.equal(inTurn.current.chat.id, "openai/gpt-4.1-mini");
-      assert.equal(inTurn.current.chat.provider, "OpenRouter");
-      assert.equal(inTurn.current.image.id, "google/gemini-3.1-flash-image");
     } finally {
       if (previousShell === undefined) delete process.env.UB_SHELL_PATH;
       else process.env.UB_SHELL_PATH = previousShell;

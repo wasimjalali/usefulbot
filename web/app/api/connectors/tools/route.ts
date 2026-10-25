@@ -8,12 +8,13 @@ export const runtime = "nodejs";
 /**
  * The tools one connected Composio app offers, for the Connectors detail
  * view. Same desktop gate and rate limit as the connectors route. An app that
- * isn't connected is refused.
+ * isn't connected is refused, and one whose sign-in lapsed answers `needs_sign_in`.
  */
 
 const STATUS: Record<string, number> = {
   toolkit_invalid: 400,
   not_connected: 404,
+  needs_sign_in: 409,
 };
 
 export async function GET(request: Request) {

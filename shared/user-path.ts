@@ -153,8 +153,8 @@ export function ownerPath(): string {
  * service restarted. This re-checks those same candidates and nothing else:
  * no shell runs, which matters because the probe is a synchronous
  * `execFileSync` of the owner's login shell with a three second ceiling, and
- * this service runs every bot on one thread. Resetting the cache outright
- * would have stalled every other bot's turn for as long as that shell took
+ * this service runs every chat on one thread. Resetting the cache outright
+ * would have stalled every other chat's turn for as long as that shell took
  * to start.
  */
 /**

@@ -9,7 +9,7 @@ checked by Sparkle, which needs no Apple account.
 `npm run release:mac -- --version X.Y.Z` builds, in `macos/dist/release/`:
 
 - `Useful-Bot-macOS.zip`: the app. It carries its services in `Contents/Resources/runtime` (router,
-  web build, eve and the agent, production `node_modules`, an official Node 24 checked against a
+  web build, the engine and the agent, production `node_modules`, an official Node 24 checked against a
   pinned SHA-256). Sources come from git's index only, and the build refuses to ship anything named
   like a secret (`.env`, `*.pem`, `secrets/`). See `scripts/build-runtime.mjs`.
 - `Useful-Bot-macOS.dmg`: the same app for browser downloads, in the classic install window: the app
@@ -50,8 +50,9 @@ clean; `--allow-dirty` is for test builds only.
 On launch a release copies its runtime to `~/Library/Application Support/Useful Bot/app` when the
 version changed (`RuntimeInstall.swift`), first stopping the previous version's services (they
 outlive the app, so after an update they would otherwise keep serving from replaced files), mints any missing or expired local credentials
-(`setup-local.mjs`), and starts the services from there with its own Node. Eve keeps its sessions in
-`app/.eve/`, which a copy never touches. Everything else stays in `~/.useful-bot` as before. Nothing
+(`setup-local.mjs`), and starts the services from there with its own Node. The engine keeps its chats
+under `~/.useful-bot/engine/`, so a copy never touches them. Everything else stays in
+`~/.useful-bot` as before. Nothing
 leaves the Mac.
 
 With no `~/.useful-bot/config.json` but Useful Bot items still in the Keychain (the data folder was
@@ -62,8 +63,9 @@ keeps the old tokens.
 `npm run release:mac` runs `scripts/smoke-runtime.mjs` on the staged runtime right after the build and
 before signing. It copies the stage under a temp folder named `Application Support/app` (a path with a
 space), seeds a config with the staged `setup-local.mjs` against a file-backed Keychain stub, starts the
-staged router with the staged Node and fails the release unless `/health/live` answers within 15 s.
-Eve and the web service are not covered: their ports are fixed and they read the real Keychain.
+staged router and engine with the staged Node and fails the release unless the router's `/health/live`
+and the engine's `/health` answer within 15 s. The web service is not covered: its port is fixed and
+it reads the real Keychain.
 
 A dev build (`npm run build:app`) has no runtime and no feed: it runs the checkout and never updates
 itself. A stored `repoPath` default also keeps a release on that checkout.
@@ -154,4 +156,3 @@ installed copy can ever accept another update, so never delete it without a back
 - Apple silicon, macOS 14 or later.
 - The app still sees a new user's first provider only after they connect one in the app: the router
   starts "limited" without the OpenCode Go key.
-- Eve's self-modification writes into `app/agent/`; the next update replaces those files.

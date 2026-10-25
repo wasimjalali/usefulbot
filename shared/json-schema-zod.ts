@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * A JSON Schema to a zod schema, for the subset MCP servers actually send.
  *
- * eve hands a tool's `inputSchema` to the model as the argument contract, so
+ * A tool's `inputSchema` goes to the model as the argument contract, so
  * a wrapper around someone else's tool has to present the server's own schema
  * rather than an opaque object. Anything outside the subset falls back to a
  * passthrough object with the raw schema written into the description, which
@@ -146,7 +146,7 @@ export type ToolInputSchema = {
 export function toolInputSchema(raw: Record<string, unknown> | null): ToolInputSchema {
   const built = raw ? convert(raw, 0) : null;
   if (built) {
-    // eve calls tools with an object; a schema that is not one cannot be an
+    // Tools are called with an object; a schema that is not one cannot be an
     // argument list whatever it validates.
     if (built instanceof z.ZodObject || built instanceof z.ZodRecord) {
       return { schema: built, passthrough: false };

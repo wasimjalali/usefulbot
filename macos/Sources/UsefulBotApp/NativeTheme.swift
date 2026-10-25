@@ -139,6 +139,15 @@ enum AppAppearance: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The icon in the compact three-way control (Settings and the account menu).
+    var systemImage: String {
+        switch self {
+        case .system: return "desktopcomputer"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
+    }
+
     var nsAppearance: NSAppearance? {
         switch self {
         case .system: return nil

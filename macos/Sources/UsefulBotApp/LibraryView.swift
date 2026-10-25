@@ -7,10 +7,9 @@ import UsefulBotCore
 /// Everything the agents made, as files in the owner's media folder (and the
 /// HTML pages they wrote, where they wrote them): a grid
 /// newest first, filtered by kind, bot and prompt, and one item at a time
-/// with what made it and what can be done with it.
+/// with what made it and what can be done with it. A page on the stage.
 struct LibraryView: View {
     @EnvironmentObject private var model: AppModel
-    let onClose: () -> Void
 
     private enum Filter: String, CaseIterable {
         case all = "All"
@@ -26,17 +25,12 @@ struct LibraryView: View {
     @State private var error: String?
     @State private var search = ""
     @State private var filter: Filter = .all
-    @State private var botFilter: String?
     @State private var selected: MediaItem?
     @State private var regenerating: Set<String> = []
     @FocusState private var searchFocused: Bool
 
-    private static let gridHeight: CGFloat = 560
-
     var body: some View {
-        // The shared dialog, with the close button on the title's row rather
-        // than a row of its own.
-        NativeDialog(maxWidth: 1040, ariaLabel: "Library", closeRow: false, onClose: onClose) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 12) {
                     if selected != nil {
@@ -65,26 +59,26 @@ struct LibraryView: View {
                             NSWorkspace.shared.open(url)
                         }
                     }
-                    NativeIconButton(systemImage: "xmark", size: 32, iconSize: 15, action: onClose)
-                        .accessibilityLabel("Close Library")
-                        .accessibilityIdentifier("dialog-close")
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 14)
 
                 if let selected {
-                    LibraryDetail(
-                        item: selected,
-                        regenerating: regenerating.contains(selected.id),
-                        onOpenChat: { openChat(selected) },
-                        onLocate: { locate(selected) },
-                        onRegenerate: { regenerate(selected) },
-                        onTrash: { trash(selected) }
-                    )
-                    // A fresh detail per item: no picture or live page from
-                    // the one before carries over.
-                    .id(selected.id)
+                    // The detail has a fixed picture size; a narrow stage scrolls it.
+                    ScrollView([.vertical, .horizontal]) {
+                        LibraryDetail(
+                            item: selected,
+                            regenerating: regenerating.contains(selected.id),
+                            onLocate: { locate(selected) },
+                            onRegenerate: { regenerate(selected) },
+                            onTrash: { trash(selected) }
+                        )
+                        // A fresh detail per item: no picture or live page from
+                        // the one before carries over.
+                        .id(selected.id)
                         .padding(20)
+                    }
+                    .uvScroll()
                 } else {
                     toolbar
                         .padding(.horizontal, 20)
@@ -106,12 +100,34 @@ struct LibraryView: View {
                             .padding(.top, 12)
                     }
                     grid
-                        .frame(height: Self.gridHeight)
+                        .frame(maxHeight: .infinity)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .task { await load() }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .task {
+            await load()
+            focusPicked()
+        }
+        // A palette hit while Library is already open: the page is not loaded
+        // again, so the pick is read here.
+        .onChange(of: model.libraryFocusId) { _, id in
+            guard id != nil else { return }
+            Task {
+                // An item made since the page loaded is not in the list yet.
+                if !items.contains(where: { $0.id == id }) { await load() }
+                focusPicked()
+            }
+        }
+    }
+
+    /// Open the detail of the item the palette picked, and drop the pick
+    /// whether or not it resolved, so a missing item is not kept for later.
+    private func focusPicked() {
+        guard let id = model.libraryFocusId else { return }
+        model.libraryFocusId = nil
+        if let item = items.first(where: { $0.id == id }) { selected = item }
     }
 
     private var toolbar: some View {
@@ -158,18 +174,6 @@ struct LibraryView: View {
 
             Spacer(minLength: 0)
 
-            Menu {
-                Button("All bots") { botFilter = nil }
-                ForEach(botNames, id: \.id) { bot in
-                    Button(bot.name) { botFilter = bot.id }
-                }
-            } label: {
-                Text(botNames.first { $0.id == botFilter }?.name ?? "All bots")
-                    .font(.system(size: 13))
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .accessibilityLabel("Filter by bot")
         }
     }
 
@@ -214,14 +218,6 @@ struct LibraryView: View {
             ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
     }
 
-    private var botNames: [(id: String, name: String)] {
-        var seen = Set<String>()
-        return items.compactMap { item in
-            guard !item.botId.isEmpty, seen.insert(item.botId).inserted else { return nil }
-            return (item.botId, item.botName)
-        }
-    }
-
     private var visible: [MediaItem] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
         return items.filter { item in
@@ -231,9 +227,8 @@ struct LibraryView: View {
             case .drawings: if item.kind != "drawing" { return false }
             case .pages: if item.kind != "page" { return false }
             }
-            if let botFilter, item.botId != botFilter { return false }
             if q.isEmpty { return true }
-            return item.title.lowercased().contains(q) || item.prompt.lowercased().contains(q) || item.botName.lowercased().contains(q)
+            return item.title.lowercased().contains(q) || item.prompt.lowercased().contains(q)
         }
     }
 
@@ -248,16 +243,6 @@ struct LibraryView: View {
             self.error = "The Library could not load"
         }
         loaded = true
-    }
-
-    private func openChat(_ item: MediaItem) {
-        guard botExists(item.botId) else {
-            error = "The bot that made this is no longer here"
-            selected = nil
-            return
-        }
-        model.select(item.botId)
-        onClose()
     }
 
     /// Draw it again in place from the prompt the server kept; the item comes
@@ -279,10 +264,6 @@ struct LibraryView: View {
             }
             regenerating.remove(item.id)
         }
-    }
-
-    private func botExists(_ id: String) -> Bool {
-        !id.isEmpty && (model.store?.bots.contains { $0.id == id } ?? false)
     }
 
     /// Point a moved item at where its file went, then show it from there.
@@ -374,7 +355,7 @@ private struct LibraryTile: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.C.ink)
                     .lineLimit(1)
-                Text(item.exists ? "\(item.botName) · \(LibraryDetail.shortDate(item.createdAt))" : "Moved or deleted")
+                Text(item.exists ? LibraryDetail.shortDate(item.createdAt) : "Moved or deleted")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.C.inkMuted)
                     .lineLimit(1)
@@ -409,10 +390,10 @@ private struct LibraryTile: View {
 struct LibraryDetail: View {
     let item: MediaItem
     var regenerating = false
-    let onOpenChat: () -> Void
     let onLocate: () -> Void
     let onRegenerate: () -> Void
     let onTrash: () -> Void
+    @EnvironmentObject private var model: AppModel
     @State private var preview: NSImage?
     @State private var scene: ExcalidrawScene?
     @State private var liveReady = false
@@ -469,7 +450,6 @@ struct LibraryDetail: View {
                 if !prompt.isEmpty {
                     PromptFact(prompt: prompt)
                 }
-                fact("Bot", item.botName)
                 if !item.model.isEmpty {
                     fact("Model", item.model)
                 }
@@ -515,11 +495,9 @@ struct LibraryDetail: View {
                                 NativeButton(regenerating ? "Generating" : "Regenerate", kind: .secondary, small: true, enabled: !regenerating, action: onRegenerate)
                             }
                         }
-                        if !item.botId.isEmpty {
-                            NativeButton("Open chat", kind: .secondary, small: true, action: onOpenChat)
-                        }
                         NativeButton(item.exists ? "Move to Trash" : "Remove", kind: .secondary, small: true, action: onTrash)
                     }
+                    chatLink
                 }
                 .padding(.top, 4)
             }
@@ -577,6 +555,26 @@ struct LibraryDetail: View {
         .help("Open in your browser")
         .accessibilityLabel(Text(item.displayTitle))
         .accessibilityHint("Opens the page in your browser")
+    }
+
+    /// The chat that made the item: Open chat, or "Chat deleted" once it is gone.
+    @ViewBuilder
+    private var chatLink: some View {
+        switch item.chatLink(isGone: model.chatIsGone) {
+        case .none:
+            EmptyView()
+        case .deleted:
+            Text("Chat deleted")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.C.inkFaint)
+        case .open(let chatId):
+            Button("Open chat") { model.openChat(chatId) }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.C.ink)
+                .pointerOnHover()
+                .accessibilityIdentifier("library-open-chat")
+        }
     }
 
     private func fact(_ label: String, _ value: String) -> some View {
