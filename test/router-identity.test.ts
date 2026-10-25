@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { routerFetch, MAX_PROVIDER_TOTAL_WAIT_MS, MAX_TOTAL_WAIT_MS } from "../agent/lib/router-fetch.ts";
-import { routerIds, stableUuid, toolRouterIds, turnIdOf } from "../agent/lib/router-identity.ts";
-import { perSessionModel } from "../agent/lib/session-model.ts";
+import { forgetRouterError, lastRouterError, routerFetch, MAX_PROVIDER_TOTAL_WAIT_MS, MAX_TOTAL_WAIT_MS } from "../agent/lib/router-fetch.ts";
+import { routerIds, stableUuid, toolRouterIds } from "../agent/lib/router-identity.ts";
 
 // The router's own pattern (router/src/index.ts): a call that fails it is a 400.
 const ROUTER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-test("a session id becomes a stable uuid the router accepts, distinct per session", () => {
+test("a chat id becomes a stable uuid the router accepts, distinct per chat", () => {
   const seen = new Set<string>();
   for (let i = 0; i < 500; i += 1) {
-    const id = stableUuid(`session:sess_${i}`);
+    const id = stableUuid(`session:chat_${i}`);
     assert.match(id, ROUTER_UUID);
     seen.add(id);
   }
@@ -18,30 +17,22 @@ test("a session id becomes a stable uuid the router accepts, distinct per sessio
   assert.equal(stableUuid("session:a"), stableUuid("session:a"));
 });
 
-test("ids derive from eve unless the env pins them", () => {
-  const free = routerIds("sess_a", "turn_1", {});
-  assert.equal(free.sessionId, stableUuid("session:sess_a"));
-  assert.notEqual(free.turnId, routerIds("sess_a", "turn_2", {}).turnId);
-  // The same turn id in two sessions is two turns.
-  assert.notEqual(free.turnId, routerIds("sess_b", "turn_1", {}).turnId);
+test("ids derive from the chat and the turn unless the env pins them", () => {
+  const free = routerIds("chat_a", "turn_1", {});
+  assert.equal(free.sessionId, stableUuid("session:chat_a"));
+  assert.notEqual(free.turnId, routerIds("chat_a", "turn_2", {}).turnId);
+  // The same turn id in two chats is two turns.
+  assert.notEqual(free.turnId, routerIds("chat_b", "turn_1", {}).turnId);
   assert.notEqual(free.sessionId, free.turnId);
   // No turn in hand: still a valid uuid.
-  assert.match(routerIds("sess_a", undefined, {}).turnId, ROUTER_UUID);
+  assert.match(routerIds("chat_a", undefined, {}).turnId, ROUTER_UUID);
 
-  const pinned = routerIds("sess_a", "turn_1", {
+  const pinned = routerIds("chat_a", "turn_1", {
     UB_SESSION_ID: "11111111-1111-4111-8111-111111111111",
     UB_TURN_ID: "22222222-2222-4222-8222-222222222222",
   });
   assert.equal(pinned.sessionId, "11111111-1111-4111-8111-111111111111");
   assert.equal(pinned.turnId, "22222222-2222-4222-8222-222222222222");
-});
-
-test("the turn id is read off a step.started event and nothing else", () => {
-  assert.equal(turnIdOf({ type: "step.started", data: { turnId: "turn_9", stepIndex: 0 } }), "turn_9");
-  assert.equal(turnIdOf({ data: { turnId: "" } }), undefined);
-  assert.equal(turnIdOf({ data: { turnId: 4 } }), undefined);
-  assert.equal(turnIdOf({ data: null }), undefined);
-  assert.equal(turnIdOf(undefined), undefined);
 });
 
 test("a tool with no session gets no ids, never a shared constant", () => {
@@ -52,37 +43,14 @@ test("a tool with no session gets no ids, never a shared constant", () => {
   delete process.env.UB_SESSION_ID;
   delete process.env.UB_TURN_ID;
   try {
-    const a = toolRouterIds({ session: { id: "sess_a", turn: { id: "turn_1" } } });
-    // The tool and the model step of one bot are the same router session and turn.
-    assert.deepEqual(a, routerIds("sess_a", "turn_1", {}));
-    assert.notEqual(a?.sessionId, toolRouterIds({ session: { id: "sess_b" } })?.sessionId);
+    const a = toolRouterIds({ session: { id: "chat_a", turn: { id: "turn_1" } } });
+    // The tool and the model call of one turn are the same router session and turn.
+    assert.deepEqual(a, routerIds("chat_a", "turn_1", {}));
+    assert.notEqual(a?.sessionId, toolRouterIds({ session: { id: "chat_b" } })?.sessionId);
   } finally {
     if (saved.s !== undefined) process.env.UB_SESSION_ID = saved.s;
     if (saved.t !== undefined) process.env.UB_TURN_ID = saved.t;
   }
-});
-
-test("one handle per session, the turn follows, and sessions never stamp each other", () => {
-  let built = 0;
-  const modelFor = perSessionModel((ids) => {
-    built += 1;
-    return { ids };
-  }, 2);
-  const a = modelFor("sess_a", "t1");
-  const b = modelFor("sess_b", "t1");
-  assert.equal(built, 2);
-  assert.equal(modelFor("sess_a", "t2"), a);
-  assert.equal(built, 2);
-  // b stepped after a was built; a's handle still reports a.
-  assert.equal(a.ids().sessionId, stableUuid("session:sess_a"));
-  assert.equal(b.ids().sessionId, stableUuid("session:sess_b"));
-  assert.equal(a.ids().turnId, routerIds("sess_a", "t2", {}).turnId);
-  // Over the cap the session idle longest is dropped (b: a was touched after
-  // it), and a dropped handle still works.
-  modelFor("sess_c", "t1");
-  assert.equal(modelFor("sess_a", "t2"), a);
-  assert.notEqual(modelFor("sess_b", "t1"), b);
-  assert.equal(b.ids().sessionId, stableUuid("session:sess_b"));
 });
 
 function refusal(code: string, retryAfterMs?: number): Response {
@@ -92,11 +60,15 @@ function refusal(code: string, retryAfterMs?: number): Response {
   );
 }
 
+let harnessTurn = 0;
+
 function harness(responses: Array<() => Response>) {
   const requests: Headers[] = [];
   const sleeps: number[] = [];
+  harnessTurn += 1;
+  const turnId = `turn-${harnessTurn}`;
   const doFetch = routerFetch({
-    ids: () => ({ sessionId: "s", turnId: "t" }),
+    ids: () => ({ sessionId: "s", turnId }),
     fetch: async (_input, init) => {
       requests.push(new Headers(init?.headers));
       const next = responses.shift();
@@ -106,7 +78,7 @@ function harness(responses: Array<() => Response>) {
     sleep: async (ms) => { sleeps.push(ms); },
     random: () => 0,
   });
-  return { doFetch, requests, sleeps };
+  return { doFetch, requests, sleeps, turnId };
 }
 
 test("a model call waits out the concurrency ceiling, with a fresh request id each attempt", async () => {
@@ -122,7 +94,7 @@ test("a model call waits out the concurrency ceiling, with a fresh request id ea
   assert.equal(new Set(h.requests.map((r) => r.get("x-useful-request-id"))).size, 3);
   for (const r of h.requests) {
     assert.equal(r.get("x-useful-session-id"), "s");
-    assert.equal(r.get("x-useful-turn-id"), "t");
+    assert.equal(r.get("x-useful-turn-id"), h.turnId);
     assert.equal(r.get("x-keep"), "1");
   }
 });
@@ -209,4 +181,52 @@ test("with no hint the wait backs off, and an abort during it ends the call", as
   const pending = real("http://router/x", { signal: controller.signal });
   setTimeout(() => controller.abort(new Error("stopped")), 20);
   await assert.rejects(pending, /stopped/);
+});
+
+test("the router's last error for a turn is kept for turn.failed, and forgotten on success", async () => {
+  const body = (error: Record<string, unknown>, status: number, headers: Record<string, string> = {}) =>
+    () => new Response(JSON.stringify({ error }), { status, headers: { "content-type": "application/json", ...headers } });
+
+  const unavailable = harness([body({ code: "upstream_unavailable", message: "The provider didn't answer.", retry_after_ms: 4000 }, 503)]);
+  await unavailable.doFetch("http://router/x");
+  assert.deepEqual(lastRouterError(unavailable.turnId), {
+    status: 503,
+    code: "upstream_unavailable",
+    message: "The provider didn't answer.",
+    retryAfterMs: 4000,
+    resetsAt: null,
+  });
+
+  // A used-up plan carries its reset time in the message.
+  const used = harness([body({ code: "upstream_usage_limit", message: "Plan used up. resets_at=1792944000" }, 402)]);
+  await used.doFetch("http://router/x");
+  assert.equal(lastRouterError(used.turnId)?.resetsAt, new Date(1792944000 * 1000).toISOString());
+  assert.equal(lastRouterError(used.turnId)?.code, "upstream_usage_limit");
+
+  // The Retry-After header stands in for a body without a hint.
+  const header = harness([body({ code: "upstream_unavailable" }, 503, { "retry-after": "7" })]);
+  await header.doFetch("http://router/x");
+  assert.equal(lastRouterError(header.turnId)?.retryAfterMs, 7000);
+
+  // A body that is not the router's shape still records the status.
+  const plain = harness([() => new Response("bad gateway", { status: 502 })]);
+  await plain.doFetch("http://router/x");
+  assert.deepEqual(lastRouterError(plain.turnId), { status: 502, code: null, message: null, retryAfterMs: null, resetsAt: null });
+
+  // A waited-out 429 that clears leaves nothing behind; a later success forgets an earlier error.
+  const waited = harness([() => refusal("global_concurrency_limit", 10), () => new Response("{}", { status: 200 })]);
+  await waited.doFetch("http://router/x");
+  assert.equal(lastRouterError(waited.turnId), null);
+  const recovered = harness([body({ code: "upstream_unavailable" }, 503), () => new Response("{}", { status: 200 })]);
+  await recovered.doFetch("http://router/x");
+  assert.equal(lastRouterError(recovered.turnId)?.code, "upstream_unavailable");
+  await recovered.doFetch("http://router/x");
+  assert.equal(lastRouterError(recovered.turnId), null);
+
+  // A 429 handed back after the wait budget keeps its code.
+  const exhausted = harness([() => refusal("global_budget_exhausted")]);
+  await exhausted.doFetch("http://router/x");
+  assert.equal(lastRouterError(exhausted.turnId)?.code, "global_budget_exhausted");
+  forgetRouterError(exhausted.turnId);
+  assert.equal(lastRouterError(exhausted.turnId), null);
 });

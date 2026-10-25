@@ -28,11 +28,9 @@ public enum BackendError: Error, LocalizedError, Equatable {
     case attachment(String)
     /// `/api/shell` answered with its own error code.
     case shell(String)
-    /// eve retired the session this chat pointed at (a failed turn ends a
-    /// session for good), so nothing can be sent to it again.
-    case sessionEnded
-    /// The chat was already carried over into a newer session elsewhere.
-    case sessionMoved
+    /// The engine refused a chat request with its own code (`chat_busy`,
+    /// `chat_not_found`, `retry_too_soon`, `context_too_large`, ...).
+    case chat(code: String, retryAfterMs: Int?)
     /// The event stream ended before the turn did, so the reply on screen
     /// may be missing its tail.
     case streamInterrupted
@@ -40,8 +38,8 @@ public enum BackendError: Error, LocalizedError, Equatable {
     case modelNoVision
     /// Regenerate on a lost image answered with its own error code.
     case regenerate(String)
-    /// The send was refused before reaching eve: the bot's stored model or
-    /// connection is gone, and the server never substitutes another.
+    /// The send was refused before the engine took it: the bot's stored model
+    /// or connection is gone, and the server never substitutes another.
     case modelSelectionUnavailable
 
     public var errorDescription: String? {
@@ -98,16 +96,32 @@ public enum BackendError: Error, LocalizedError, Equatable {
             return Self.shellCopy(code)
         case .regenerate(let code):
             return BackendClient.regenerateCopy(code)
-        case .sessionEnded:
-            return "This chat's session ended. Send again to start a new one."
-        case .sessionMoved:
-            return "This chat just continued in a newer session. Send again."
+        case .chat(let code, _):
+            return Self.chatCopy(code)
         case .streamInterrupted:
             return "The connection dropped before the reply finished."
         case .modelNoVision:
             return "This model can't see images. Pick one that can from the model menu."
         case .modelSelectionUnavailable:
             return TurnFailure.modelSelectionUnavailableCopy
+        }
+    }
+
+    /// The engine's refusal codes (SPEC 6.4) in words.
+    public static func chatCopy(_ code: String) -> String {
+        switch code {
+        case "chat_busy":
+            return "Stop the chat first."
+        case "chat_not_found":
+            return "That chat is gone."
+        case "retry_too_soon":
+            return "The model provider is still cooling down. Retry in a moment."
+        case "context_too_large":
+            return "Your instructions and tools fill this model's window. Pick a model with a bigger window, or shorten the instructions."
+        case "engine_starting":
+            return "The bot is still starting. Try again in a moment."
+        default:
+            return code.replacingOccurrences(of: "_", with: " ").capitalized
         }
     }
 
@@ -120,15 +134,11 @@ public enum BackendError: Error, LocalizedError, Equatable {
         case "proposal_mismatch":
             return "That proposal no longer matches this app."
         case "tool_budget_exceeded":
-            return "This would give your bots more tools than a turn can carry, so it was not connected."
+            return "This would give your bot more tools than a turn can carry, so it was not connected."
         case "tool_name_too_long":
             return "That service names its tools longer than a model accepts, so it was not connected."
         case "tool_count_unknown":
             return "That service's tool list could not be read, so it was not connected. Try again."
-        case "target_missing":
-            return "The target bot no longer exists."
-        case "fanout_empty":
-            return "There is nobody left to send this to."
         case "csrf":
             return "The local server rejected that write. Try again."
         case "routine_missing":
@@ -178,23 +188,16 @@ public enum ApprovalDecision: String, Sendable {
 
 private struct ShellResponse: Decodable {
     let store: ShellStore
-    /// Set when the server committed the roster change but could not finish
-    /// what hangs off it (a deleted bot's routines or transcript). The tick
-    /// sweeps the remainder, so this is a warning, never a failure.
-    let detachError: String?
     /// Set once, on a connect card's Authorize: the hosted sign-in to open.
     let redirectUrl: String?
     /// Authorize host the server stored on the card. Required to open it.
     let redirectHost: String?
 }
-private struct StateResponse: Decodable {
-    let events: [AgentEvent]?
-    let proposals: [Proposal]?
-}
-private struct SendResponse: Decodable { let sessionId: String? }
-/// The proxy's error envelope for an upstream refusal. `code` is only ever
-/// the one value the proxy relays, `session_not_active`.
-private struct EveErrorResponse: Decodable { let code: String?; let error: String? }
+private struct ProposalsResponse: Decodable { let proposals: [Lossy<Proposal>]? }
+private struct ChatCreated: Decodable { let chatId: String }
+private struct ChatDeleted: Decodable { let current: String? }
+private struct ChatSearchResponse: Decodable { let hits: [Lossy<ChatSearchHit>]? }
+private struct TurnAckResponse: Decodable { let turnId: String?; let queued: Bool? }
 private struct ShellErrorResponse: Decodable { let error: String? }
 private struct ProvidersResponse: Decodable {
     let composer: ComposerState?
@@ -237,37 +240,6 @@ private final class ActivityBox: @unchecked Sendable {
     }
 }
 
-private final class FlagBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var flag = false
-    var value: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return flag
-    }
-    func set() {
-        lock.lock()
-        flag = true
-        lock.unlock()
-    }
-}
-
-/// The tail index a stream's response reported, for the caller that started it.
-private final class TailBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var tail: Int?
-    var value: Int? {
-        lock.lock()
-        defer { lock.unlock() }
-        return tail
-    }
-    func set(_ next: Int?) {
-        lock.lock()
-        tail = next
-        lock.unlock()
-    }
-}
-
 private final class TaskBox: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
@@ -285,8 +257,8 @@ private final class TaskBox: @unchecked Sendable {
 }
 
 /// Talks to the local web server on behalf of the native app: device-token
-/// sign-in, the shell store, durable thread events, turn sending and the
-/// session event stream. Cookies live in a jar private to this client, so the
+/// sign-in, the shell store, the chats and their rows, turn sending and the
+/// chat event stream. Cookies live in a jar private to this client, so the
 /// session never leaks into the shared storage other code might read.
 public actor BackendClient {
     public let base: URL
@@ -758,10 +730,11 @@ public actor BackendClient {
         return decoded.store
     }
 
-    public func threadState(botId: String) async throws -> (events: [AgentEvent], proposals: [Proposal]) {
+    /// The open connect-app and connect-server proposals of a bot, with their phase.
+    public func proposals(botId: String) async throws -> [Proposal] {
         let (data, response) = try await perform { client, _ in
             var components = URLComponents(
-                url: client.base.appendingPathComponent("api/agent/state"),
+                url: client.base.appendingPathComponent("api/proposals"),
                 resolvingAgainstBaseURL: false
             )
             components?.queryItems = [URLQueryItem(name: "botId", value: botId)]
@@ -769,14 +742,10 @@ public actor BackendClient {
             return URLRequest(url: url)
         }
         try Self.expectOK(data, response)
-        guard let decoded = try? JSONDecoder().decode(StateResponse.self, from: data) else {
+        guard let decoded = try? JSONDecoder().decode(ProposalsResponse.self, from: data) else {
             throw BackendError.decoding
         }
-        return (decoded.events ?? [], decoded.proposals ?? [])
-    }
-
-    public func events(botId: String) async throws -> [AgentEvent] {
-        try await threadState(botId: botId).events
+        return (decoded.proposals ?? []).compactMap(\.value)
     }
 
     /// The operator identity and build info shown in the rail and settings.
@@ -883,7 +852,7 @@ public actor BackendClient {
 
     /// Save one role's model pick. `modelId` may be
     /// "<connectionId>::<modelId>" to switch connection and model in one
-    /// write. A nil `modelId` clears a reviewer choice. Nil subkeys are left
+    /// write. A nil `modelId` clears the role's choice. Nil subkeys are left
     /// out, so an unchanged effort is kept, not cleared.
     @discardableResult
     public func setRole(
@@ -1235,49 +1204,6 @@ public actor BackendClient {
         return decoded
     }
 
-    /// Ask the proxy to cancel the active turn on a session.
-    /// `reportOnly` marks the app's own cancel of a turn that only carries
-    /// cancelled reports of sub-agents the owner stopped: the proxy then retires
-    /// that session's cards alone, not those of sub-agents still running.
-    public func cancel(sessionId: String, reportOnly: Bool = false) async throws {
-        let (data, response) = try await perform { client, token in
-            let path = client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/cancel")
-            var request = URLRequest(
-                url: reportOnly ? path.appending(queryItems: [URLQueryItem(name: "scope", value: "report")]) : path
-            )
-            request.httpMethod = "POST"
-            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            return request
-        }
-        try Self.expectOK(data, response)
-    }
-
-    /// Cancel a sub-agent's own turn. The proxy verifies the child the same way
-    /// it does a stream read: by the parent session and the index of the
-    /// parent's `subagent.called` for it.
-    public func cancelChild(
-        botId: String, childSessionId: String, parentSessionId: String, at: Int, agentId: String? = nil
-    ) async throws {
-        let (data, response) = try await perform { client, token in
-            var components = URLComponents(
-                url: client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(childSessionId))/cancel"),
-                resolvingAgainstBaseURL: false
-            )
-            components?.queryItems = [
-                URLQueryItem(name: "parent", value: parentSessionId),
-                URLQueryItem(name: "at", value: String(at)),
-            ]
-            // The server uses it to keep the stopped agent from being relaunched.
-            if let agentId { components?.queryItems?.append(URLQueryItem(name: "agentId", value: agentId)) }
-            guard let url = components?.url else { throw BackendError.decoding }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            return request
-        }
-        try Self.expectOK(data, response)
-    }
-
     // MARK: - Routines
 
     public func routines(botId: String) async throws -> [Routine] {
@@ -1475,26 +1401,15 @@ public actor BackendClient {
         return decoded.composer
     }
 
-    /// Drain the handoff pump the way the web poll does. Best effort: the next
-    /// poll retries and the agent-side wake-up also drives the queue. Returns
-    /// bot ids with a handoff currently being delivered, so the rail can pulse.
-    public func tick() async -> [String]? {
-        let result = try? await perform { client, token in
-            var components = URLComponents(
-                url: client.base.appendingPathComponent("api/agent/tick"),
-                resolvingAgainstBaseURL: false
-            )
-            components?.queryItems = [URLQueryItem(name: "limit", value: "2")]
-            guard let url = components?.url else { throw BackendError.decoding }
-            var request = URLRequest(url: url)
+    /// The 2.5 s tick: the connect pumps and the orphan sweep. Best effort,
+    /// the next tick retries.
+    public func tick() async {
+        _ = try? await perform { client, token in
+            var request = URLRequest(url: client.base.appendingPathComponent("api/agent/tick"))
             request.httpMethod = "POST"
             request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
             return request
         }
-        guard let (data, _) = result else { return nil }
-        struct TickBody: Decodable { let workingBotIds: [String]? }
-        guard let decoded = try? JSONDecoder().decode(TickBody.self, from: data) else { return nil }
-        return decoded.workingBotIds ?? []
     }
 
     // MARK: - Writes
@@ -1539,108 +1454,6 @@ public actor BackendClient {
     }
 
 
-    /// Post a turn. `images` ride beside the text as file parts; with none
-    /// the body is the plain string the text path has always sent.
-    /// `continueFrom` names the session a fresh one carries over from: the
-    /// proxy folds a brief of it into the new session's first turn. `retry`
-    /// marks the owner's Retry, so the bot checks what already happened
-    /// before repeating any step.
-    public func send(
-        botId: String,
-        sessionId: String?,
-        message: String,
-        images: [Attachment] = [],
-        continueFrom: String? = nil,
-        retry: Bool = false
-    ) async throws -> String {
-        // An empty stored session means "start one", not a trailing-slash path
-        // the proxy rejects.
-        let normalized = sessionId.flatMap { $0.isEmpty ? nil : $0 }
-        let turn = Attachments.turnMessage(formatted: message, images: images)
-        let (data, response) = try await perform { client, token in
-            let path = normalized.map { "eve/v1/session/\(Self.pathComponent($0))" } ?? "eve/v1/session"
-            var request = URLRequest(url: client.base.appendingPathComponent(path))
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "content-type")
-            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            var body: [String: Any] = [
-                "message": turn,
-                "botId": botId,
-            ]
-            if let continueFrom, !continueFrom.isEmpty, normalized == nil { body["continueFrom"] = continueFrom }
-            if retry { body["retry"] = true }
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            return request
-        }
-        // A 409 with the relayed code means the stored session is gone, not
-        // busy: the caller starts a fresh one instead of showing a dead end.
-        if let http = response as? HTTPURLResponse, http.statusCode == 409,
-           let failure = try? JSONDecoder().decode(EveErrorResponse.self, from: data),
-           failure.code == "session_not_active" {
-            throw BackendError.sessionEnded
-        }
-        // The carry-over this send asked for already happened elsewhere (the
-        // handoff pump, another window): the chat lives in a newer session.
-        if let http = response as? HTTPURLResponse, http.statusCode == 409,
-           let failure = try? JSONDecoder().decode(EveErrorResponse.self, from: data),
-           failure.code == "session_moved" {
-            throw BackendError.sessionMoved
-        }
-        // The bot's stored model or connection is gone. The proxy refuses the
-        // turn before eve and never swaps in another model.
-        if let http = response as? HTTPURLResponse, http.statusCode == 409,
-           Self.refusalCode(in: data) == "model_selection_unavailable" {
-            throw BackendError.modelSelectionUnavailable
-        }
-        // The bot's connection is on a route its vendor doesn't allow in Useful
-        // Bot (turned off). The proxy says why in the route's own sentence.
-        if let http = response as? HTTPURLResponse, http.statusCode == 409,
-           Self.refusalCode(in: data) == "provider_route_retired",
-           let message = Self.refusalMessage(in: data) {
-            throw BackendError.providerNotice(code: "provider_route_retired", message: message)
-        }
-        // The proxy refuses a picture for a model that cannot look at it
-        // before the turn exists, so the draft and its files come back.
-        if let http = response as? HTTPURLResponse, http.statusCode == 400,
-           let failure = try? JSONDecoder().decode(EveErrorResponse.self, from: data),
-           failure.error == "model_no_vision" {
-            throw BackendError.modelNoVision
-        }
-        try Self.expectOK(data, response)
-        guard let decoded = try? JSONDecoder().decode(SendResponse.self, from: data) else {
-            throw BackendError.decoding
-        }
-        guard let sid = decoded.sessionId ?? normalized, !sid.isEmpty else {
-            throw BackendError.decoding
-        }
-        return sid
-    }
-
-    /// Answer an eve input request (a session limit, a tool approval). It goes
-    /// to the same session route a turn does, as `inputResponses`, never as a
-    /// message.
-    public func answerInput(botId: String, sessionId: String, requestId: String, optionId: String) async throws {
-        let (data, response) = try await perform { client, token in
-            var request = URLRequest(url: client.base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))"))
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "content-type")
-            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            let body: [String: Any] = [
-                "botId": botId,
-                "inputResponses": [["requestId": requestId, "optionId": optionId]],
-            ]
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            return request
-        }
-        // The session is gone, so the request it raised can never be answered.
-        if let http = response as? HTTPURLResponse, http.statusCode == 409,
-           let failure = try? JSONDecoder().decode(EveErrorResponse.self, from: data),
-           failure.code == "session_not_active" {
-            throw BackendError.sessionEnded
-        }
-        try Self.expectOK(data, response)
-    }
-
     /// The sentence of a refusal body: a top-level `message`, or `error: { message }`.
     static func refusalMessage(in data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -1659,46 +1472,12 @@ public actor BackendClient {
         return nil
     }
 
-    /// Persist the session pointer and preview for a bot, the same shell
-    /// action to send after a turn starts. Without it a poll
-    /// would read back a null session and the next send would start a new one.
-    public func touchChat(botId: String, preview: String, sessionId: String) async throws {
-        let (data, response) = try await perform { client, token in
-            let action: [String: Any] = [
-                "type": "touchChat",
-                "botId": botId,
-                "preview": preview,
-                "sessionId": sessionId,
-            ]
-            var request = URLRequest(url: client.base.appendingPathComponent("api/shell"))
-            request.httpMethod = "PUT"
-            request.setValue("application/json", forHTTPHeaderField: "content-type")
-            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["action": action])
-            return request
-        }
-        try Self.expectShellOK(data, response)
-        // A 200 body can still carry {ok:false,error}; never treat that as a
-        // persisted session pointer.
-        if let failure = try? JSONDecoder().decode(ShellErrorResponse.self, from: data),
-           let code = failure.error, !code.isEmpty {
-            throw BackendError.shell(code)
-        }
-    }
-
-    /// Apply a profile patch through the shell action endpoint. Nil values are
-    /// sent as null: the server treats them as "clear this field".
-    public func patchBot(botId: String, patch: [String: Any?]) async throws {
-        _ = try await shellAction(ShellActions.updateBot(botId: botId, patch: patch))
-    }
-
     /// Send any shell action, optionally resolving a proposal in the same
     /// write. Returns the authoritative store the server echoed back.
-    /// A shell action's full answer: the new store plus anything the server
-    /// could not finish alongside it.
+    /// A shell action's full answer: the new store plus the connect card's
+    /// sign-in redirect, when there is one.
     public struct ShellActionResult: Sendable {
         public let store: ShellStore
-        public let detachError: String?
         public let redirectUrl: String?
         public let redirectHost: String?
     }
@@ -1738,13 +1517,12 @@ public actor BackendClient {
         }
         return ShellActionResult(
             store: decoded.store,
-            detachError: decoded.detachError,
             redirectUrl: decoded.redirectUrl,
             redirectHost: decoded.redirectHost
         )
     }
 
-    public func persistWidget(botId: String, widget: LiveWidget) async throws {
+    public func persistWidget(botId: String, chatId: String, widget: LiveWidget) async throws {
         var arguments: [String: Any] = [:]
         for (key, value) in widget.arguments {
             arguments[key] = value.jsonObject
@@ -1756,9 +1534,10 @@ public actor BackendClient {
             request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
             request.httpBody = try JSONSerialization.data(withJSONObject: [
                 "botId": botId,
+                "chatId": chatId,
                 "callId": widget.callId,
                 "data": [
-                    "toolName": widget.toolName,
+                    "toolName": widget.qualifiedToolName,
                     "arguments": arguments,
                 ],
             ])
@@ -2080,395 +1859,250 @@ public actor BackendClient {
         )
     }
 
-    // MARK: - Stream
+    // MARK: - Chats
 
-    /// What a session held just before a send: the turn ids on record, and
-    /// where the read for the new turn can begin.
-    public struct HistorySnapshot: Equatable, Sendable {
-        /// Turn ids already recorded. The next turn is the first with an id
-        /// outside this set, which keeps a resend of identical text from
-        /// arming the stream on the earlier turn.
-        public let turnIds: Set<String>
-        /// The first event index the session had not recorded yet, or nil when
-        /// the server did not say where its record ended. Taken before the
-        /// turn is posted, so the new turn's first event is at or after it.
-        public let nextIndex: Int?
-
-        public init(turnIds: Set<String>, nextIndex: Int?) {
-            self.turnIds = turnIds
-            self.nextIndex = nextIndex
-        }
-
-        /// `tail` is the zero-based index of the last recorded event, -1 for
-        /// an empty session, nil when unreported. The server's tail is the
-        /// authority, never the index the read began at: a cursor that had
-        /// somehow run ahead of the record would start the send's stream past
-        /// its own turn, and the reply would never arm.
-        public static func nextIndex(tail: Int?) -> Int? {
-            guard let tail else { return nil }
-            return max(0, tail + 1)
-        }
+    /// A turn the engine accepted: it is running (`turnId`), or waiting
+    /// behind the one that is (`queued`).
+    public struct TurnAck: Equatable, Sendable {
+        public let turnId: String?
+        public let queued: Bool
     }
 
-    /// Snapshot the session before a send. `start` lets a caller that already
-    /// holds the session up to an index read only what came after it; the
-    /// send's own stream then begins at `nextIndex`, so neither read walks the
-    /// whole history. Both used to start at zero, which put two full replays
-    /// of the session in front of the first token of every reply.
-    public func historySnapshot(sessionId: String, readFrom start: Int = 0) async throws -> HistorySnapshot {
-        var ids = Set<String>()
-        let tail = TailBox()
-        // A snapshot of what is already recorded, so it stops at the durable
-        // tail. Waiting for the stream to go quiet instead put more than three
-        // seconds in front of every send into an existing chat.
-        for try await event in stream(sessionId: sessionId, expectedSuffix: nil, startIndex: start, untilTail: true, tailBox: tail) {
-            if let turnId = event.turnId, !turnId.isEmpty {
-                ids.insert(turnId)
+    /// The bot's chats, newest first. `includeFixtures` is for the perf
+    /// harness, which opens the dev stack's synthetic chats.
+    public func chats(botId: String, before: String? = nil, limit: Int = 60, includeFixtures: Bool = false) async throws -> ChatsPage {
+        let (data, response) = try await perform { client, _ in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/chats"),
+                resolvingAgainstBaseURL: false
+            )
+            var items = [URLQueryItem(name: "botId", value: botId), URLQueryItem(name: "limit", value: String(limit))]
+            if let before { items.append(URLQueryItem(name: "before", value: before)) }
+            if includeFixtures { items.append(URLQueryItem(name: "includeFixtures", value: "1")) }
+            components?.queryItems = items
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectChatOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(ChatsPage.self, from: data) else { throw BackendError.decoding }
+        return decoded
+    }
+
+    /// A new chat, which becomes the bot's current one.
+    public func createChat(botId: String) async throws -> String {
+        let data = try await chatWrite(path: "api/chats", method: "POST", body: ["botId": botId])
+        guard let decoded = try? JSONDecoder().decode(ChatCreated.self, from: data) else { throw BackendError.decoding }
+        return decoded.chatId
+    }
+
+    public func renameChat(_ chatId: String, title: String) async throws {
+        _ = try await chatWrite(path: "api/chats/\(Self.pathComponent(chatId))", method: "PATCH", body: ["title": title])
+    }
+
+    /// Deletes a chat. Answers the chat the engine made current when it was
+    /// the open one, nil when none is left. A chat that is working refuses
+    /// (`chat_busy`).
+    public func deleteChat(_ chatId: String) async throws -> String? {
+        let data = try await chatWrite(path: "api/chats/\(Self.pathComponent(chatId))", method: "DELETE", body: nil)
+        return (try? JSONDecoder().decode(ChatDeleted.self, from: data))?.current
+    }
+
+    /// Marks a chat current and open: its reply-ready mark clears.
+    public func openChat(_ chatId: String) async throws {
+        _ = try await chatWrite(path: "api/chats/\(Self.pathComponent(chatId))/open", method: "POST", body: nil)
+    }
+
+    public func cancelTurn(chatId: String) async throws {
+        _ = try await chatWrite(path: "api/chats/\(Self.pathComponent(chatId))/cancel", method: "POST", body: nil)
+    }
+
+    /// Message-text hits across the owner's chats.
+    public func searchChats(query: String, limit: Int = 50) async throws -> [ChatSearchHit] {
+        let (data, response) = try await perform { client, _ in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/chats/search"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: String(limit))]
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectChatOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(ChatSearchResponse.self, from: data) else { throw BackendError.decoding }
+        return (decoded.hits ?? []).compactMap(\.value)
+    }
+
+    /// One page of a chat's rows. Without `before` it is the newest page,
+    /// which also says what is running and what is waiting.
+    public func chatRows(chatId: String, before: String? = nil, limit: Int = 60) async throws -> RowsPage {
+        let (data, response) = try await perform { client, _ in
+            var components = URLComponents(
+                url: client.base.appendingPathComponent("api/chats/\(Self.pathComponent(chatId))/rows"),
+                resolvingAgainstBaseURL: false
+            )
+            var items = [URLQueryItem(name: "limit", value: String(limit))]
+            if let before { items.append(URLQueryItem(name: "before", value: before)) }
+            components?.queryItems = items
+            guard let url = components?.url else { throw BackendError.decoding }
+            return URLRequest(url: url)
+        }
+        try Self.expectChatOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(RowsPage.self, from: data) else { throw BackendError.decoding }
+        return decoded
+    }
+
+    /// Post a turn. The text is the owner's own words; attachments ride beside
+    /// it (a text file's body, or an image's data URL) and the engine fences
+    /// them. `retry` sends the failed turn's message again under its id.
+    public func sendTurn(
+        chatId: String,
+        clientId: String,
+        text: String,
+        attachments: [Attachment] = [],
+        retry: Bool = false
+    ) async throws -> TurnAck {
+        let files: [[String: Any]] = attachments.map { file in
+            var item: [String: Any] = [
+                "name": file.name,
+                "mediaType": file.mediaType ?? "text/plain",
+                "size": file.bytes,
+            ]
+            if let dataUrl = file.dataUrl, file.isImage {
+                item["dataUrl"] = dataUrl
+            } else if let body = file.text {
+                item["text"] = body
             }
+            return item
         }
-        let next = HistorySnapshot.nextIndex(tail: tail.value)
-        if next == nil, start > 0 {
-            // No tail, so the send has to read from zero, and for that the
-            // turn ids have to cover the whole session, not just its end.
-            return try await historySnapshot(sessionId: sessionId, readFrom: 0)
-        }
-        return HistorySnapshot(turnIds: ids, nextIndex: next)
+        var body: [String: Any] = ["clientId": clientId, "text": text, "attachments": files]
+        if retry { body["retry"] = true }
+        let data = try await chatWrite(path: "api/chats/\(Self.pathComponent(chatId))/turns", method: "POST", body: body)
+        let decoded = try? JSONDecoder().decode(TurnAckResponse.self, from: data)
+        return TurnAck(turnId: decoded?.turnId, queued: decoded?.queued ?? false)
     }
 
-    /// The id of the newest event the session has recorded, or nil when it has
-    /// none, cannot be read, or does not answer within `timeout`.
-    ///
-    /// Read with a negative `startIndex`, which eve documents as relative to
-    /// the tail: it opens only the last chunk file. Asking for the tail index
-    /// instead (`includeTailIndex`) makes eve open every chunk file of the
-    /// session before it answers, 1.25 s for a 12,554-event chat, and a load
-    /// only needs to know which event is the last one it will call history.
-    public func newestEventId(sessionId: String, timeout: TimeInterval = 0.8) async -> String? {
-        await withTaskGroup(of: String?.self) { group in
-            group.addTask { try? await self.readNewestEventId(sessionId: sessionId, timeout: timeout) }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return nil
+    /// Every chat that is working, waiting on the owner, reply-ready or whose
+    /// newest turn failed, with the first-launch flag.
+    public func engineStatus() async throws -> EngineStatus {
+        let (data, response) = try await perform { client, _ in
+            URLRequest(url: client.base.appendingPathComponent("api/engine/status"))
+        }
+        try Self.expectChatOK(data, response)
+        guard let decoded = try? JSONDecoder().decode(EngineStatus.self, from: data) else { throw BackendError.decoding }
+        return decoded
+    }
+
+    private func chatWrite(path: String, method: String, body: [String: Any]?) async throws -> Data {
+        let (data, response) = try await perform { client, token in
+            var request = URLRequest(url: client.base.appendingPathComponent(path))
+            request.httpMethod = method
+            request.setValue(token, forHTTPHeaderField: "x-ub-csrf")
+            if let body {
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+            return request
+        }
+        try Self.expectChatOK(data, response)
+        return data
+    }
+
+    /// 2xx is success. Anything else is read for the engine's `{ok:false,
+    /// error:<code>}` and said as the chat refusal it is; a body without a
+    /// code falls back to the plain status.
+    static func expectChatOK(_ data: Data, _ response: URLResponse) throws {
+        guard let http = response as? HTTPURLResponse else { throw BackendError.decoding }
+        guard !(200...299).contains(http.statusCode) else { return }
+        if http.statusCode == 401 || http.statusCode == 403 { try expectOK(data, response) }
+        throw chatFailure(status: http.statusCode, data: data)
+    }
+
+    static func chatFailure(status: Int, data: Data) -> BackendError {
+        guard let code = refusalCode(in: data), !code.isEmpty else { return .http(status) }
+        switch code {
+        case "model_selection_unavailable":
+            return .modelSelectionUnavailable
+        case "model_no_vision":
+            return .modelNoVision
+        case "description_too_long":
+            return .shell("shell_description_too_long")
+        case "provider_route_retired":
+            if let message = refusalMessage(in: data) { return .providerNotice(code: code, message: message) }
+            return .chat(code: code, retryAfterMs: nil)
+        case "retry_too_soon":
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            return .chat(code: code, retryAfterMs: (object?["retryAfterMs"] as? NSNumber)?.intValue)
+        default:
+            return .chat(code: code, retryAfterMs: nil)
         }
     }
 
-    private func readNewestEventId(sessionId: String, timeout: TimeInterval) async throws -> String? {
-        var components = URLComponents(
-            url: base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/stream"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [URLQueryItem(name: "startIndex", value: "-1")]
-        guard let url = components?.url else { return nil }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = timeout
-        for attempt in 0..<2 {
-            let (bytes, response, sentCookie, sentEpoch) = try await sendBytes(request)
-            // The read follows the live stream after that one event; it is
-            // dropped as soon as the event is in.
-            defer { bytes.task.cancel() }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-#if os(macOS)
-            // The same one re-sign-in the stream makes after a server restart
-            // rotated the session. Without it every first open after one fell
-            // back to the whole-session scan.
-            if status == 401 || status == 403, attempt == 0 {
-                try await reauth(unlessRotatedFrom: sentCookie, signedOutSince: sentEpoch)
-                continue
-            }
-#else
-            _ = (attempt, sentCookie, sentEpoch)
-#endif
-            guard (200...299).contains(status) else { return nil }
-            for try await line in bytes.lines {
-                guard let payload = EveStream.payload(of: line) else { continue }
-                return EveStream.eventId(ofPayload: payload)
-            }
-            return nil
-        }
-        return nil
-    }
+    // MARK: - Chat events
 
-    /// Replay the session and yield events live. With `expectedSuffix` set, the
-    /// stream ignores replay until it sees the turn carrying that text with a
-    /// turn id not in `historyTurnIds`, then finishes on that turn's completion.
-    /// Without it, the stream finishes after a short quiet period: history is
-    /// replayed instantly by the local server, and the connection otherwise
-    /// stays open forever.
-    ///
-    /// `startIndex` is eve's absolute event count: the read begins there, and
-    /// every yielded event carries its own `index`, so a caller that keeps
-    /// `index + 1` can resume later without replaying what it already has.
-    /// With `untilTail` the read is a catch-up: the server reports the last
-    /// durably recorded index and the stream finishes on reaching it, without
-    /// waiting out the quiet period. A server that does not report a tail
-    /// leaves the quiet period as the only end, as before.
-    /// `allowUntaggedTurn` keeps the old tolerance for a server that tags no
-    /// turns: a matching message with no turn id arms the stream when
-    /// `historyTurnIds` is empty. A caller whose id set does not span the whole
-    /// session passes false, because there an empty set proves nothing.
-    /// With `markHistory` the server is asked for the same tail but the read
-    /// carries on past it: each event says how far it sat from the end of the
-    /// history, and the caller tells a replay from a live turn by that.
-    /// With `markHistory` and a `historyMarker` (from `newestEventId`) the
-    /// tail is not asked for: every event up to the one carrying that id is
-    /// history (`historyRemaining` 1, then 0 on the marker) and the read
-    /// finishes there. A read that ends any other way throws, so a caller
-    /// that finishes the loop knows it reached the marker.
-    public nonisolated func stream(
-        sessionId: String,
-        expectedSuffix: String? = nil,
-        historyTurnIds: Set<String> = [],
-        startIndex: Int = 0,
-        untilTail: Bool = false,
-        markHistory: Bool = false,
-        historyMarker: String? = nil,
-        allowUntaggedTurn: Bool = true,
-        parentSessionId: String? = nil,
-        calledAt: Int? = nil,
-        tailCount: Int? = nil
-    ) -> AsyncThrowingStream<EveEvent, Error> {
-        stream(
-            sessionId: sessionId,
-            expectedSuffix: expectedSuffix,
-            historyTurnIds: historyTurnIds,
-            startIndex: startIndex,
-            untilTail: untilTail,
-            markHistory: markHistory,
-            historyMarker: historyMarker,
-            allowUntaggedTurn: allowUntaggedTurn,
-            parentSessionId: parentSessionId,
-            calledAt: calledAt,
-            tailCount: tailCount,
-            tailBox: nil
-        )
-    }
+    /// How long a chat stream may stay silent before it counts as dropped.
+    /// The engine pings every 15 seconds.
+    public static let chatStreamIdleLimit: TimeInterval = 30
 
-    private nonisolated func stream(
-        sessionId: String,
-        expectedSuffix: String?,
-        historyTurnIds: Set<String> = [],
-        startIndex: Int,
-        untilTail: Bool,
-        markHistory: Bool = false,
-        historyMarker: String? = nil,
-        allowUntaggedTurn: Bool = true,
-        parentSessionId: String? = nil,
-        calledAt: Int? = nil,
-        tailCount: Int? = nil,
-        tailBox: TailBox?
-    ) -> AsyncThrowingStream<EveEvent, Error> {
-        // A marker stands in for the tail index; without one, the tail is
-        // asked for as before.
-        let marker = markHistory ? historyMarker : nil
-        // The last `tailCount` events: eve reads a negative `startIndex` from the
-        // tail, and the tail index is needed to say where the first one sits.
-        let wantsTail = untilTail || (markHistory && marker == nil) || tailCount != nil
+    /// The chat's live events as NDJSON lines. A fresh connection leaves out
+    /// `after`; a reconnect names the last `seq` it applied and the epoch it
+    /// saw, and the engine answers with `stream.ready {resync}` when its
+    /// buffer no longer reaches back that far. The stream ends with an error
+    /// when the connection drops or goes quiet, and the caller reconnects.
+    public nonisolated func chatEvents(chatId: String, after: Int? = nil, epoch: String? = nil) -> AsyncThrowingStream<ChatEvent, Error> {
         let base = self.base
         let client = self
         return AsyncThrowingStream { continuation in
             let activity = ActivityBox()
-            let armedBox = FlagBox()
-            // Set once a 2xx response's headers are in. Until then eve is
-            // still preparing the read: with `includeTailIndex` it opens every
-            // chunk file of the session to count the tail before it answers,
-            // which takes seconds on a long session and is not a hung link.
-            let openedBox = FlagBox()
             let reader = Task {
                 do {
                     for attempt in 0..<2 {
-                        // The idle watchdog covers the whole handshake, not
-                        // just the line loop: the header wait, an error-body
-                        // drain and a re-auth round trip each reset it so a
-                        // slow link cannot finish() the stream mid-handling.
                         activity.touch()
                         var components = URLComponents(
-                            url: base.appendingPathComponent("eve/v1/session/\(Self.pathComponent(sessionId))/stream"),
+                            url: base.appendingPathComponent("api/chats/\(Self.pathComponent(chatId))/events"),
                             resolvingAgainstBaseURL: false
                         )
-                        components?.queryItems = [URLQueryItem(name: "startIndex", value: tailCount.map { String(-max(1, $0)) } ?? String(max(0, startIndex)))]
-                        if wantsTail {
-                            components?.queryItems?.append(URLQueryItem(name: "includeTailIndex", value: "1"))
-                        }
-                        // A sub-agent's child session is read through its parent,
-                        // naming where the parent's `subagent.called` for it sits.
-                        if let parentSessionId {
-                            components?.queryItems?.append(URLQueryItem(name: "parent", value: parentSessionId))
-                            if let calledAt {
-                                components?.queryItems?.append(URLQueryItem(name: "at", value: String(calledAt)))
-                            }
-                        }
+                        var items: [URLQueryItem] = []
+                        if let after { items.append(URLQueryItem(name: "after", value: String(after))) }
+                        if let epoch { items.append(URLQueryItem(name: "epoch", value: epoch)) }
+                        components?.queryItems = items.isEmpty ? nil : items
                         guard let url = components?.url else { throw BackendError.decoding }
                         var request = URLRequest(url: url)
                         request.timeoutInterval = 180
-                        let (bytes, response, sentCookie, sentEpoch) = try await sendBytes(request)
+                        let (bytes, response, sentCookie, sentEpoch) = try await client.sendBytes(request)
                         activity.touch()
                         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-#if os(iOS)
-                        // §6.2/§8.4: a 401 re-auths through the shared single
-                        // flight once; `credential_invalid` and every 403 are
-                        // terminal and never re-auth.
-                        if status == 401, attempt == 0 {
+                        if status == 401 || status == 403, attempt == 0 {
+                            // The session rotated (a server restart); sign in
+                            // and open the stream once more.
                             let code = try await Self.errorCode(bytes)
-                            activity.touch()
-                            if code != "credential_invalid" {
-                                try await client.reauth(unlessRotatedFrom: sentCookie, signedOutSince: sentEpoch)
-                                activity.touch()
-                                continue
+#if os(iOS)
+                            if status == 403 || code == "credential_invalid" {
+                                throw status == 403 ? BackendError.forbidden(code ?? "forbidden") : BackendError.credentialInvalid
                             }
-                            throw BackendError.credentialInvalid
-                        }
-                        guard (200...299).contains(status) else {
-                            switch status {
-                            case 401:
-                                throw BackendError.credentialInvalid
-                            case 403:
-                                throw BackendError.forbidden(
-                                    (try await Self.errorCode(bytes)) ?? "forbidden")
-                            default:
-                                throw BackendError.http(status)
-                            }
-                        }
-#else
-                        // A child stream's 403 is the proxy refusing it (the parent
-                        // does not vouch for it), which signing in again never fixes.
-                        if (status == 401 || (status == 403 && parentSessionId == nil)), attempt == 0 {
-                            // The session rotated (server restart); sign in and
-                            // rebuild the stream once.
+#endif
                             try await client.reauth(unlessRotatedFrom: sentCookie, signedOutSince: sentEpoch)
                             activity.touch()
                             continue
                         }
                         guard (200...299).contains(status) else {
-                            // A 401/403 after the re-sign-in attempt is an
-                            // auth failure, not a generic HTTP error.
-                            throw status == 401 || status == 403
-                                ? BackendError.unauthorized
-                                : BackendError.http(status)
+                            var body = Data()
+                            for try await byte in bytes {
+                                body.append(byte)
+                                if body.count >= 4096 { break }
+                            }
+                            if status == 401 || status == 403 {
+                                try Self.expectOK(body, response)
+                            }
+                            throw Self.chatFailure(status: status, data: body)
                         }
-#endif
-                        // Zero-based index of the last recorded event, or -1
-                        // for an empty stream. Nil when the server did not say.
-                        let tail = wantsTail
-                            ? (response as? HTTPURLResponse)?
-                                .value(forHTTPHeaderField: "x-eve-stream-tail-index")
-                                .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
-                            : nil
-                        openedBox.set()
-                        tailBox?.set(tail)
-                        var nextIndex = max(0, startIndex)
-                        if let tailCount {
-                            // Without the tail there is no telling where these
-                            // events sit, and a cursor built on a guess is worse
-                            // than no read.
-                            guard let tail else { throw BackendError.decoding }
-                            nextIndex = max(0, tail + 1 - max(1, tailCount))
-                        }
-                        if untilTail, let tail, tail < nextIndex {
-                            // Nothing recorded past the cursor.
-                            continuation.finish()
-                            return
-                        }
-                        var armed = expectedSuffix == nil
-                        if armed { armedBox.set() }
-                        // In history mode a waiting marker ends every replayed
-                        // turn; only the idle watchdog may finish the read.
-                        let finishOnTerminal = expectedSuffix != nil
-                        // In armed mode the stream must end with a terminal
-                        // event; an EOF before one means the server dropped
-                        // mid-turn, not that the reply is done.
-                        var sawTerminal = false
                         for try await line in bytes.lines {
                             activity.touch()
-                            // Counted before it is decoded: a line this build
-                            // cannot read is still one event in eve's count.
-                            guard EveStream.payload(of: line) != nil else { continue }
-                            let index = nextIndex
-                            nextIndex += 1
-                            let reachedTail = untilTail && (tail.map { index >= $0 } ?? false)
-                            guard var event = EveStream.parseLine(line) else {
-                                if reachedTail {
-                                    continuation.finish()
-                                    return
-                                }
-                                // A marker this build cannot decode still ends
-                                // the history where it sits.
-                                if let marker, let payload = EveStream.payload(of: line),
-                                   EveStream.eventId(ofPayload: payload) == marker {
-                                    continuation.finish()
-                                    return
-                                }
-                                continue
-                            }
-                            event.index = index
-                            event.sessionId = sessionId
-                            let reachedMarker = marker != nil && event.id == marker
-                            if markHistory, let tail {
-                                event.historyRemaining = tail - index
-                            } else if marker != nil {
-                                event.historyRemaining = reachedMarker ? 0 : 1
-                            }
-                            if !armed {
-                                if event.type == "message.received",
-                                   let message = event.message,
-                                   let suffix = expectedSuffix {
-                                    let stripped = EveStream.stripThreadPrefix(message)
-                                    // Nothing truncates a stored turn today, so
-                                    // the equality above is what arms the
-                                    // stream. The prefix arm is tolerance only:
-                                    // a composed message carrying an attached
-                                    // file body runs far past the composer cap,
-                                    // and a server that started clipping there
-                                    // would otherwise leave the send unarmed.
-                                    let expected = String(suffix.prefix(Attachments.messageMax))
-                                    let matches = stripped == suffix || stripped.hasPrefix(expected)
-                                    if matches,
-                                       let turnId = event.turnId,
-                                       !historyTurnIds.contains(turnId) {
-                                        armed = true
-                                        armedBox.set()
-                                        continuation.yield(event)
-                                    } else if matches,
-                                              event.turnId == nil,
-                                              allowUntaggedTurn,
-                                              historyTurnIds.isEmpty {
-                                        armed = true
-                                        armedBox.set()
-                                        continuation.yield(event)
-                                    }
-                                }
-                                continue
-                            }
-                            continuation.yield(event)
-                            if reachedMarker {
-                                continuation.finish()
-                                return
-                            }
-                            if ["turn.completed", "turn.cancelled", "turn.failed",
-                                "session.completed", "session.failed", "session.cancelled"].contains(event.type) {
-                                sawTerminal = true
-                                if finishOnTerminal {
-                                    continuation.finish()
-                                    return
-                                }
-                            }
-                            if reachedTail {
-                                continuation.finish()
-                                return
-                            }
+                            // A line this build cannot read is skipped; it
+                            // never ends the stream.
+                            if let event = ChatEvent.parse(line: line) { continuation.yield(event) }
                         }
-                        if expectedSuffix != nil, armed, !sawTerminal {
-                            throw BackendError.streamInterrupted
-                        }
-                        // The server closed the read before the marker: the
-                        // history is not known to be whole.
-                        if marker != nil {
-                            throw BackendError.streamInterrupted
-                        }
-                        continuation.finish()
+                        // The engine closed the stream: the caller reconnects.
+                        continuation.finish(throwing: BackendError.streamInterrupted)
                         return
                     }
                     continuation.finish(throwing: BackendError.unauthorized)
@@ -2477,39 +2111,15 @@ public actor BackendClient {
                 }
             }
             let watchdog = TaskBox()
-            if expectedSuffix == nil {
-                // History replay finishes when the server closes the stream;
-                // this is only a backstop for a hung connection, so it waits
-                // long enough not to truncate a slow large replay.
-                // The header wait gets a longer allowance than a gap in the
-                // body: eve scans the whole session before its first byte, so
-                // a 3s limit there failed every long chat before it replayed.
-                watchdog.set(Task {
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        if activity.idle > (openedBox.value ? 3 : 30) {
-                            // §8.3: a watchdog stop is an early stop - the
-                            // read is incomplete and reported as such, never
-                            // presented as a complete replay.
-                            continuation.finish(throwing: BackendError.streamInterrupted)
-                            return
-                        }
+            watchdog.set(Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    if activity.idle > Self.chatStreamIdleLimit {
+                        continuation.finish(throwing: BackendError.streamInterrupted)
+                        return
                     }
-                })
-            } else {
-                // A send whose expected turn never appears in the replay must
-                // not hang the composer: finish once the stream goes quiet
-                // without ever arming.
-                watchdog.set(Task {
-                    while !Task.isCancelled {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        if !armedBox.value, activity.idle > 20 {
-                            continuation.finish(throwing: BackendError.streamInterrupted)
-                            return
-                        }
-                    }
-                })
-            }
+                }
+            })
             continuation.onTermination = { _ in
                 reader.cancel()
                 watchdog.cancel()
@@ -2519,7 +2129,7 @@ public actor BackendClient {
 
     private static func expectOK(_ data: Data, _ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw BackendError.decoding }
-        // eve answers 202 Accepted for a session turn, so any 2xx is success.
+        // The engine answers 202 Accepted for a turn, so any 2xx is success.
         guard (200...299).contains(http.statusCode) else {
 #if os(iOS)
             // §6.2/§8.4: a 401 this far down already burned its one re-auth —

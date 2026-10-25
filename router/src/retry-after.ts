@@ -144,8 +144,8 @@ export async function upstreamLimitError(response: Response): Promise<RouterErro
       status: 402,
       type: "rate_limit_error",
       code: name,
-      // The reset rides in the message: it is what reaches the app through
-      // eve's failure text.
+      // The reset rides in the message, for a client that keeps only the
+      // message of a failed call.
       message: usedLimitMessage(name, resetsAt),
       retryable: false,
     });

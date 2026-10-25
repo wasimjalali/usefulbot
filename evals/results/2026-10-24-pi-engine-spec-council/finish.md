@@ -1,0 +1,1 @@
+Stop exploring. You have read enough. Write your final report now, from what you have already read, in the exact format the original brief asked for: `## Findings` (objects with finding, severity, where, evidence, fix; most severe first), `## Dismissed`, `## Verdict`. Use at most 5 more tool calls, only to confirm a citation you are unsure of. Under 2,500 words. No preamble.

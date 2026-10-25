@@ -103,7 +103,7 @@ test("a tracked runtime file that imports an untracked one fails the dev stage u
   put(root, "agent/agent.ts", 'export * from "../shared/late.ts";\nconst m = await import("../shared/late.ts");\n');
   assert.throws(() => runtimeFiles(root, TRACKED, { worktree: true }), /agent\/agent\.ts imports shared\/late\.ts/);
   // Packages and a missing relative file are not this check's business.
-  put(root, "agent/agent.ts", 'import "node:fs";\nimport "eve/tools";\n');
+  put(root, "agent/agent.ts", 'import "node:fs";\nimport "zod";\n');
   assert.doesNotThrow(() => runtimeFiles(root, TRACKED, { worktree: true }));
 });
 

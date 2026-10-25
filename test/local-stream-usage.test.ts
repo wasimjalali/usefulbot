@@ -5,7 +5,6 @@ import { join } from "node:path";
 import test from "node:test";
 import { usageFromSseBlock } from "../shared/usage-parse.ts";
 import { createThinkStream, splitThinkBlock } from "../router/src/inline-think.ts";
-import { settleStreamBlock } from "../router/src/tool-finish.ts";
 import { completeUpstream, type ResolvedUpstream } from "../router/src/upstreams/opencode.ts";
 import type { RegistryEntry } from "../router/src/registry.ts";
 
@@ -162,10 +161,8 @@ test("a 422 naming stream_options is retried without it too", async () => {
 
 test("the relay passes a final usage chunk with choices [] through unchanged", () => {
   const block = 'data: {"id":"c1","object":"chat.completion.chunk","model":"m","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}';
-  const settled = settleStreamBlock(block, { toolCall: false });
-  assert.equal(settled, block);
-  assert.equal(splitThinkBlock(settled, createThinkStream()), block);
-  assert.equal(usageFromSseBlock(settled)?.inputTokens, 10);
+  assert.equal(splitThinkBlock(block, createThinkStream()), block);
+  assert.equal(usageFromSseBlock(block)?.inputTokens, 10);
 });
 
 test("a 400 that does not mention stream_options is not retried", async () => {

@@ -2,81 +2,76 @@ import Foundation
 import Testing
 @testable import UsefulBotCore
 
+private let epoch = "e7a1c0de-0000-4000-8000-000000000001"
+
 @Suite struct OwnerQuestionTests {
-    private func line(_ json: String) throws -> EveEvent {
-        try #require(EveStream.parseLine(json))
+    private func loaded() -> ChatProjection {
+        var projection = ChatProjection()
+        projection.load(RowsPage(rows: [], tailSeq: 0, epoch: epoch))
+        return projection
     }
 
-    private let asked = """
-    {"type":"input.requested","data":{"requests":[{"action":{"callId":"call_01_q","kind":"tool-call","toolName":"ask_question"},"display":"select","kind":"question","prompt":"Which folder?","requestId":"call_01_q","allowFreeform":true,"options":[{"id":"inbox","label":"Inbox","description":"New files"},{"id":"archive","label":"Archive"}]}]}}
-    """
-
-    @Test func aFailedSessionDropsTheCardButAFailedTurnKeepsIt() throws {
-        // eve retires a failed session, so the next message opens an empty one
-        // and an option label sent there answers nothing. A turn that fails
-        // while the session lives on still has the question in its history.
-        var projection = StreamProjection()
-        projection.apply(try line(asked))
-        projection.apply(try line(#"{"type":"turn.failed","data":{"turnId":"turn_0","code":"boom"}}"#))
-        #expect(projection.failed)
-        #expect(projection.questions.count == 1)
-        projection.apply(try line(#"{"type":"session.failed","data":{"code":"boom"}}"#))
-        #expect(projection.questions.isEmpty)
+    private func event(_ seq: Int, _ body: String) -> ChatEvent {
+        ChatEvent.parse(line: #"{"seq":\#(seq),"epoch":"\#(epoch)","chatId":"c",\#(body)}"#)!
     }
 
-    @Test func aQuestionStaysOpenAfterItsTurnEnds() throws {
-        var projection = StreamProjection()
-        projection.apply(try line(asked))
-        projection.apply(try line(#"{"type":"turn.completed","data":{"turnId":"turn_0"}}"#))
-        projection.apply(try line(#"{"type":"session.waiting","data":{"wait":"next-user-message"}}"#))
-        #expect(projection.pending == false)
-        #expect(projection.questions.count == 1)
-        let question = projection.questions[0]
-        #expect(question.id == "call_01_q")
-        #expect(question.prompt == "Which folder?")
-        #expect(question.allowFreeform)
-        #expect(question.options.map(\.label) == ["Inbox", "Archive"])
-        #expect(question.options[0].detail == "New files")
-        #expect(question.options[1].detail == "")
+    private let asked = #""turnId":"t1","type":"input.requested","requestId":"call_01_q","kind":"question","prompt":"Which folder?","options":[{"id":"inbox","label":"Inbox","detail":"New files"},{"id":"archive","label":"Archive"}],"allowFreeform":true"#
+
+    @Test func aQuestionStaysOpenAfterItsTurnEnds() {
+        var projection = loaded()
+        projection.apply(event(1, #""turnId":"t1","type":"turn.started","origin":"owner""#))
+        projection.apply(event(2, asked))
+        projection.apply(event(3, #""turnId":"t1","type":"turn.completed""#))
+        #expect(!projection.pending)
+        let question = projection.openQuestion
+        #expect(question?.id == "call_01_q")
+        #expect(question?.prompt == "Which folder?")
+        #expect(question?.allowFreeform == true)
+        #expect(question?.options.map(\.label) == ["Inbox", "Archive"])
+        #expect(question?.options[0].detail == "New files")
+        #expect(question?.options[1].detail == "")
     }
 
-    @Test func anAnswerClosesIt() throws {
-        var projection = StreamProjection()
-        projection.apply(try line(asked))
-        // A replay delivers the request again before the answer.
-        projection.apply(try line(asked))
-        #expect(projection.questions.count == 1)
-        projection.apply(try line("""
-        {"type":"input.resolved","data":{"resolutions":[{"kind":"question","outcome":"answered","requestId":"call_01_q"}]}}
-        """))
-        #expect(projection.questions.isEmpty)
+    @Test func theAnswerClosesItBeforeTheNextTurnStarts() {
+        var projection = loaded()
+        projection.apply(event(1, asked))
+        #expect(projection.openQuestion != nil)
+        // Another request id resolving leaves this one alone.
+        projection.apply(event(2, #""type":"input.resolved","requestId":"someone-else""#))
+        #expect(projection.openQuestion != nil)
+        projection.apply(event(3, #""type":"input.resolved","requestId":"call_01_q""#))
+        #expect(projection.openQuestion == nil)
     }
 
-    @Test func theOwnersNextTurnClosesItAtOnce() throws {
-        var projection = StreamProjection()
-        projection.apply(try line(asked))
-        projection.beginTurn()
-        #expect(projection.questions.isEmpty)
-    }
-
-    @Test func approvalsAndBrokenRequestsAreNotQuestions() throws {
-        let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
-        {"requests":[
-          {"kind":"tool-approval","requestId":"call_02_a","prompt":"Run bash?"},
-          {"kind":"question","requestId":"","prompt":"No id"},
-          {"kind":"question","requestId":"call_03_b","prompt":"  "}
-        ]}
-        """.utf8))
-        #expect(EveStream.parseQuestions(data).isEmpty)
+    @Test func aReloadRestoresTheOpenQuestion() {
+        var projection = ChatProjection()
+        let question = OwnerQuestion(
+            id: "call_01_q", prompt: "Which folder?",
+            options: [.init(id: "inbox", label: "Inbox", detail: "")], allowFreeform: false
+        )
+        projection.load(RowsPage(rows: [], tailSeq: 4, epoch: epoch, openQuestion: question))
+        #expect(projection.openQuestion == question)
+        // A page with none clears a question the chat no longer holds.
+        projection.load(RowsPage(rows: [], tailSeq: 9, epoch: epoch))
+        #expect(projection.openQuestion == nil)
     }
 
     @Test func aQuestionWithNoOptionsTakesWords() throws {
-        let data = try JSONDecoder().decode(JSONValue.self, from: Data("""
-        {"requests":[{"kind":"question","requestId":"call_04_c","prompt":"What name?"}]}
-        """.utf8))
-        let questions = EveStream.parseQuestions(data)
-        #expect(questions.count == 1)
-        #expect(questions[0].options.isEmpty)
-        #expect(questions[0].allowFreeform)
+        let page = try JSONDecoder().decode(RowsPage.self, from: Data(#"""
+        {"rows":[],"tailSeq":1,"epoch":"e","openQuestion":{"requestId":"call_04_c","prompt":"What name?"}}
+        """#.utf8))
+        let question = try #require(page.openQuestion)
+        #expect(question.options.isEmpty)
+        #expect(question.allowFreeform)
+    }
+
+    @Test func aQuestionRowIsHistoryAndDrawsNothing() {
+        var projection = ChatProjection()
+        var row = ChatRow(rowId: "t1:q", kind: .question, turnId: "t1")
+        row.requestId = "call_01_q"
+        row.prompt = "Which folder?"
+        projection.load(RowsPage(rows: [row], tailSeq: 1, epoch: epoch))
+        #expect(projection.transcript().isEmpty)
+        #expect(row.question?.prompt == "Which folder?")
     }
 }

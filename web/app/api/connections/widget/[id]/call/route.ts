@@ -14,7 +14,7 @@ const TOOL_NAME = /^[A-Za-z0-9_.-]{1,80}$/;
 /**
  * A drawing's own `tools/call` (Excalidraw's "Open in Excalidraw" export).
  * Only tools the server marked for its app are reachable here; anything the
- * model can call goes through eve and its permission checks instead.
+ * model can call goes through the engine and its permission checks instead.
  */
 export async function POST(
   request: Request,

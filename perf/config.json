@@ -5,6 +5,8 @@
   "executable": "UsefulBotDevApp",
   "buildHint": "npm run build:dev-app, open the dev app once so it installs and starts that build, then quit it (perf/README.md)",
   "shellState": "~/.useful-bot-dev-app/shell.json",
+  "engineDir": "~/.useful-bot-dev-app/engine",
+  "enginePort": 4421,
   "fixtureLock": "perf/fixtures.dev.lock.json",
   "ownerSelectionFile": "perf/.runs/owner-selection-dev.json",
   "node": "/usr/local/bin/node",
@@ -19,7 +21,7 @@
   "changeThreshold": 0.6,
   "settleQuietMs": 600,
   "maxExternalCpu": 250,
-  "ownProcesses": ["UsefulBotDevApp", "scripts/service.mjs", "eve/bin/eve.js", "local-server-child", "next-server",
+  "ownProcesses": ["UsefulBotDevApp", "scripts/service.mjs", "agent/server.ts", "local-server-child", "next-server",
                    "router/src/index.ts", "perfrec", "perfguard.py", "caffeinate", "ps -Ao"],
   "pauseMs": 1500,
   "fixtures": {
@@ -28,6 +30,6 @@
     "longTools": "Perf Long Tools",
     "longReplies": "Perf Long Replies"
   },
-  "runs": { "cold": 5, "coldNoSnapshot": 5, "warmShort": 10, "warmLong": 30 },
+  "runs": { "cold": 5, "warmShort": 10, "warmLong": 30 },
   "budgetRule": { "medianFactor": 1.2, "floorMs": 20, "worstFactor": 1.25, "worstOverMedian": 1.5, "stallFloorMs": 150 }
 }

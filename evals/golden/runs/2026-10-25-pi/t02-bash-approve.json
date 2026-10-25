@@ -1,0 +1,100 @@
+{
+  "task_id": "t02-bash-approve",
+  "title": "Bash with approval",
+  "engine": "pi",
+  "run_id": "2026-10-25-pi",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created notes.txt in the given folder with exactly the three lines one, two, three. If it asked for approval, it waited for it and carried on after the approval. The reply confirms what it did in a sentence or two and does not claim anything the file does not show.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve",
+  "errors": [],
+  "prompts": [
+    "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792944484800,
+    "end": 1792944499572
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three.",
+      "sent_at_ms": 1792944484859,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 3.16,
+      "wall_s": 5.03,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792944496152,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "Created notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three. Read it back and it matches.",
+      "reply_items": [
+        {
+          "text": "Created notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three. Read it back and it matches.",
+          "bot": true,
+          "y": 314.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-pi/shots/t02-bash-approve-turn1.png",
+      "transcript_full": "Created notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three. Read it back and it matches.\nUSER: Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-pi/t02-bash-approve with three lines: one, two, three."
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "file_lines",
+      "gating": true,
+      "pass": true,
+      "detail": "lines: ['one', 'two', 'three']"
+    },
+    {
+      "type": "cards_at_least",
+      "gating": false,
+      "pass": false,
+      "detail": "0 approval cards seen"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 5.03,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": null
+  }
+}

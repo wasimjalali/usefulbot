@@ -15,10 +15,9 @@ import Testing
         TranscriptBlocks.date(fromISO8601: iso)!
     }
 
-    private func build(_ rows: [TranscriptRow], selectedBotId: String? = "bot-useful") -> [TranscriptBlock] {
+    private func build(_ rows: [TranscriptRow]) -> [TranscriptBlock] {
         TranscriptBlocks.build(
             rows: rows,
-            selectedBotId: selectedBotId,
             now: date("2026-09-14T12:00:00Z"),
             calendar: calendar,
             timeZone: utc,
@@ -61,167 +60,18 @@ import Testing
         #expect(blocks.map(\.id) == ["a", "b"])
     }
 
-    @Test func identicalFanOutCollapsesIntoOneStripWithEveryTarget() {
-        let rows = [
-            TranscriptRow(id: "h1", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-            TranscriptRow(id: "h2", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["growth"]),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 1)
-        guard case .message(let row, let recipients) = blocks[0] else {
-            Issue.record("expected one message block")
-            return
-        }
-        #expect(row.id == "h1")
-        #expect(recipients == ["eng", "growth"])
-    }
-
-    @Test func differentHandoffTextStaysASeparateRow() {
-        let rows = [
-            TranscriptRow(id: "h1", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-            TranscriptRow(id: "h2", kind: .handoff, text: "later", authorBotId: "bot-useful", targetBotIds: ["growth"]),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 2)
-    }
-
-    @Test func postsAreNeverCollapsedEvenWhenIdentical() {
+    /// Rows that used to collapse or summarize (fan-out, posts) are gone, so a
+    /// run of bubbles is exactly one block per row, whoever the row names.
+    @Test func everyRowIsItsOwnBlockWithNoStripsOrSummaries() {
         let rows = [
             TranscriptRow(id: "u", kind: .user, text: "kick off"),
-            TranscriptRow(id: "p1", kind: .post, text: "done", authorBotId: "eng"),
-            TranscriptRow(id: "p2", kind: .post, text: "done", authorBotId: "eng"),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.map(\.id) == ["u", "p1", "p2", "summary-p2"])
-        guard case .summary(_, let count, let botIds) = blocks.last else {
-            Issue.record("expected a summary")
-            return
-        }
-        #expect(count == 2)
-        #expect(botIds == ["eng"])
-    }
-
-    @Test func aDayDividerBreaksTheCollapseChain() {
-        let rows = [
-            TranscriptRow(id: "h1", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["eng"], at: date("2026-09-12T09:00:00Z")),
-            TranscriptRow(id: "h2", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["growth"], at: date("2026-09-13T09:00:00Z")),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.map(\.id) == [dayID("2026-09-12T00:00:00Z"), "h1", dayID("2026-09-13T00:00:00Z"), "h2"])
-        guard case .message(let first, let firstTargets) = blocks[1],
-              case .message(let second, let secondTargets) = blocks[3] else {
-            Issue.record("expected two strips around the divider")
-            return
-        }
-        #expect(first.id == "h1")
-        #expect(firstTargets == ["eng"])
-        #expect(second.id == "h2")
-        #expect(secondTargets == ["growth"])
-    }
-
-    @Test func summaryIdHangsOffTheVisibleMessageBlock() {
-        let rows = [
-            TranscriptRow(id: "h1", kind: .handoff, text: "go", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-            TranscriptRow(id: "h2", kind: .handoff, text: "go", authorBotId: "bot-useful", targetBotIds: ["growth"]),
-            TranscriptRow(id: "a1", kind: .assistant, text: "on it"),
+            TranscriptRow(id: "a1", kind: .assistant, text: "done"),
             TranscriptRow(id: "a2", kind: .assistant, text: "done"),
+            TranscriptRow(id: "n", kind: .note, text: "Confirmed connectApp."),
+            TranscriptRow(id: "a3", kind: .assistant, text: "done"),
         ]
         let blocks = build(rows)
-        guard case .summary(let id, let count, let botIds) = blocks.last else {
-            Issue.record("expected a summary")
-            return
-        }
-        #expect(id == "summary-a2")
-        #expect(count == 2)
-        #expect(botIds == ["eng", "growth"])
-    }
-
-    @Test func handoffBackToTheOpenBotIsNotInvolved() {
-        let rows = [
-            TranscriptRow(id: "a1", kind: .assistant, text: "one", authorBotId: "bot-useful"),
-            TranscriptRow(id: "h1", kind: .handoff, text: "self", authorBotId: "bot-useful", targetBotIds: ["bot-useful"]),
-            TranscriptRow(id: "a2", kind: .assistant, text: "two", authorBotId: "bot-useful"),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 3)
-    }
-
-    @Test func summaryCountsBubblesAndInvolvedBots() {
-        let rows = [
-            TranscriptRow(id: "u", kind: .user, text: "kick off", at: date("2026-09-14T17:00:00Z")),
-            TranscriptRow(id: "p1", kind: .post, text: "done", authorBotId: "eng"),
-            TranscriptRow(id: "p2", kind: .post, text: "done too", authorBotId: "growth"),
-        ]
-        let blocks = build(rows)
-        guard case .summary(_, let count, let botIds) = blocks.last else {
-            Issue.record("expected a summary")
-            return
-        }
-        #expect(count == 2)
-        #expect(botIds == ["eng", "growth"])
-    }
-
-    @Test func handoffTargetsAloneSummarizeARun() {
-        let rows = [
-            TranscriptRow(id: "u", kind: .user, text: "kick off"),
-            TranscriptRow(id: "a", kind: .assistant, text: "on it", authorBotId: "bot-useful"),
-            TranscriptRow(id: "h1", kind: .handoff, text: "ship it", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-            TranscriptRow(id: "a2", kind: .assistant, text: "pinged", authorBotId: "bot-useful"),
-        ]
-        let blocks = build(rows)
-        guard case .summary(_, let count, let botIds) = blocks.last else {
-            Issue.record("expected a summary")
-            return
-        }
-        #expect(count == 2)
-        #expect(botIds == ["eng"])
-    }
-
-    @Test func singleBotRunWithoutTeammatesHasNoSummary() {
-        let rows = [
-            TranscriptRow(id: "u", kind: .user, text: "hi"),
-            TranscriptRow(id: "a", kind: .assistant, text: "one", authorBotId: "bot-useful"),
-            TranscriptRow(id: "b", kind: .assistant, text: "two", authorBotId: "bot-useful"),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 3)
-    }
-
-    @Test func aUserTurnBreaksTheRunSoSummaryTrailsTheRightTurns() {
-        let rows = [
-            TranscriptRow(id: "a", kind: .assistant, text: "one", authorBotId: "bot-useful"),
-            TranscriptRow(id: "p", kind: .post, text: "from eng", authorBotId: "eng"),
-            TranscriptRow(id: "u", kind: .user, text: "next"),
-            TranscriptRow(id: "h", kind: .handoff, text: "go", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-        ]
-        let blocks = build(rows)
-        guard case .summary(let id, let count, let botIds) = blocks[2] else {
-            Issue.record("expected the summary to close the first run")
-            return
-        }
-        #expect(id == "summary-p")
-        #expect(count == 2)
-        #expect(botIds == ["eng"])
-        #expect(blocks.map(\.id) == ["a", "p", "summary-p", "u", "h"])
-    }
-
-    @Test func noteRowsBreakTheRunAndNeverSummarize() {
-        let rows = [
-            TranscriptRow(id: "a", kind: .assistant, text: "one", authorBotId: "bot-useful"),
-            TranscriptRow(id: "n", kind: .note, text: "Confirmed createBot."),
-            TranscriptRow(id: "h", kind: .handoff, text: "go", authorBotId: "bot-useful", targetBotIds: ["eng"]),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 3)
-    }
-
-    @Test func selectedBotItselfIsNotCountedAsInvolved() {
-        let rows = [
-            TranscriptRow(id: "a", kind: .assistant, text: "one", authorBotId: "bot-useful"),
-            TranscriptRow(id: "b", kind: .assistant, text: "two", authorBotId: "bot-useful"),
-        ]
-        let blocks = build(rows)
-        #expect(blocks.count == 2)
+        #expect(blocks.map(\.id) == ["u", "a1", "a2", "n", "a3"])
     }
 
     @Test func parsesBothISO8601Shapes() {
@@ -231,16 +81,11 @@ import Testing
         #expect(TranscriptBlocks.date(fromISO8601: nil) == nil)
     }
 
-    @Test func orderedUniqueKeepsFirstSeenOrder() {
-        #expect(TranscriptBlocks.orderedUnique(["b", "a", "b", "", "c"]) == ["b", "a", "c"])
-    }
-
     @Test func bubblesFromOneBotStackUnderTheFirst() {
         let rows = [
             TranscriptRow(id: "u1", kind: .user, text: "Is Gmail connected?"),
             TranscriptRow(id: "a1", kind: .assistant, text: "Checking."),
             TranscriptRow(id: "a2", kind: .assistant, text: "It is not."),
-            TranscriptRow(id: "a3", kind: .assistant, text: "From Growth.", authorBotId: "growth"),
             TranscriptRow(id: "u2", kind: .user, text: "Thanks"),
             TranscriptRow(id: "a4", kind: .assistant, text: "Any time."),
         ]
@@ -249,18 +94,27 @@ import Testing
         #expect(TranscriptBlocks.latestReplyRunIds(blocks) == ["a4"])
     }
 
-    @Test func theAddedCardStacksWithTheTurnAroundIt() {
+    @Test func aNoteBreaksTheStackOfBotBubbles() {
         let rows = [
             TranscriptRow(id: "u1", kind: .user, text: "Connect Gmail"),
             TranscriptRow(id: "a1", kind: .assistant, text: "Adding Gmail now."),
-            TranscriptRow(id: "n1", kind: .note, text: "Gmail connected", connectedName: "Gmail"),
+            TranscriptRow(id: "n1", kind: .note, text: "Connected Gmail."),
             TranscriptRow(id: "a2", kind: .assistant, text: "Gmail is ready."),
-            TranscriptRow(id: "n2", kind: .note, text: "Confirmed."),
             TranscriptRow(id: "a3", kind: .assistant, text: "Done."),
         ]
         let blocks = TranscriptBlocks.build(rows: rows)
-        #expect(TranscriptBlocks.continuationIds(blocks) == ["n1", "a2"])
+        #expect(TranscriptBlocks.continuationIds(blocks) == ["a3"])
         #expect(TranscriptBlocks.latestReplyRunIds(blocks) == ["a1", "a2", "a3"])
+    }
+
+    @Test func aBlockKnowsTheRowsItDraws() {
+        let pictures = [
+            TranscriptRow(id: "i1", kind: .image, text: "one", imageId: "x"),
+            TranscriptRow(id: "i2", kind: .image, text: "two", imageId: "y"),
+        ]
+        let blocks = TranscriptBlocks.build(rows: pictures)
+        #expect(blocks.contains { $0.holds(rowId: "i2") })
+        #expect(!blocks.contains { $0.holds(rowId: "missing") })
     }
 
     // MARK: - Stamps
@@ -356,19 +210,5 @@ import Testing
         let blocks = longChat(turns: 100)
         let window = TranscriptBlocks.window(blocks, startId: "gone", minimum: 20)
         #expect(window.hidden == blocks.count - 20)
-    }
-
-    @Test func aRunSummaryNeverOpensTheWindow() {
-        var rows: [TranscriptRow] = []
-        for turn in 0..<10 {
-            rows.append(TranscriptRow(id: "u\(turn)", kind: .user, text: "q"))
-            rows.append(TranscriptRow(id: "a\(turn)", kind: .assistant, text: "a", authorBotId: "growth"))
-            rows.append(TranscriptRow(id: "b\(turn)", kind: .assistant, text: "b", authorBotId: "growth"))
-        }
-        let blocks = build(rows)
-        // Each turn is u, a, b, summary: a cut of 9 lands on a summary strip.
-        let window = TranscriptBlocks.window(blocks, startId: nil, minimum: 9)
-        #expect(window.blocks.first?.id == "u8")
-        #expect(window.hidden == blocks.count - 8)
     }
 }

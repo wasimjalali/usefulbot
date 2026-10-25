@@ -1,11 +1,3 @@
-import {
-  defaultFaceFor,
-  isAvatarColor,
-  isAvatarShape,
-  parseAvatarImage,
-  type AvatarColor,
-  type AvatarShape,
-} from "./bot-face.ts";
 import { parseModelSelection, type ModelSelection } from "./session-selection.ts";
 import { foldPath } from "./fold-path.ts";
 import { APP_STATE_DIR, isAppStateSegment, isRuntimeInstallPath } from "./stack.ts";
@@ -22,23 +14,19 @@ export function parseWorkspacePermission(value: unknown): WorkspacePermission | 
   return value === "read_only" || value === "auto" || value === "full_access" ? value : null;
 }
 
-export const SHELL_SCHEMA = 1;
+/**
+ * Version 2 (SPEC 5.4): a bot keeps only its current `chatId`. The chat list
+ * lives with the engine. A file of any other version does not parse, and
+ * `readShell` reseeds it.
+ */
+export const SHELL_SCHEMA = 2;
 export const DEFAULT_BOT_ID = "bot-useful";
-export const UNASSIGNED_SECTION = "unassigned";
-export const HIDDEN_SECTION = "hidden";
-export const RECENTS_MAX = 40;
 export const PREVIEW_MAX = 160;
-export const GROUP_MIN_MEMBERS = 2;
-export const GROUP_MAX_MEMBERS = 6;
 
 const NAME_MAX = 80;
 const LABEL_MAX = 24;
 /** A bot's standing instructions. Over this is refused, never clipped. */
 export const DESCRIPTION_MAX = 8000;
-/** What a bot may put on a new teammate's card. The owner can grow it after. */
-export const PROPOSE_DESCRIPTION_MAX = 2000;
-
-export type BotKind = "bot" | "group";
 
 /**
  * The folder this conversation works in. The path is a folder the owner
@@ -52,42 +40,16 @@ export type BotWorkspace = {
 
 export type ShellBot = {
   id: string;
-  kind: BotKind;
   name: string;
-  /** Name while the bot is still being onboarded. Cleared once it has a real one. */
-  petname: string | null;
   label: string;
   description: string;
   notify: boolean;
-  pinned: boolean;
-  hidden: boolean;
-  sectionId: string | null;
-  sessionId: string | null;
-  /**
-   * Sessions this bot's chat was carried over from, newest first, recorded
-   * only when a replacement session was opened with a brief of the old one
-   * (see continuation-brief.ts). The proxy checks a `continueFrom` against
-   * the live pointer and this list before it reads an old session. A new
-   * chat or an opened recent is a deliberate fresh start and is not recorded.
-   */
-  previousSessionIds?: string[];
-  /** The session the last carry-over opened. */
-  continuedSessionId?: string;
-  /**
-   * True once that session has finished a turn, so its brief is in eve's
-   * history. Until then a step-zero failure can have dropped the message that
-   * carried it, and sends into the session attach the brief again.
-   */
-  continuationSettled?: boolean;
-  memberIds: string[];
+  /** The bot's current chat (an engine chat id), or null before its first one. */
+  chatId: string | null;
   lastPreview: string;
   lastAt: string | null;
   createdAt: string;
   updatedAt: string;
-  avatarShape: AvatarShape;
-  avatarColor: AvatarColor;
-  avatarImage: string | null;
-  avatarCustom: boolean;
   /**
    * What this bot may do on this Mac: in the attached folder when there is
    * one, otherwise under the owner's home. The folder is where; this is how
@@ -103,104 +65,56 @@ export type ShellBot = {
    * leaves it null, and so does a roster from before this field.
    */
   model: ModelSelection | null;
-  /**
-   * Counts every write to the profile (name, label, description, avatar). A
-   * profile card the owner confirms is bound to the revision it was raised
-   * against, so a card that went stale because the profile moved on is
-   * refused instead of overwriting the newer text.
-   */
-  profileRevision: number;
 };
 
 export type BotProfilePatch = Partial<
   Pick<
     ShellBot,
     | "name"
-    | "petname"
     | "label"
     | "description"
     | "notify"
-    | "memberIds"
     | "lastPreview"
-    | "avatarShape"
-    | "avatarColor"
-    | "avatarImage"
-    | "avatarCustom"
   >
 >;
 
-export type ShellRecent = {
-  id: string;
-  botId: string;
-  title: string;
-  sessionId: string | null;
-  preview: string;
-  updatedAt: string;
-};
-
-export type ShellSection = {
-  id: string;
-  name: string;
-  collapsed: boolean;
-  order: number;
-};
-
 export type ShellStore = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   selectedBotId: string;
-  collapsedUnassigned: boolean;
-  collapsedHidden: boolean;
   bots: ShellBot[];
-  sections: ShellSection[];
-  recents: ShellRecent[];
 };
 
 export type ShellAction =
-  | { type: "select"; botId: string }
-  | {
-      type: "createBot";
-      name: string;
-      petname?: string;
-      label?: string;
-      description?: string;
-      sectionId?: string | null;
-      kind?: BotKind;
-    }
-  | {
-      type: "createGroup";
-      name: string;
-      memberIds: string[];
-      label?: string;
-      description?: string;
-      sectionId?: string | null;
-    }
-  | { type: "createSection"; name: string }
   | { type: "renameBot"; botId: string; name: string }
-  | { type: "nameBot"; botId: string; name: string; label?: string; description?: string; avatarShape?: string; avatarColor?: string }
-  | { type: "renameSection"; sectionId: string; name: string }
   | {
       type: "updateBot";
       botId: string;
       patch: BotProfilePatch;
     }
-  | { type: "pin"; botId: string; pinned?: boolean }
-  | { type: "hide"; botId: string; hidden?: boolean }
-  | { type: "deleteBot"; botId: string }
-  | { type: "deleteSection"; sectionId: string }
-  | { type: "move"; botId: string; sectionId: string | null }
-  | { type: "setSession"; botId: string; sessionId: string | null }
   | {
       type: "setWorkspace";
       botId: string;
       workspace: BotWorkspace | null;
     }
-  | { type: "setPermission"; botId: string; permission: WorkspacePermission }
-  | { type: "sendToBot"; botId: string; message: string; sourceBotId?: string | null }
-  | { type: "touchChat"; botId: string; preview: string; sessionId?: string | null }
-  | { type: "newChat"; botId?: string }
-  | { type: "clearThread"; botId: string }
-  | { type: "openRecent"; recentId: string }
-  | { type: "toggleSection"; sectionId: string };
+  | { type: "setPermission"; botId: string; permission: WorkspacePermission };
+
+const ACTION_TYPES = {
+  renameBot: true,
+  updateBot: true,
+  setWorkspace: true,
+  setPermission: true,
+} satisfies Record<ShellAction["type"], true>;
+
+/**
+ * Whether `value` names an action this build takes: one `applyShellAction`
+ * runs, or one of the two card confirms (`connectApp`, `connectServer`) the
+ * shell route handles itself. Anything else, a removed action included, is
+ * refused by the route as `invalid`.
+ */
+export function isShellActionType(value: unknown): boolean {
+  return typeof value === "string"
+    && (Object.hasOwn(ACTION_TYPES, value) || value === "connectApp" || value === "connectServer");
+}
 
 export function nowIso(at = new Date()): string {
   return at.toISOString();
@@ -231,35 +145,8 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 80;
 }
 
-// New bots prepend, except behind a pinned, visible Generalist that is already first: that keeps
-// the starter on top of the pinned group. If the owner unpins, hides or moves it, nothing forces it back.
-function withNewBot(bots: ShellBot[], bot: ShellBot): ShellBot[] {
-  const first = bots[0];
-  if (first && first.id === DEFAULT_BOT_ID && first.pinned && !first.hidden) return [first, bot, ...bots.slice(1)];
-  return [bot, ...bots];
-}
-
-/**
- * Every description the shipped Generalist (`bot-useful`) has carried, so an
- * untouched one can be recognised and moved to the current text. Append only:
- * when a new text ships, the one it replaces goes here. Found with
- * `git log -p -S` on shared/shell-store.ts, which is the only file that ever
- * seeded it:
- *  - 1f7b7e1, 322f22b, 950dfd7 (2026-09-13): the first shell, "Local personal
- *    agent on this Mac." (name "Useful Bot")
- *  - bd41eed (2026-09-13, #20): added "Creates other bots with a name and
- *    instructions." (name "Useful Bot")
- *  - 3d25c70, 6413804 (2026-09-28, #145): "The starter bot. ..." (name
- *    "Generalist"; 6413804 carries the same change after a rebase)
- */
-export const GENERALIST_SEEDS: readonly string[] = [
-  "Local personal agent on this Mac.",
-  "Local personal agent on this Mac. Creates other bots with a name and instructions.",
-  "The starter bot. General work on this Mac, and creates other bots with a name and instructions.",
-];
-
-/** The Generalist's shipped instructions today (`generalist-v2`). Owner-editable. */
-export const GENERALIST_SEED_V2 = `You're the owner's main assistant on this Mac: research, writing, files, small scripts, diagrams and work in their connected apps. You also help them build a small team of bots for jobs that recur.
+/** The Generalist's shipped instructions today (`generalist-v3`). Owner-editable. */
+export const GENERALIST_SEED_V3 = `You're the owner's main assistant on this Mac: research, writing, files, small scripts, diagrams and work in their connected apps.
 
 How to help:
 - Start by doing. Ask one question only when the goal or the target is unclear.
@@ -271,61 +158,35 @@ Preferences:
 - Say what you'll change before a large edit.
 - When the owner is new, explain the app only as far as their task needs.`;
 
-const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+/** The one bot's name. It is fixed: the owner can't rename it. */
+export const DEFAULT_BOT_NAME = "Useful Bot";
 
-/**
- * A pure overlay for the Generalist only: a description that is still one of
- * the shipped seeds reads as the current text, and a bot still named "Useful
- * Bot" with a seed and no custom avatar reads as "Generalist". Nothing is
- * written here; the change persists with the next normal write.
- */
-function overlaySeed(bot: ShellBot, all: readonly ShellBot[]): ShellBot {
-  if (bot.id !== DEFAULT_BOT_ID || bot.kind !== "bot") return bot;
-  const wanted = squash(bot.description);
-  if (!GENERALIST_SEEDS.some((seed) => squash(seed) === wanted)) return bot;
-  // Never a second "Generalist": another bot may already carry the name.
-  const nameTaken = all.some((other) => other.id !== bot.id && other.name.toLowerCase() === "generalist");
-  const rename = bot.name === "Useful Bot" && !bot.avatarCustom && !nameTaken;
-  return { ...bot, description: GENERALIST_SEED_V2, ...(rename ? { name: "Generalist" } : {}) };
+function assertNameNotFixed(botId: string): void {
+  if (botId === DEFAULT_BOT_ID) throw new Error("shell_bot_name_fixed");
 }
 
 export function seedStore(at = new Date()): ShellStore {
   const stamp = nowIso(at);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     selectedBotId: DEFAULT_BOT_ID,
-    collapsedUnassigned: false,
-    collapsedHidden: true,
-    sections: [],
     bots: [
       {
         id: DEFAULT_BOT_ID,
-        kind: "bot",
-        name: "Generalist",
-        petname: null,
+        name: DEFAULT_BOT_NAME,
         label: "",
-        description: GENERALIST_SEED_V2,
+        description: GENERALIST_SEED_V3,
         notify: false,
-        pinned: true,
-        hidden: false,
-        sectionId: null,
-        sessionId: null,
-        memberIds: [],
+        chatId: null,
         lastPreview: "",
         lastAt: null,
         createdAt: stamp,
         updatedAt: stamp,
-        avatarShape: "circle",
-        avatarColor: "ink",
-        avatarImage: null,
-        avatarCustom: false,
         permission: "auto",
         workspace: null,
         model: null,
-        profileRevision: 0,
       },
     ],
-    recents: [],
   };
 }
 
@@ -335,18 +196,11 @@ function parseBot(raw: unknown): ShellBot {
   // Unknown fields are ignored so a newer build's store stays readable here;
   // a full-store overwrite is no longer accepted over the API.
   if (!isId(rec.id)) throw new Error("shell_bot_id");
-  if (rec.kind !== "bot" && rec.kind !== "group") throw new Error("shell_bot_kind");
   if (typeof rec.name !== "string") throw new Error("shell_bot_name");
   if (typeof rec.label !== "string") throw new Error("shell_bot_label");
   if (typeof rec.description !== "string") throw new Error("shell_bot_description");
   if (typeof rec.notify !== "boolean") throw new Error("shell_bot_notify");
-  if (typeof rec.pinned !== "boolean") throw new Error("shell_bot_pinned");
-  if (typeof rec.hidden !== "boolean") throw new Error("shell_bot_hidden");
-  if (rec.sectionId !== null && !isId(rec.sectionId)) throw new Error("shell_bot_section");
-  if (rec.sessionId !== null && typeof rec.sessionId !== "string") throw new Error("shell_bot_session");
-  if (!Array.isArray(rec.memberIds) || rec.memberIds.some((id) => typeof id !== "string")) {
-    throw new Error("shell_bot_members");
-  }
+  if (rec.chatId !== undefined && rec.chatId !== null && !isId(rec.chatId)) throw new Error("shell_bot_chat");
   if (typeof rec.createdAt !== "string" || typeof rec.updatedAt !== "string") {
     throw new Error("shell_bot_dates");
   }
@@ -356,42 +210,20 @@ function parseBot(raw: unknown): ShellBot {
   if (rec.lastAt !== undefined && rec.lastAt !== null && typeof rec.lastAt !== "string") {
     throw new Error("shell_bot_last_at");
   }
-  const face = defaultFaceFor(rec.id);
   return {
     id: rec.id,
-    kind: rec.kind,
     name: clip(rec.name, NAME_MAX) || rec.id,
-    petname: typeof rec.petname === "string" ? clip(rec.petname, NAME_MAX) || null : null,
     label: clip(rec.label, LABEL_MAX),
     // Kept verbatim, whatever the length. A throw here makes readShell reseed
     // the whole store; the cap is enforced when a description is written and
     // when a turn is sent, not when the file is read.
     description: rec.description.trim(),
     notify: rec.notify,
-    pinned: rec.pinned,
-    hidden: rec.hidden,
-    sectionId: rec.sectionId,
-    sessionId: rec.sessionId,
-    ...(Array.isArray(rec.previousSessionIds)
-      ? {
-        previousSessionIds: rec.previousSessionIds
-          .filter((id): id is string => typeof id === "string" && SESSION_ID.test(id))
-          .slice(0, PREVIOUS_SESSIONS_MAX),
-      }
-      : {}),
-    ...(typeof rec.continuedSessionId === "string" && SESSION_ID.test(rec.continuedSessionId)
-      ? { continuedSessionId: rec.continuedSessionId }
-      : {}),
-    ...(rec.continuationSettled === true ? { continuationSettled: true } : {}),
-    memberIds: rec.memberIds.filter((id, index, all) => all.indexOf(id) === index),
+    chatId: typeof rec.chatId === "string" ? rec.chatId : null,
     lastPreview: typeof rec.lastPreview === "string" ? clip(rec.lastPreview, PREVIEW_MAX) : "",
     lastAt: typeof rec.lastAt === "string" ? rec.lastAt : null,
     createdAt: rec.createdAt,
     updatedAt: rec.updatedAt,
-    avatarShape: isAvatarShape(rec.avatarShape) ? rec.avatarShape : face.shape,
-    avatarColor: isAvatarColor(rec.avatarColor) ? rec.avatarColor : face.color,
-    avatarImage: parseAvatarImage(rec.avatarImage),
-    avatarCustom: typeof rec.avatarCustom === "boolean" ? rec.avatarCustom : rec.id !== DEFAULT_BOT_ID,
     // A roster written before the permission lived on the bot carried it on
     // the folder; that value is kept rather than reset to the default.
     permission: parseWorkspacePermission(rec.permission)
@@ -399,11 +231,6 @@ function parseBot(raw: unknown): ShellBot {
       ?? "auto",
     workspace: parseWorkspace(rec.workspace),
     model: parseModelSelection(rec.model),
-    profileRevision: typeof rec.profileRevision === "number"
-      && Number.isInteger(rec.profileRevision)
-      && rec.profileRevision >= 0
-      ? rec.profileRevision
-      : 0,
   };
 }
 
@@ -448,117 +275,6 @@ function parseWorkspacePermissionStrict(value: unknown): WorkspacePermission {
   const parsed = parseWorkspacePermission(value);
   if (!parsed) throw new Error("workspace_permission_invalid");
   return parsed;
-}
-
-/**
- * Screen a folder root by PATH SEGMENT before it becomes a grant. A folder
- * named `my.github-project` is fine; one whose own name is `.ssh`, `secrets`
- * or `auth.json` is where credentials live, so it is refused at attach time.
- * Anything under the granted root keeps the substring screen in
- * `resolveWorkspacePath`.
- */
-/**
- * The session ids whose folder grant an action just invalidated.
- *
- * A grant is keyed by eve session id, so it stops being the owner's decision
- * the moment a bot stops holding that session. Rather than listing the actions
- * that do it — `newChat`, `clearThread`, `deleteBot`, but also `sendToBot`,
- * `touchChat`, `setSession` and `openRecent`, which rotate a session quietly —
- * this diffs the roster: every session id a bot held before the commit and
- * nobody holds after it. A session that simply moved between bots is still
- * held, so it survives. A detach keeps its session id, which the diff cannot
- * see, so that one case is named.
- */
-const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const PREVIOUS_SESSIONS_MAX = 5;
-
-/**
- * Whether a turn may be carried over from `sessionId`:
- * - "allowed": it is the bot's live session, or the session the last
- *   carry-over opened (the client may hold that one before its pointer write
- *   lands).
- * - "moved": it was already carried over into a newer session. Carrying it
- *   over again would fork the chat, so the client is told to catch up.
- * - "refused": anything else. Fails closed, so a crafted id cannot read
- *   another bot's conversation.
- */
-export function continueFromVerdict(bot: ShellBot, sessionId: string): "allowed" | "moved" | "refused" {
-  if (!SESSION_ID.test(sessionId)) return "refused";
-  // First: a session already carried over stays moved even while some
-  // client's pointer still names it.
-  if ((bot.previousSessionIds ?? []).includes(sessionId)) return "moved";
-  if (bot.sessionId === sessionId || bot.continuedSessionId === sessionId) return "allowed";
-  return "refused";
-}
-
-/**
- * Record that `botId`'s chat moved on from `previous` into `continued`,
- * newest first, bounded, and move the live pointer in the same locked write:
- * a gap between the lineage and the pointer let a second client carry the
- * same session over again and fork the chat.
- */
-export function recordSessionLineage(store: ShellStore, botId: string, previous: string, continued: string): ShellStore {
-  return {
-    ...store,
-    bots: store.bots.map((bot) => {
-      if (bot.id !== botId) return bot;
-      const rest = (bot.previousSessionIds ?? []).filter((id) => id !== previous);
-      return {
-        ...bot,
-        sessionId: continued,
-        previousSessionIds: [previous, ...rest].slice(0, PREVIOUS_SESSIONS_MAX),
-        continuedSessionId: continued,
-        continuationSettled: false,
-      };
-    }),
-  };
-}
-
-/**
- * Record a verified carry-over, unless another one got there first: the
- * pointer no longer names the session this one came from. Then nothing is
- * recorded and `lost` says so, so the caller can answer `session_moved`
- * instead of handing back a session the chat will not use.
- */
-export function carryOverLineage(
-  store: ShellStore,
-  botId: string,
-  previous: string,
-  created: string,
-): { store: ShellStore; lost: boolean } {
-  const now = store.bots.find((item) => item.id === botId);
-  if (now && now.sessionId && now.sessionId !== previous) return { store, lost: true };
-  return { store: recordSessionLineage(store, botId, previous, created), lost: false };
-}
-
-/** The carried-over session finished a turn: its brief is in eve's history. */
-export function settleContinuation(store: ShellStore, botId: string, sessionId: string): ShellStore {
-  return {
-    ...store,
-    bots: store.bots.map((bot) => (
-      bot.id === botId && bot.continuedSessionId === sessionId ? { ...bot, continuationSettled: true } : bot
-    )),
-  };
-}
-
-export function staleSessionIds(
-  action: ShellAction | undefined,
-  before: ShellStore,
-  after: ShellStore,
-): string[] {
-  if (!action) return [];
-  const stale = new Set<string>();
-  const held = new Set(
-    after.bots.map((bot) => bot.sessionId).filter((id): id is string => Boolean(id)),
-  );
-  for (const bot of before.bots) {
-    if (bot.sessionId && !held.has(bot.sessionId)) stale.add(bot.sessionId);
-  }
-  if (action.type === "setWorkspace" && !action.workspace) {
-    const session = after.bots.find((bot) => bot.id === action.botId)?.sessionId;
-    if (session) stale.add(session);
-  }
-  return [...stale];
 }
 
 export function isGrantableRootPath(path: string): boolean {
@@ -636,310 +352,34 @@ function isForbiddenGrantSegment(lowered: string): boolean {
   return FORBIDDEN_GRANT_SEGMENTS.has(lowered) || isAppStateSegment(lowered);
 }
 
-function parseRecent(raw: unknown): ShellRecent {
-  if (!raw || typeof raw !== "object") throw new Error("shell_recent_invalid");
-  const rec = raw as Record<string, unknown>;
-  if (!isId(rec.id)) throw new Error("shell_recent_id");
-  if (!isId(rec.botId)) throw new Error("shell_recent_bot");
-  if (typeof rec.title !== "string") throw new Error("shell_recent_title");
-  if (rec.sessionId !== null && typeof rec.sessionId !== "string") throw new Error("shell_recent_session");
-  if (typeof rec.preview !== "string") throw new Error("shell_recent_preview");
-  if (typeof rec.updatedAt !== "string") throw new Error("shell_recent_date");
-  return {
-    id: rec.id,
-    botId: rec.botId,
-    title: clip(rec.title, NAME_MAX) || "Chat",
-    sessionId: rec.sessionId,
-    preview: clip(rec.preview, PREVIEW_MAX),
-    updatedAt: rec.updatedAt,
-  };
-}
-
-function parseSection(raw: unknown): ShellSection {
-  if (!raw || typeof raw !== "object") throw new Error("shell_section_invalid");
-  const rec = raw as Record<string, unknown>;
-  if (!isId(rec.id) || rec.id === UNASSIGNED_SECTION || rec.id === HIDDEN_SECTION) {
-    throw new Error("shell_section_id");
-  }
-  if (typeof rec.name !== "string") throw new Error("shell_section_name");
-  if (typeof rec.collapsed !== "boolean") throw new Error("shell_section_collapsed");
-  if (typeof rec.order !== "number" || !Number.isInteger(rec.order)) throw new Error("shell_section_order");
-  return {
-    id: rec.id,
-    name: clip(rec.name, NAME_MAX) || "Section",
-    collapsed: rec.collapsed,
-    order: rec.order,
-  };
-}
-
 export function parseShell(raw: unknown): ShellStore {
   if (!raw || typeof raw !== "object") throw new Error("shell_invalid");
   const rec = raw as Record<string, unknown>;
   if (rec.schemaVersion !== SHELL_SCHEMA) throw new Error("shell_schema");
-  if (!Array.isArray(rec.bots) || !Array.isArray(rec.sections)) throw new Error("shell_shape");
-  if (rec.recents !== undefined && !Array.isArray(rec.recents)) throw new Error("shell_recents");
-  const parsed = rec.bots.map(parseBot);
-  const bots = parsed.map((bot) => overlaySeed(bot, parsed));
-  const sections = rec.sections.map(parseSection);
-  const recents = (rec.recents ?? []).map(parseRecent);
+  if (!Array.isArray(rec.bots)) throw new Error("shell_shape");
+  const bots = rec.bots.map(parseBot);
   if (bots.length === 0) throw new Error("shell_empty");
   const botIds = new Set(bots.map((bot) => bot.id));
   if (botIds.size !== bots.length) throw new Error("shell_bot_duplicate");
-  const sectionIds = new Set(sections.map((section) => section.id));
-  if (sectionIds.size !== sections.length) throw new Error("shell_section_duplicate");
-  for (const bot of bots) {
-    if (bot.sectionId && !sectionIds.has(bot.sectionId)) bot.sectionId = null;
-    bot.memberIds = bot.memberIds.filter((id) => botIds.has(id) && id !== bot.id);
-  }
-  const selectedBotId = isId(rec.selectedBotId) && botIds.has(rec.selectedBotId)
+  const selectedBotId = isId(rec.selectedBotId) && bots.some((bot) => bot.id === rec.selectedBotId)
     ? rec.selectedBotId
-    : bots[0].id;
-  return {
-    schemaVersion: 1,
-    selectedBotId,
-    collapsedUnassigned: rec.collapsedUnassigned === true,
-    collapsedHidden: rec.collapsedHidden !== false,
-    bots,
-    sections: sections.slice().sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)),
-    recents: recents.filter((item, index, all) => {
-      if (!botIds.has(item.botId)) return false;
-      return all.findIndex((other) => other.id === item.id) === index;
-    }).slice(0, RECENTS_MAX),
-  };
+    : (bots.find((bot) => bot.id === DEFAULT_BOT_ID) ?? bots[0]).id;
+  return { schemaVersion: 2, selectedBotId, bots };
 }
-
-const PROFILE_KEYS = ["name", "label", "description", "avatarShape", "avatarColor", "avatarImage"] as const;
 
 function touch(bot: ShellBot, at: string, patch: Partial<ShellBot>): ShellBot {
-  // Every profile write bumps the revision the owner's profile card is bound
-  // to; a write that changes nothing does not.
-  const profileChanged = PROFILE_KEYS.some((key) => key in patch && patch[key] !== bot[key]);
-  return {
-    ...bot,
-    ...patch,
-    updatedAt: at,
-    ...(profileChanged ? { profileRevision: bot.profileRevision + 1 } : {}),
-  };
-}
-
-function uniqueName(store: ShellStore, base: string): string {
-  const names = new Set(store.bots.map((bot) => bot.name.toLowerCase()));
-  if (!names.has(base.toLowerCase())) return base;
-  let n = 2;
-  while (names.has(`${base} ${n}`.toLowerCase())) n += 1;
-  return `${base} ${n}`;
-}
-
-function nextOrder(store: ShellStore): number {
-  return store.sections.reduce((max, section) => Math.max(max, section.order), -1) + 1;
-}
-
-/**
- * A profile card is current only while the bot still has the revision the
- * card was raised against. A bot that is gone, or whose profile moved on, makes
- * it stale, and confirming a stale card would overwrite newer text.
- */
-export function profileCardIsCurrent(bot: Pick<ShellBot, "profileRevision"> | undefined, baseRevision: number): boolean {
-  return bot !== undefined && bot.profileRevision === baseRevision;
-}
-
-/**
- * Whether the bot that raised a card may still have it applied: it must still
- * exist and still hold the authority the proposal needs. Creating a bot or a
- * group is the orchestrator's; a profile edit is the orchestrator's or the
- * bot's own. A card with no recorded proposer is refused.
- */
-export function proposerMayConfirm(
-  store: Pick<ShellStore, "bots">,
-  card: { kind: "createBot" | "createGroup" | "updateBotProfile"; proposerId?: string; botId?: string },
-): boolean {
-  const proposer = card.proposerId ? store.bots.find((bot) => bot.id === card.proposerId) : undefined;
-  if (!proposer) return false;
-  const orchestrator = proposer.kind === "bot" && proposer.id === orchestratorId(store);
-  if (card.kind === "updateBotProfile") return orchestrator || proposer.id === card.botId;
-  return orchestrator;
-}
-
-/**
- * The bot with orchestrator authority: the default bot while it is present and
- * visible, else the first visible 1:1 bot (the same rule the first-run flow
- * lands on). Null only when no visible 1:1 bot exists. Every authority check
- * (who may propose bots and groups, delete, hide, act on another bot) uses
- * this one answer.
- */
-export function orchestratorId(store: Pick<ShellStore, "bots">): string | null {
-  const visible = store.bots.filter((bot) => bot.kind === "bot" && !bot.hidden);
-  return visible.find((bot) => bot.id === DEFAULT_BOT_ID)?.id ?? visible[0]?.id ?? null;
-}
-
-/**
- * A group member must be a real 1:1 bot: not the group itself, not the
- * orchestrator (the default Useful Bot, which answers untargeted group turns),
- * not another group, and not a hidden bot. Order follows the caller so the
- * roster stays stable.
- */
-export function normalizeMembers(
-  store: ShellStore,
-  memberIds: string[],
-  selfId: string,
-): string[] {
-  const out: string[] = [];
-  const orchestrator = orchestratorId(store);
-  for (const id of memberIds) {
-    if (out.includes(id) || id === selfId) continue;
-    const bot = store.bots.find((item) => item.id === id);
-    if (!bot || bot.kind !== "bot" || bot.id === orchestrator || bot.hidden) continue;
-    out.push(id);
-    if (out.length >= GROUP_MAX_MEMBERS) break;
-  }
-  return out;
-}
-
-function selectFallback(store: ShellStore, removedId: string): string {
-  if (store.selectedBotId !== removedId && store.bots.some((bot) => bot.id === store.selectedBotId)) {
-    return store.selectedBotId;
-  }
-  const visible = store.bots.find((bot) => !bot.hidden);
-  return (visible ?? store.bots[0]).id;
-}
-
-function pushRecent(store: ShellStore, bot: ShellBot, stamp: string): ShellRecent[] {
-  if (!bot.sessionId && !bot.lastPreview) return store.recents;
-  const next: ShellRecent = {
-    id: crypto.randomUUID(),
-    botId: bot.id,
-    title: clip(bot.lastPreview, NAME_MAX) || bot.name,
-    sessionId: bot.sessionId,
-    preview: clip(bot.lastPreview, PREVIEW_MAX),
-    updatedAt: bot.lastAt ?? stamp,
-  };
-  const recents = store.recents.filter((item) => (
-    !(item.botId === bot.id && item.sessionId === bot.sessionId)
-  ));
-  return [next, ...recents].slice(0, RECENTS_MAX);
+  return { ...bot, ...patch, updatedAt: at };
 }
 
 export function applyShellAction(
   store: ShellStore,
   action: ShellAction,
   at = new Date(),
-): { store: ShellStore; createdId?: string } {
+): { store: ShellStore } {
   const stamp = nowIso(at);
   switch (action.type) {
-    case "select": {
-      if (!store.bots.some((bot) => bot.id === action.botId)) throw new Error("shell_bot_missing");
-      return { store: { ...store, selectedBotId: action.botId } };
-    }
-    case "createBot": {
-      // Groups are built through createGroup, which enforces the member
-      // minimum; a createBot action carrying kind "group" would seed a
-      // memberless one.
-      if (action.kind === "group") throw new Error("shell_group_members");
-      const id = crypto.randomUUID();
-      const face = defaultFaceFor(id);
-      const bot: ShellBot = {
-        id,
-        kind: "bot",
-        name: uniqueName(store, requireName(action.name)),
-        petname: action.petname !== undefined ? clip(action.petname, NAME_MAX) || null : null,
-        label: clip(action.label ?? "", LABEL_MAX),
-        description: checkDescription(action.description ?? ""),
-        notify: false,
-        pinned: false,
-        hidden: false,
-        sectionId: action.sectionId && store.sections.some((section) => section.id === action.sectionId)
-          ? action.sectionId
-          : null,
-        sessionId: null,
-        memberIds: [],
-        lastPreview: "",
-        lastAt: null,
-        createdAt: stamp,
-        updatedAt: stamp,
-        avatarShape: face.shape,
-        avatarColor: face.color,
-        avatarImage: null,
-        avatarCustom: true,
-        permission: "auto",
-        workspace: null,
-        model: null,
-        profileRevision: 0,
-      };
-      return {
-        store: { ...store, selectedBotId: id, bots: withNewBot(store.bots, bot) },
-        createdId: id,
-      };
-    }
-    case "createGroup": {
-      const id = crypto.randomUUID();
-      const members = normalizeMembers(store, action.memberIds, id);
-      if (members.length < GROUP_MIN_MEMBERS) throw new Error("shell_group_members");
-      const face = defaultFaceFor(id);
-      const group: ShellBot = {
-        id,
-        kind: "group",
-        name: uniqueName(store, requireName(action.name)),
-        petname: null,
-        label: action.label !== undefined ? clip(action.label, LABEL_MAX) : "Group",
-        description: checkDescription(action.description ?? ""),
-        notify: false,
-        pinned: false,
-        hidden: false,
-        sectionId: action.sectionId && store.sections.some((section) => section.id === action.sectionId)
-          ? action.sectionId
-          : null,
-        sessionId: null,
-        memberIds: members,
-        lastPreview: "",
-        lastAt: null,
-        createdAt: stamp,
-        updatedAt: stamp,
-        avatarShape: face.shape,
-        avatarColor: face.color,
-        avatarImage: null,
-        avatarCustom: true,
-        permission: "auto",
-        workspace: null,
-        model: null,
-        profileRevision: 0,
-      };
-      return {
-        store: { ...store, selectedBotId: id, bots: withNewBot(store.bots, group) },
-        createdId: id,
-      };
-    }
-    case "createSection": {
-      const id = crypto.randomUUID();
-      const section: ShellSection = {
-        id,
-        name: requireName(action.name),
-        collapsed: false,
-        order: nextOrder(store),
-      };
-      return { store: { ...store, sections: [...store.sections, section] }, createdId: id };
-    }
-    case "nameBot": {
-      const name = clip(action.name, NAME_MAX);
-      if (!name) throw new Error("shell_name_required");
-      const patch: Partial<ShellBot> = { name };
-      if (action.label !== undefined) patch.label = clip(action.label, LABEL_MAX);
-      if (action.description !== undefined) patch.description = checkDescription(action.description);
-      if (action.avatarShape !== undefined && isAvatarShape(action.avatarShape)) {
-        patch.avatarShape = action.avatarShape;
-        patch.avatarCustom = true;
-      }
-      if (action.avatarColor !== undefined && isAvatarColor(action.avatarColor)) {
-        patch.avatarColor = action.avatarColor;
-        patch.avatarCustom = true;
-      }
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => (bot.id === action.botId ? touch(bot, stamp, patch) : bot)),
-        },
-      };
-    }
     case "renameBot": {
+      assertNameNotFixed(action.botId);
       return {
         store: {
           ...store,
@@ -949,26 +389,12 @@ export function applyShellAction(
         },
       };
     }
-    case "renameSection": {
-      return {
-        store: {
-          ...store,
-          sections: store.sections.map((section) => (
-            section.id === action.sectionId ? { ...section, name: requireName(action.name) } : section
-          )),
-        },
-      };
-    }
     case "updateBot": {
       const patch: Partial<ShellBot> = {};
       if (action.patch.name !== undefined) {
+        if (action.botId === DEFAULT_BOT_ID && clip(action.patch.name, NAME_MAX) !== DEFAULT_BOT_NAME) assertNameNotFixed(action.botId);
         const name = clip(action.patch.name, NAME_MAX);
         if (name) patch.name = name;
-      }
-      if (action.patch.petname !== undefined) {
-        patch.petname = typeof action.patch.petname === "string"
-          ? clip(action.patch.petname, NAME_MAX) || null
-          : null;
       }
       if (action.patch.label !== undefined) patch.label = clip(action.patch.label, LABEL_MAX);
       if (action.patch.description !== undefined) patch.description = checkDescription(action.patch.description);
@@ -977,108 +403,10 @@ export function applyShellAction(
         patch.lastPreview = clip(action.patch.lastPreview, PREVIEW_MAX);
         patch.lastAt = stamp;
       }
-      if (action.patch.memberIds !== undefined) {
-        const bot = store.bots.find((item) => item.id === action.botId);
-        if (!bot) throw new Error("shell_bot_missing");
-        const members = normalizeMembers(store, action.patch.memberIds, action.botId);
-        if (members.length < GROUP_MIN_MEMBERS) throw new Error("shell_group_members");
-        patch.memberIds = members;
-      }
-      if (action.patch.avatarShape !== undefined && isAvatarShape(action.patch.avatarShape)) {
-        patch.avatarShape = action.patch.avatarShape;
-      }
-      if (action.patch.avatarColor !== undefined && isAvatarColor(action.patch.avatarColor)) {
-        patch.avatarColor = action.patch.avatarColor;
-      }
-      if (action.patch.avatarImage !== undefined) {
-        patch.avatarImage = parseAvatarImage(action.patch.avatarImage);
-      }
-      if (action.patch.avatarCustom !== undefined) patch.avatarCustom = action.patch.avatarCustom;
       return {
         store: {
           ...store,
           bots: store.bots.map((bot) => (bot.id === action.botId ? touch(bot, stamp, patch) : bot)),
-        },
-      };
-    }
-    case "pin": {
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => (
-            bot.id === action.botId
-              ? touch(bot, stamp, { pinned: action.pinned ?? !bot.pinned, hidden: false })
-              : bot
-          )),
-        },
-      };
-    }
-    case "hide": {
-      const nextHidden = action.hidden ?? true;
-      const bots = store.bots.map((bot) => (
-        bot.id === action.botId
-          ? touch(bot, stamp, { hidden: nextHidden, pinned: nextHidden ? false : bot.pinned })
-          : bot
-      ));
-      const next = { ...store, bots };
-      if (nextHidden) next.selectedBotId = selectFallback(next, action.botId);
-      return { store: next };
-    }
-    case "deleteBot": {
-      if (store.bots.length <= 1) throw new Error("shell_last_bot");
-      if (!store.bots.some((bot) => bot.id === action.botId)) throw new Error("shell_bot_missing");
-      const bots = store.bots
-        .filter((bot) => bot.id !== action.botId)
-        .map((bot) => (
-          bot.memberIds.includes(action.botId)
-            ? touch(bot, stamp, { memberIds: bot.memberIds.filter((id) => id !== action.botId) })
-            : bot
-        ));
-      const next = { ...store, bots };
-      next.selectedBotId = selectFallback(next, action.botId);
-      next.recents = store.recents.filter((item) => item.botId !== action.botId);
-      return { store: next };
-    }
-    case "deleteSection": {
-      return {
-        store: {
-          ...store,
-          sections: store.sections.filter((section) => section.id !== action.sectionId),
-          bots: store.bots.map((bot) => (
-            bot.sectionId === action.sectionId ? touch(bot, stamp, { sectionId: null }) : bot
-          )),
-        },
-      };
-    }
-    case "move": {
-      const sectionId = action.sectionId
-        && store.sections.some((section) => section.id === action.sectionId)
-        ? action.sectionId
-        : null;
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => (
-            bot.id === action.botId ? touch(bot, stamp, { sectionId, hidden: false }) : bot
-          )),
-        },
-      };
-    }
-    case "setSession": {
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => (
-            // A page loaded before a carry-over names the retired session in
-            // its address; it must not put that back over the live one.
-            bot.id === action.botId
-              ? touch(bot, stamp, {
-                sessionId: action.sessionId && (bot.previousSessionIds ?? []).includes(action.sessionId)
-                  ? bot.sessionId
-                  : action.sessionId,
-              })
-              : bot
-          )),
         },
       };
     }
@@ -1116,130 +444,6 @@ export function applyShellAction(
                 workspace: bot.workspace ? { ...bot.workspace, permission } : null,
               })
               : bot
-          )),
-        },
-      };
-    }
-    case "sendToBot": {
-      const target = store.bots.find((bot) => bot.id === action.botId);
-      if (!target) throw new Error("shell_bot_missing");
-      const preview = clip(action.message, PREVIEW_MAX);
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => {
-            if (bot.id === action.botId) {
-              return touch(bot, stamp, { lastPreview: preview, lastAt: stamp, sessionId: null });
-            }
-            if (action.sourceBotId && bot.id === action.sourceBotId) {
-              return touch(bot, stamp, { lastPreview: `Handed off to ${target.name}`, lastAt: stamp });
-            }
-            return bot;
-          }),
-          recents: pushRecent(
-            store,
-            { ...target, lastPreview: preview, lastAt: stamp, sessionId: null },
-            stamp,
-          ),
-        },
-      };
-    }
-    case "touchChat": {
-      const preview = clip(action.preview, PREVIEW_MAX);
-      return {
-        store: {
-          ...store,
-          bots: store.bots.map((bot) => (
-            bot.id === action.botId
-              ? touch(bot, stamp, {
-                lastPreview: preview,
-                lastAt: stamp,
-                // A session the chat was carried over from is behind it for
-                // good: a late write naming one must not pull the pointer
-                // back off the newer session.
-                sessionId: action.sessionId !== undefined
-                  && !(action.sessionId && (bot.previousSessionIds ?? []).includes(action.sessionId))
-                  ? action.sessionId
-                  : bot.sessionId,
-              })
-              : bot
-          )),
-        },
-      };
-    }
-    case "newChat": {
-      const botId = action.botId ?? store.selectedBotId;
-      const bot = store.bots.find((item) => item.id === botId);
-      if (!bot) throw new Error("shell_bot_missing");
-      const recents = pushRecent(store, bot, stamp);
-      // "New chat" clears the bot row, but the bot's agent transcript is the
-      // durable handoff log and is cleared separately.
-      return {
-        store: {
-          ...store,
-          selectedBotId: botId,
-          recents,
-          bots: store.bots.map((item) => (
-            item.id === botId ? touch(item, stamp, { sessionId: null, lastPreview: "", lastAt: null }) : item
-          )),
-        },
-      };
-    }
-    case "clearThread": {
-      const bot = store.bots.find((item) => item.id === action.botId);
-      if (!bot) throw new Error("shell_bot_missing");
-      const recents = pushRecent(store, bot, stamp);
-      return {
-        store: {
-          ...store,
-          recents,
-          bots: store.bots.map((item) => (
-            item.id === action.botId
-              ? touch(item, stamp, { sessionId: null, lastPreview: "", lastAt: null })
-              : item
-          )),
-        },
-      };
-    }
-    case "openRecent": {      const recent = store.recents.find((item) => item.id === action.recentId);
-      if (!recent) throw new Error("shell_recent_missing");
-      const bot = store.bots.find((item) => item.id === recent.botId);
-      if (!bot) {
-        return { store: { ...store, recents: store.recents.filter((item) => item.id !== action.recentId) } };
-      }
-      let recents = store.recents;
-      if (bot.sessionId && bot.sessionId !== recent.sessionId) {
-        recents = pushRecent(store, bot, stamp);
-      }
-      return {
-        store: {
-          ...store,
-          selectedBotId: bot.id,
-          recents,
-          bots: store.bots.map((item) => (
-            item.id === bot.id
-              ? touch(item, stamp, {
-                sessionId: recent.sessionId,
-                lastPreview: recent.preview,
-                lastAt: recent.updatedAt,
-              })
-              : item
-          )),
-        },
-      };
-    }
-    case "toggleSection": {
-      if (action.sectionId === UNASSIGNED_SECTION) {
-        return { store: { ...store, collapsedUnassigned: !store.collapsedUnassigned } };
-      }
-      if (action.sectionId === HIDDEN_SECTION) {
-        return { store: { ...store, collapsedHidden: !store.collapsedHidden } };
-      }
-      return {
-        store: {
-          ...store,
-          sections: store.sections.map((section) => (
-            section.id === action.sectionId ? { ...section, collapsed: !section.collapsed } : section
           )),
         },
       };
@@ -1283,83 +487,24 @@ export function withBotSelection(store: ShellStore, botId: string, selection: Mo
   };
 }
 
-export function selectedBot(store: ShellStore): ShellBot {
-  return store.bots.find((bot) => bot.id === store.selectedBotId) ?? store.bots[0];
-}
-
-export function pinnedBots(store: ShellStore): ShellBot[] {
-  return store.bots.filter((bot) => bot.pinned && !bot.hidden);
-}
-
-export function sectionBots(store: ShellStore, sectionId: string | null): ShellBot[] {
-  return store.bots.filter((bot) => !bot.hidden && !bot.pinned && bot.sectionId === sectionId);
-}
-
-export function hiddenBots(store: ShellStore): ShellBot[] {
-  return store.bots.filter((bot) => bot.hidden);
-}
-
-export function searchBots(store: ShellStore, query: string): ShellBot[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return store.bots.filter((bot) => !bot.hidden);
-  return store.bots.filter((bot) => {
-    const hay = `${bot.name} ${bot.label} ${bot.description} ${bot.lastPreview}`.toLowerCase();
-    return hay.includes(needle);
-  });
-}
-
-export type ShellSearchHit =
-  | { kind: "new-chat" }
-  | { kind: "recent"; recent: ShellRecent; bot: ShellBot | null }
-  | { kind: "bot"; bot: ShellBot };
-
-export type SearchTab =
-  | "all"
-  | "messages"
-  | "bots"
-  | "groups"
-  | "files"
-  | "links"
-  | "routines"
-  | "actions";
-
-function matchesNeedle(hay: string, needle: string): boolean {
-  return hay.toLowerCase().includes(needle);
-}
-
-export function searchShell(store: ShellStore, query: string, tab: SearchTab = "all"): ShellSearchHit[] {
-  const needle = query.trim().toLowerCase();
-  const hits: ShellSearchHit[] = [];
-  if (tab === "all") hits.push({ kind: "new-chat" });
-
-  if (tab === "all" || tab === "messages") {
-    const recents = store.recents.filter((recent) => {
-      if (!needle) return true;
-      const bot = store.bots.find((item) => item.id === recent.botId);
-      return matchesNeedle(`${recent.title} ${recent.preview} ${bot?.name ?? ""} ${bot?.label ?? ""}`, needle);
-    });
-    const recentCap = needle ? recents : recents.slice(0, 8);
-    for (const recent of recentCap) {
-      hits.push({
-        kind: "recent",
-        recent,
-        bot: store.bots.find((item) => item.id === recent.botId) ?? null,
-      });
-    }
-  }
-
-  if (tab === "files" || tab === "links" || tab === "routines" || tab === "actions") {
-    return hits;
-  }
-
-  if (tab === "all" || tab === "bots" || tab === "groups") {
-    const bots = store.bots.filter((bot) => {
-      if (tab === "bots" && bot.kind !== "bot") return false;
-      if (tab === "groups" && bot.kind !== "group") return false;
-      if (!needle) return !bot.hidden;
-      return matchesNeedle(`${bot.name} ${bot.label} ${bot.description} ${bot.lastPreview}`, needle);
-    });
-    for (const bot of bots) hits.push({ kind: "bot", bot });
-  }
-  return hits;
+/**
+ * Records a bot's current chat and its last preview when a turn settles or a
+ * chat is made current (SPEC 5.4). The engine calls it under the shell lock
+ * through `updateShell`. A null preview leaves the last preview as it is.
+ */
+export function setBotChat(store: ShellStore, botId: string, chatId: string | null, preview: string | null, at: string): ShellStore {
+  if (chatId !== null && !isId(chatId)) throw new Error("shell_bot_chat");
+  if (!store.bots.some((bot) => bot.id === botId)) throw new Error("shell_bot_missing");
+  return {
+    ...store,
+    bots: store.bots.map((bot) => (
+      bot.id === botId
+        ? touch(bot, at, {
+          chatId,
+          ...(preview === null ? {} : { lastPreview: clip(preview, PREVIEW_MAX) }),
+          lastAt: at,
+        })
+        : bot
+    )),
+  };
 }

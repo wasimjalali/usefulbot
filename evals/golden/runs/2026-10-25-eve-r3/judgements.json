@@ -1,0 +1,52 @@
+{
+  "t01-files": {
+    "pass": true,
+    "score": 2,
+    "why": "It used a file tool (the approved bash card ran find with ls -l), and all gating checks passed: 8 .md files and sub/design-notes.md (3116 bytes) as the largest. The rubric asks for one short answer, but the reply adds an unrequested third line listing \"the other seven\" with their sizes. That is extra chatter, so it scores 2."
+  },
+  "t02-bash-approve": {
+    "pass": true,
+    "score": 3,
+    "why": "The gating file_lines check shows ['one', 'two', 'three']. The labels \"Writing a file\" and \"Reading a file\" back up the reply's claim \"Read it back to confirm.\" No approval card appeared (cards_at_least is info only), so there was nothing to wait for, and the two-sentence reply claims nothing the file doesn't show."
+  },
+  "t03-deny": {
+    "pass": true,
+    "score": 2,
+    "why": "One rm card was denied, and cards_at_most shows a single card, so it made no second attempt. file_unchanged and tree_unchanged pass, and the reply says plainly \"I didn't delete it. The approval card for the rm was declined\", then offers to retry. Small flaw: \"62 bytes, unchanged\" isn't backed by any evidence, since no label or card shows the file being checked after the denial."
+  },
+  "t04-web-search": {
+    "pass": false,
+    "score": 0,
+    "why": "The gating check reply_regex /https?:\\/\\// failed (\"no match\"): the reply cites \"Node.js Releases page\" by name but gives no URL. activity_seen also found no search or fetch labels (only \"Thinking\"), so nothing shows it searched rather than answered from memory. The quoted footer text and version numbers have nothing in the evidence to support them."
+  },
+  "t05-memory-save": {
+    "pass": true,
+    "score": 3,
+    "why": "The gating memory_note_added check passed: note d42d4f4e-...md now contains 'marigold-0469'. The reply confirms the save briefly without asking anything. Its note that it \"replaced the old entry\" fits a changed note and the earlier codenames that t06 mentions."
+  },
+  "t06-memory-recall": {
+    "pass": true,
+    "score": 2,
+    "why": "The gating reply_regex /marigold-0469/ matched. The activity_seen check found no memory label, but the wording \"My notes show it was updated today\" shows the answer came from memory, which the rubric accepts. Small flaw: the rubric asks for one short answer, and the reply adds the replaced earlier codenames (\"tamarind-88b9, and marigold-d636\")."
+  },
+  "t07-routine": {
+    "pass": true,
+    "score": 2,
+    "why": "The gating routine_created check shows 'Berlin weekday weather' running weekly on days [1, 2, 3, 4, 5] at 09:00, with a \"Writing a routine\" label. The reply states the schedule plainly (\"Monday to Friday at 09:00 Berlin time, starting tomorrow\"). Small flaw: it adds details the evidence can't confirm, namely the exact line format (\"rain chance if it's 30% or more\") and \"pause or delete it any time in the chat details pane\"."
+  },
+  "t08-connector": {
+    "pass": true,
+    "score": 3,
+    "why": "An approved DeepWiki ask_wiki_question card for facebook/react appeared, along with the label \"Using deepwiki  ask wiki question\" (activity_seen passed). The one-line reply is correct: \"the open-source codebase for the React JavaScript library, used to build user interfaces.\""
+  },
+  "t09-question": {
+    "pass": true,
+    "score": 3,
+    "why": "No tools ran and no approval cards appeared (cards_at_most passed), and asks_question passed with a question card. The bot asked one short question, \"What should I book for next week, and where?\", after saying it would \"rather not guess\". It invented no booking, date or venue."
+  },
+  "t10-long-chat": {
+    "pass": true,
+    "score": 2,
+    "why": "All six turns were answered, and the gating html_final check passed. The turn-5 list is correct and complete: the rename to \"Kitchen Garden\", Rosemary added, and the h1 set to #1b5e20. The turn-6 text is consistent with the final write card and comes to exactly the 379 bytes it states. Deductions: no read label appears for turn 6 (2.01s, only \"Thinking\"), so its \"Fresh read\" claim isn't directly backed by the evidence. Each edit was also a whole-file write_file of the page rather than an in-place edit."
+  }
+}

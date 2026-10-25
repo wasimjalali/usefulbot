@@ -1,0 +1,18 @@
+{"ev":"app_init","pid":49968,"run":"cold-cold_first_open_replies-5-2812aa66","t":323944356781666}
+{"bot":"bot-useful","ev":"initial_selection","run":"cold-cold_first_open_replies-5-2812aa66","t":323944766972333}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"ready","run":"cold-cold_first_open_replies-5-2812aa66","t":323944958017541}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_first_paint","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323944967181208}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_done","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323944967227958}
+{"blocks":7,"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"landed","loaded":6,"reason":"settled","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323945207954291}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"responsive","landedAt":323945207954291,"run":"cold-cold_first_open_replies-5-2812aa66","stallMaxMs":1.3720000000000001,"t":323946239712250}
+{"ev":"step","index":1,"label":"cold_first_open_replies","name":"Perf Long Replies","run":"cold-cold_first_open_replies-5-2812aa66","t":323947807988875}
+{"chat":"2f405329-c075-46ee-90da-e51a38be3ee2","ev":"rows_first_paint","rows":60,"run":"cold-cold_first_open_replies-5-2812aa66","t":323947868841541}
+{"chat":"2f405329-c075-46ee-90da-e51a38be3ee2","ev":"rows_done","rows":60,"run":"cold-cold_first_open_replies-5-2812aa66","t":323947868925083}
+{"blocks":61,"chat":"2f405329-c075-46ee-90da-e51a38be3ee2","ev":"landed","loaded":60,"reason":"settled","rows":60,"run":"cold-cold_first_open_replies-5-2812aa66","t":323948439826333}
+{"chat":"2f405329-c075-46ee-90da-e51a38be3ee2","ev":"responsive","landedAt":323948439826333,"run":"cold-cold_first_open_replies-5-2812aa66","stallMaxMs":3.3453339999999998,"t":323949477129666}
+{"ev":"step","index":3,"label":"park","name":"Perf Short A","run":"cold-cold_first_open_replies-5-2812aa66","t":323951076784666}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_first_paint","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323951205586083}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"rows_done","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323951205628125}
+{"blocks":7,"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"landed","loaded":6,"reason":"settled","rows":6,"run":"cold-cold_first_open_replies-5-2812aa66","t":323951431540291}
+{"chat":"b0899872-4bdd-4fb3-85e8-c74b4b936929","ev":"responsive","landedAt":323951431540291,"run":"cold-cold_first_open_replies-5-2812aa66","stallMaxMs":4.440042,"t":323952465260500}
+{"ev":"quit","run":"cold-cold_first_open_replies-5-2812aa66","t":323955570565416}

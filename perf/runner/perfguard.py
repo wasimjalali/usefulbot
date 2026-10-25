@@ -3,11 +3,11 @@
 
     perfguard.py check     [--app PATH] [--quick]   measure every case, compare to budgets.json
     perfguard.py baseline  [--app PATH]             measure, then propose budgets from the numbers
-    perfguard.py fixtures  [--app PATH]             build the frozen fixture chats, then lock them
-    perfguard.py lock      [--app PATH]             re-read the fixtures and write the lock file (config.json fixtureLock)
+    perfguard.py fixtures                           write the four synthetic fixture chats (dev app quit), then lock them
+    perfguard.py lock                               hash the fixture chats and write the lock file (config.json fixtureLock)
 
 The app does the driving: launched with `-UsefulBotPerfRun <scenario.json>`
-it runs the scenario's steps and writes timed marks (CLOCK_UPTIME_RAW ns).
+it opens the fixture chats by title and writes timed marks (CLOCK_UPTIME_RAW ns).
 `perfrec` records the window at 60 fps and scores how much the chat column
 changed on each frame, on the same clock. This script launches, records,
 lines the two up and judges. See perf/README.md for the method and its limits.
@@ -127,8 +127,30 @@ def shell_state():
     return load_json(os.path.expanduser(CONFIG["shellState"]))
 
 
-def bots_by_name():
-    return {b["name"]: b for b in shell_state()["bots"]}
+def engine_dir():
+    return os.path.expanduser(CONFIG["engineDir"])
+
+
+def fixture_chats():
+    """The fixture chats in the engine's chat index, by title."""
+    path = os.path.join(engine_dir(), "chats.json")
+    if not os.path.exists(path):
+        return {}
+    index = load_json(path)
+    return {c["title"]: c for c in index.get("chats", []) if c.get("fixture") is True}
+
+
+def session_entries(file):
+    """Entries in a Pi session file: one JSON line each after the header line."""
+    with open(file, "rb") as f:
+        lines = [l for l in f.read().split(b"\n") if l.strip()]
+    if not lines or json.loads(lines[0]).get("type") != "session":
+        sys.exit(f"{file} has no session header")
+    return len(lines) - 1
+
+
+def session_file(chat):
+    return os.path.join(engine_dir(), chat["sessionFile"])
 
 
 def owner_selection():
@@ -140,17 +162,17 @@ def owner_selection():
     """
     path = os.path.join(ROOT, CONFIG["ownerSelectionFile"])
     state = shell_state()
-    names = {b["id"]: b["name"] for b in state["bots"]}
-    current = state.get("selectedBotId")
-    fixtures = set(CONFIG["fixtures"].values())
-    if current in names and names[current] not in fixtures and not names[current].startswith("Perf "):
-        write_json(path, {"botId": current, "name": names[current]})
-        return current
-    saved = load_json(path, default={}).get("botId")
-    if saved in names:
-        return saved
+    bot = next((b for b in state["bots"] if b["id"] == state.get("selectedBotId")), None)
+    current = bot.get("chatId") if bot else None
+    fixture_ids = {c["chatId"] for c in fixture_chats().values()}
     if current is None:
         return None
+    if current not in fixture_ids:
+        write_json(path, {"chatId": current})
+        return current
+    saved = load_json(path, default={}).get("chatId")
+    if saved:
+        return saved
     sys.exit("the open chat is a Perf fixture and no earlier selection is known: open one of your own chats first")
 
 
@@ -193,9 +215,8 @@ def program_name(command):
 def external_cpu():
     """CPU % of everything except the app, its services and the guard itself.
 
-    The load average counts the run's own work: a no-snapshot launch replays
-    thousands of events through the local services and pushed it past the
-    limit on its own. What makes a run unfair is other work, so only that counts.
+    The load average counts the run's own work: opening a long chat loads
+    thousands of entries in the engine and pushed it past the limit on its own. What makes a run unfair is other work, so only that counts.
     """
     own = CONFIG["ownProcesses"]
     total, top = 0.0, []
@@ -223,7 +244,7 @@ def external_cpu():
     return total, [f"{c:.0f}% {n}" for c, n in top[:3] if c >= 10]
 
 
-def preflight(app):
+def preflight(app, lock):
     """Conditions that make numbers meaningless fail the run; the rest is recorded."""
     facts, problems = {}, []
     ioreg = run(["ioreg", "-n", "Root", "-d1", "-a"]).stdout
@@ -298,10 +319,12 @@ def preflight(app):
     facts["appSourcesMatch"] = built_from == now_hash
     if not facts["appSourcesMatch"]:
         problems.append(f"the app was not built from the current macos/ sources ({CONFIG['buildHint']})")
-    names = bots_by_name()
-    missing = [n for n in CONFIG["fixtures"].values() if n not in names]
+    chats = fixture_chats()
+    missing = [n for n in CONFIG["fixtures"].values() if n not in chats]
     if missing:
-        problems.append(f"fixture bots missing: {', '.join(missing)} (run: perf/run.sh fixtures)")
+        problems.append(f"fixture chats missing: {', '.join(missing)} (quit the dev app, then run: perf/run.sh fixtures)")
+    else:
+        problems += fixture_check(lock)
     return facts, problems
 
 
@@ -311,7 +334,7 @@ def preflight(app):
 class Launch:
     """One app launch running one scenario, recorded."""
 
-    def __init__(self, app, outdir, name, steps, drop_snapshots=(), restore=None):
+    def __init__(self, app, outdir, name, steps, restore=None):
         self.app, self.name = app, name
         self.dir = os.path.join(outdir, name)
         os.makedirs(self.dir, exist_ok=True)
@@ -319,8 +342,7 @@ class Launch:
         self.scenario = {
             "runId": f"{name}-{uuid.uuid4().hex[:8]}",
             "resultFile": self.marks_path,
-            "dropSnapshots": list(drop_snapshots),
-            "restoreBotId": restore,
+            "restoreChatId": restore,
             "steps": steps,
         }
         self.scenario_path = os.path.join(self.dir, "scenario.json")
@@ -425,7 +447,7 @@ class Launch:
         if end["ev"] == "abort":
             # The harness puts the owner's chat back after an abort; let that save.
             for _ in range(40):
-                if self.scenario.get("restoreBotId") is None or self.last_event({"restored"}):
+                if self.scenario.get("restoreChatId") is None or self.last_event({"restored"}):
                     break
                 # A dead app writes no more marks; stop waiting for one.
                 if not self.app.running_pids():
@@ -474,33 +496,39 @@ def visual_window(scores, start, end):
     return changed[0], changed[-1]
 
 
-def samples_from(launch, names_by_id):
-    """One sample per measured step: select → landed (app) and → last change (pixels)."""
+def samples_from(launch, titles_by_id):
+    """One sample per measured step: select → landed (app) and → last change (pixels).
+
+    The app's marks name a chat by id and a step by the chat's title, so the
+    title is turned into the id through the fixture chats in the chat index.
+    """
+    ids = {title: chat["chatId"] for title, chat in fixture_chats().items()}
     marks, scores = launch.marks(), launch.scores()
     steps = [m for m in marks if m["ev"] == "step"]
     boundaries = [m["t"] for m in steps] + [m["t"] for m in marks if m["ev"] in ("quit", "done")]
     out = []
 
-    def responsive_after(bot, landed_t):
+    def responsive_after(chat, landed_t):
         for m in marks:
-            if m["ev"] == "responsive" and m["bot"] == bot and m["landedAt"] == landed_t:
+            if m["ev"] == "responsive" and m["chat"] == chat and m["landedAt"] == landed_t:
                 return m
         return None
 
-    def sample(case, bot, t0, t_end):
-        landed = next((m for m in marks if m["ev"] == "landed" and m["bot"] == bot and m["t"] >= t0), None)
+    def sample(case, chat, t0, t_end):
+        landed = next((m for m in marks if m["ev"] == "landed" and m["chat"] == chat and m["t"] >= t0), None)
         first, last = visual_window(scores, t0, t_end)
-        s = {"case": case, "launch": launch.name, "bot": names_by_id.get(bot, bot), "t0": t0, "problems": []}
+        s = {"case": case, "launch": launch.name, "chat": titles_by_id.get(chat, chat), "t0": t0, "problems": []}
         if landed is None:
             s["problems"].append("never landed")
         else:
-            probe = responsive_after(bot, landed["t"])
-            for ev in ("replay_first_event", "replay_done", "publish_done"):
-                m = next((m for m in marks if m["ev"] == ev and m.get("bot") == bot and t0 <= m["t"] <= landed["t"]), None)
+            probe = responsive_after(chat, landed["t"])
+            # The first paint of the rows and the end of the row work, both after the select.
+            for ev in ("rows_first_paint", "rows_done"):
+                m = next((m for m in marks if m["ev"] == ev and m.get("chat") == chat and t0 <= m["t"] <= t_end), None)
                 if m:
                     s[ev + "_ms"] = (m["t"] - t0) / 1e6
-            s.update(app_ms=(landed["t"] - t0) / 1e6, reason=landed["reason"], source=landed.get("source"),
-                     rows=landed.get("rows"), blocks=landed.get("blocks"), events=landed.get("events"),
+            s.update(app_ms=(landed["t"] - t0) / 1e6, reason=landed["reason"],
+                     rows=landed.get("rows"), blocks=landed.get("blocks"), loaded=landed.get("loaded"),
                      stall_ms=probe["stallMaxMs"] if probe else None)
             if probe is None:
                 s["problems"].append("no responsiveness mark after landing")
@@ -517,26 +545,22 @@ def samples_from(launch, names_by_id):
                 s["problems"].append(f"still changing {quiet:.0f} ms before the next step")
         return s
 
-    init = next((m for m in marks if m["ev"] == "initial_selection"), None)
-    # Only launches with every snapshot in place: a no-snapshot launch is slower
-    # at opening Perf Short A too, and pooling the two hid a 2x launch regression.
-    if launch.name.startswith("cold-cold_first_open") and init and steps:
-        s = sample("cold_launch", init["bot"], launch.t_launch, steps[0]["t"])
-        if s["bot"] != CONFIG["fixtures"]["shortA"]:
-            s["problems"].append(f"opened on {s['bot']}, not {CONFIG['fixtures']['shortA']}")
+    ready = next((m for m in marks if m["ev"] == "ready"), None)
+    if launch.name.startswith("cold-cold_first_open") and ready and steps:
+        s = sample("cold_launch", ready["chat"], launch.t_launch, steps[0]["t"])
+        if s["chat"] != CONFIG["fixtures"]["shortA"]:
+            s["problems"].append(f"opened on {s['chat']}, not {CONFIG['fixtures']['shortA']}")
         out.append(s)
     for i, step in enumerate(steps):
         if step["label"] in ("transit", "warmup", "park"):
             continue
-        select = next((m for m in marks if m["ev"] == "select_start" and m["bot"] == step["bot"] and m["t"] >= step["t"]), None)
-        if select is None:
-            out.append({"case": step["label"], "launch": launch.name, "problems": ["no select_start mark"]})
+        chat = ids.get(step["name"])
+        if chat is None:
+            out.append({"case": step["label"], "launch": launch.name, "problems": [f"{step['name']} is not a fixture chat"]})
             continue
+        # The step mark is written right before the chat is opened.
         t_end = boundaries[i + 1] if i + 1 < len(boundaries) else launch.scores()[-1][0] if scores else step["t"]
-        out.append(sample(step["label"], step["bot"], select["t"], t_end))
-    prewarm = [m for m in marks if m["ev"] in ("prewarm_start", "prewarm_end")]
-    for s in out:
-        s["prewarmOverlap"] = any(s.get("t0", 0) <= m["t"] <= s.get("last_change_t", s.get("t0", 0)) for m in prewarm)
+        out.append(sample(step["label"], chat, step["t"], t_end))
     return out
 
 
@@ -557,13 +581,18 @@ def summarize(samples):
         summary[case] = {
             "visual_ms": stats([s.get("visual_ms") for s in group]),
             "app_ms": stats([s.get("app_ms") for s in group]),
+            "rows_first_paint_ms": stats([s.get("rows_first_paint_ms") for s in group]),
+            "rows_done_ms": stats([s.get("rows_done_ms") for s in group]),
             "stall_ms": stats([s.get("stall_ms") for s in group]),
-            "sources": sorted({str(s.get("source")) for s in group}),
+            "sources": sorted({str(s["source"]) for s in group if s.get("source") is not None}),
             "reasons": sorted({str(s.get("reason")) for s in group}),
             "problems": [f"{s['launch']}: {p}" for s in group for p in s["problems"]],
             "n": len(group),
         }
     return summary
+
+
+METRICS = ("visual_ms", "app_ms", "rows_first_paint_ms", "rows_done_ms", "stall_ms")
 
 
 def judge(summary, budgets):
@@ -576,7 +605,7 @@ def judge(summary, budgets):
             continue
         for p in got["problems"]:
             breaches.append(f"{case}: {p}")
-        for metric in ("visual_ms", "app_ms", "stall_ms"):
+        for metric in METRICS:
             limit, measured = budget.get(metric), got.get(metric)
             if not limit:
                 continue
@@ -600,22 +629,31 @@ def judge(summary, budgets):
     return breaches
 
 
-def fixture_check(samples, lock):
-    """A fixture that grew or moved session measures a different chat."""
+def fixture_check(lock):
+    """A fixture chat that grew, moved or was rewritten measures a different chat."""
     problems = []
-    names = bots_by_name()
-    for name, locked in lock.get("bots", {}).items():
-        bot = names.get(name)
-        if bot is None:
-            problems.append(f"fixture {name} is gone")
+    chats = fixture_chats()
+    for title, locked in lock.get("chats", {}).items():
+        chat = chats.get(title)
+        if chat is None:
+            problems.append(f"fixture {title} is gone")
             continue
-        if bot.get("sessionId") != locked["sessionId"]:
-            problems.append(f"fixture {name} is on a new session (was {locked['sessionId']})")
-        seen = [s["events"] for s in samples if s.get("bot") == name and isinstance(s.get("events"), int) and s["events"] >= 0]
-        if not seen:
-            problems.append(f"fixture {name}: no landing reported its event count")
-        elif max(seen) != locked["events"]:
-            problems.append(f"fixture {name} has {max(seen)} events, locked at {locked['events']}")
+        if chat["chatId"] != locked["chatId"]:
+            problems.append(f"fixture {title} is a new chat (was {locked['chatId']})")
+        file = session_file(chat)
+        if not os.path.exists(file):
+            problems.append(f"fixture {title}: session file {chat['sessionFile']} is missing")
+            continue
+        entries = session_entries(file)
+        if entries != locked["entries"]:
+            problems.append(f"fixture {title} has {entries} entries, locked at {locked['entries']}")
+        with open(file, "rb") as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+        if sha != locked["sha256"]:
+            problems.append(f"fixture {title}: the session file changed since it was locked")
+    missing = [t for t in CONFIG["fixtures"].values() if t not in lock.get("chats", {})]
+    if missing:
+        problems.append(f"the lock does not cover {', '.join(missing)}")
     return problems
 
 
@@ -649,21 +687,15 @@ def sheet(launch, sample, out_path):
 # ---------------------------------------------------------------- scenarios
 
 
-def fixture_ids():
-    names = bots_by_name()
-    return {key: names[name]["id"] for key, name in CONFIG["fixtures"].items() if name in names}
-
-
-def step(op, bot=None, label=None, ms=None, text=None):
+def step(op, chat=None, label=None, ms=None):
+    """A scenario step. `chat` is a fixture chat's title (the step's `bot` field)."""
     s = {"op": op}
-    if bot:
-        s["bot"] = bot
+    if chat:
+        s["bot"] = chat
     if label:
         s["label"] = label
     if ms is not None:
         s["ms"] = ms
-    if text:
-        s["text"] = text
     return s
 
 
@@ -678,17 +710,14 @@ def park():
 
 def plan(quick):
     runs = CONFIG["runs"]
-    cold, nosnap = (2, 1) if quick else (runs["cold"], runs["coldNoSnapshot"])
+    cold = 2 if quick else runs["cold"]
     warm_short, warm_long = (4, 6) if quick else (runs["warmShort"], runs["warmLong"])
-    launches = [("prep", [s for k in ("longTools", "longReplies", "shortB") for s in select(k, "warmup")]
-                 + [step("wait_prewarm"), step("pause", ms=2000)] + park(), ())]
+    # Untimed: parks the app on the short fixture, so the first cold launch
+    # opens there and not on the owner's chat the last run restored.
+    launches = [("prep", park())]
     for i in range(cold):
         for key, case in (("longTools", "cold_first_open_tools"), ("longReplies", "cold_first_open_replies")):
-            launches.append((f"cold-{case}-{i + 1}", [step("pause", ms=CONFIG["pauseMs"])] + select(key, case) + park(), ()))
-    ids = fixture_ids()
-    for i in range(nosnap):
-        for key, case in (("longTools", "cold_no_snapshot_tools"), ("longReplies", "cold_no_snapshot_replies")):
-            launches.append((f"cold-{case}-{i + 1}", [step("pause", ms=CONFIG["pauseMs"])] + select(key, case) + park(), (ids[key],)))
+            launches.append((f"cold-{case}-{i + 1}", [step("pause", ms=CONFIG["pauseMs"])] + select(key, case) + park()))
     warm = []
     for key in ("longTools", "longReplies", "shortB", "longTools", "longReplies", "shortA"):
         warm += select(key, "warmup")
@@ -699,16 +728,16 @@ def plan(quick):
     for i in range(warm_long):
         warm += select("longTools", "warm_return_tools") + select("shortA", "transit")
         warm += select("longReplies", "warm_return_replies") + select("shortA", "transit")
-    launches.append(("warm", warm + [step("restore"), step("pause", ms=1500), step("quit")], ()))
+    launches.append(("warm", warm + [step("restore"), step("pause", ms=1500), step("quit")]))
     return launches
 
 
 # ---------------------------------------------------------------- commands
 
 
-def measure(args, quick):
+def measure(args, quick, lock):
     app = App(args.app or CONFIG["app"])
-    facts, problems = preflight(app)
+    facts, problems = preflight(app, lock)
     if problems:
         for p in problems:
             print(f"preflight: {p}")
@@ -721,18 +750,23 @@ def measure(args, quick):
     # A display that sleeps or locks mid-run stops rendering the window.
     subprocess.Popen(["caffeinate", "-diu", "-w", str(os.getpid())])
     print(f"run {stamp}: {app.path}\n  frames and marks in {outdir}")
-    ids = {b["id"]: b["name"] for b in shell_state()["bots"]}
+    titles = {c["chatId"]: title for title, c in fixture_chats().items()}
     samples, failures, done, loads = [], [], [], []
     started = time.time()
     try:
-        for name, steps, drop in plan(quick):
+        for name, steps in plan(quick):
             restore = owner if name == "warm" else None
-            launch = Launch(app, outdir, name, steps, drop, restore)
+            launch = Launch(app, outdir, name, steps, restore)
             before, before_top = external_cpu()
             try:
                 selects = sum(1 for st in steps if st["op"] == "select")
                 launch.execute(timeout_s=max(300, selects * 45))
             except RuntimeError as err:
+                # Already open on Perf Short A is what prep was for; the abort
+                # restores nothing (prep has no restore), so it stays parked.
+                if name == "prep" and "is already open, a select would be a no-op" in str(err):
+                    print("  prep: already on Perf Short A")
+                    continue
                 launch_peak = getattr(launch, "peak_cpu", 0.0)
                 peak, peak_top = (launch_peak, launch.peak_top) if launch_peak > before else (before, before_top)
                 loads.append((name, round(peak), peak_top))
@@ -743,10 +777,9 @@ def measure(args, quick):
             peak, peak_top = (launch.peak_cpu, launch.peak_top) if launch.peak_cpu > before else (before, before_top)
             loads.append((name, round(peak), peak_top))
             done.append(launch)
-            if name != "prep":
-                got = samples_from(launch, ids)
-                samples += got
-                print(f"  {name}: " + ", ".join(f"{s['case']} {s.get('visual_ms', 0):.0f} ms" for s in got))
+            got = samples_from(launch, titles)
+            samples += got
+            print(f"  {name}: " + ", ".join(f"{s['case']} {s.get('visual_ms', 0):.0f} ms" for s in got))
     finally:
         # Put the owner's app back the way it was found.
         if was_running:
@@ -811,13 +844,16 @@ def write_record(outdir):
              f"Power {facts['power']}, memory free {facts['memoryFree']}, load {facts['loadAverage']}, "
              f"other work {facts.get('externalCpu', '?')}% CPU, web {facts['webMode']}.",
              f"Command: `perf/run.sh {result['command']}`. Took {round(seconds)} s.", "",
-             "| Case | n | Visual median | Visual worst | App median | App worst | Stall worst | Path | Landed by |",
-             "|---|---|---|---|---|---|---|---|---|"]
+             "| Case | n | Visual median | Visual worst | App median | App worst | Rows first paint median | Rows first paint worst | Rows done median | Rows done worst | Stall worst | Landed by |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for case, got in sorted(summary.items()):
         v, a, st = got["visual_ms"] or {}, got["app_ms"] or {}, got["stall_ms"] or {}
+        p, d = got.get("rows_first_paint_ms") or {}, got.get("rows_done_ms") or {}
         lines.append(f"| {case} | {got['n']} | {v.get('median', '-')} | {v.get('worst', '-')} | {a.get('median', '-')} | "
-                     f"{a.get('worst', '-')} | {st.get('worst', '-')} | {', '.join(got['sources'])} | {', '.join(got.get('reasons', []))} |")
+                     f"{a.get('worst', '-')} | {p.get('median', '-')} | {p.get('worst', '-')} | {d.get('median', '-')} | "
+                     f"{d.get('worst', '-')} | {st.get('worst', '-')} | {', '.join(got.get('reasons', []))} |")
     lines += ["", "Visual: select to the last frame the chat column changed. App: select to the app's own landing mark.",
+              "Rows first paint: select to the first paint of the loaded rows. Rows done: select to the end of the row work.",
               "Stall: the longest main-thread delay in the second after landing. All in ms.", ""]
     if breaches:
         lines += ["## Breaches", ""] + [f"- {b}" for b in breaches] + [""]
@@ -838,8 +874,8 @@ def write_record(outdir):
 def cmd_check(args):
     budgets = load_json(os.path.join(PERF, "budgets.json"))
     lock = load_json(os.path.join(ROOT, CONFIG["fixtureLock"]))
-    app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, args.quick)
-    breaches = judge(summary, budgets) + fixture_check(samples, lock)
+    app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, args.quick, lock)
+    breaches = judge(summary, budgets) + fixture_check(lock)
     report(args, "check", app, facts, outdir, stamp, samples, summary, failures, done, seconds, breaches)
     # 3: inconclusive. A breach on a busy machine is not evidence either way.
     sys.exit(3 if facts["busy"] else 1 if breaches or failures else 0)
@@ -847,15 +883,15 @@ def cmd_check(args):
 
 def cmd_baseline(args):
     lock = load_json(os.path.join(ROOT, CONFIG["fixtureLock"]))
-    app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, False)
-    problems = fixture_check(samples, lock) + [f"{c}: {p}" for c, g in summary.items() for p in g["problems"]]
+    app, facts, outdir, stamp, samples, summary, failures, done, seconds = measure(args, False, lock)
+    problems = fixture_check(lock) + [f"{c}: {p}" for c, g in summary.items() for p in g["problems"]]
     dest = report(args, "baseline", app, facts, outdir, stamp, samples, summary, failures, done, seconds, problems)
     # Proposed, never applied: budgets change by a reviewed edit to budgets.json.
     proposal = {"proposedFrom": os.path.relpath(dest, ROOT), "cases": {}}
     rule = CONFIG["budgetRule"]
     for case, got in summary.items():
         entry = {"sources": got["sources"], "reasons": got["reasons"]}
-        for metric in ("visual_ms", "app_ms", "stall_ms"):
+        for metric in METRICS:
             m = got[metric]
             if not m:
                 continue
@@ -880,55 +916,30 @@ def cmd_baseline(args):
 
 
 def cmd_fixtures(args):
-    """Create the fixture bots and send their scripted turns, once."""
-    app = App(args.app or CONFIG["app"])
-    spec = load_json(os.path.join(PERF, "fixtures.json"))
-    names = bots_by_name()
-    stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    outdir = os.path.join(RUNS, f"fixtures-{stamp}")
-    owner = owner_selection()
-    for key, name in CONFIG["fixtures"].items():
-        turns = spec[key]["turns"]
-        bot = names.get(name)
-        if args.resume and args.resume[0] == key:
-            turns = turns[int(args.resume[1]) - 1:]
-        elif bot and bot.get("sessionId"):
-            print(f"{name}: already has a chat, left as it is")
-            continue
-        steps = [step("create", name)]
-        level = spec[key].get("permission")
-        if level and (bot or {}).get("permission") != level:
-            # The harness never raises a permission: the owner sets it in the app.
-            sys.exit(f"{name}: set its permission to {level} in the app first (the permission menu under the composer)")
-        for text in turns:
-            steps.append(step("send", name, text=text))
-        steps += [step("restore"), step("pause", ms=1500), step("quit")]
-        print(f"{name}: {len(turns)} turns")
-        launch = Launch(app, outdir, key, steps, restore=owner)
-        launch.execute(timeout_s=len(turns) * 900 + 120, record=False)
-        for m in launch.marks():
-            if m["ev"] in ("ready", "send_done"):
-                print("  ", json.dumps({k: v for k, v in m.items() if k in ("ev", "index", "stats", "modelLabel")}))
-    print("now run: perf/run.sh lock")
+    """Write the synthetic fixture chats (scripts/perf-fixtures.mjs). The dev app must be quit."""
+    env = dict(os.environ, UB_STACK="dev", UB_STATE_ROOT=os.path.dirname(engine_dir()),
+               UB_ENGINE_PORT=str(CONFIG["enginePort"]))
+    out = subprocess.run([CONFIG["node"], "scripts/perf-fixtures.mjs"], cwd=ROOT, env=env)
+    if out.returncode != 0:
+        sys.exit(out.returncode)
+    cmd_lock(args)
 
 
 def cmd_lock(args):
-    """Open each fixture once and record its session and event count."""
-    app = App(args.app or CONFIG["app"])
-    stamp = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    outdir = os.path.join(RUNS, f"lock-{stamp}")
-    steps = []
-    for key in ("longTools", "longReplies", "shortB", "shortA"):
-        steps += [step("select", CONFIG["fixtures"][key], "lock"), step("pause", ms=6000)]
-    launch = Launch(app, outdir, "lock", steps + [step("restore"), step("pause", ms=1500), step("quit")],
-                    restore=owner_selection()).execute(record=False)
-    ids = {b["id"]: b for b in shell_state()["bots"]}
-    lock = {"lockedAt": stamp, "bots": {}}
-    for m in launch.marks():
-        if m["ev"] == "landed" and m["bot"] in ids and ids[m["bot"]]["name"] in CONFIG["fixtures"].values():
-            bot = ids[m["bot"]]
-            lock["bots"][bot["name"]] = {"sessionId": bot.get("sessionId"), "events": m.get("events"),
-                                         "rows": m.get("rows"), "blocks": m.get("blocks")}
+    """Record each fixture chat's id, entry count and session file hash."""
+    chats = fixture_chats()
+    missing = [t for t in CONFIG["fixtures"].values() if t not in chats]
+    if missing:
+        sys.exit(f"fixture chats missing: {', '.join(missing)} (run: perf/run.sh fixtures)")
+    lock = {"lockedAt": datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S"), "chats": {}}
+    for title in CONFIG["fixtures"].values():
+        chat = chats[title]
+        file = session_file(chat)
+        if not os.path.exists(file):
+            sys.exit(f"{title}: session file {chat['sessionFile']} is missing")
+        with open(file, "rb") as f:
+            sha = hashlib.sha256(f.read()).hexdigest()
+        lock["chats"][title] = {"chatId": chat["chatId"], "entries": session_entries(file), "sha256": sha}
     write_json(os.path.join(ROOT, CONFIG["fixtureLock"]), lock)
     print(json.dumps(lock, indent=2))
 
@@ -938,12 +949,10 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("check", "baseline", "fixtures", "lock"):
         p = sub.add_parser(name)
-        p.add_argument("--app", help="the .app to measure (default: config.json app)")
+        if name in ("check", "baseline"):
+            p.add_argument("--app", help="the .app to measure (default: config.json app)")
         if name == "check":
             p.add_argument("--quick", action="store_true", help="fewer runs, for trying the rig; not a merge gate")
-        if name == "fixtures":
-            p.add_argument("--resume", nargs=2, metavar=("KEY", "TURN"),
-                           help="send one fixture's turns from TURN on, into its existing chat")
     args = ap.parse_args()
     # SIGTERM and SIGHUP end Python without running except or finally blocks; as
     # SystemExit they run the same cleanup as Ctrl-C (quit the app, reopen the installed one).

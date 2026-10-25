@@ -2,7 +2,7 @@ import AppKit
 import UserNotifications
 import UsefulBotCore
 
-/// Posts "NAME finished" when a bot's turn ends out of sight. The rule for
+/// Posts "TITLE finished" when a chat's turn ends out of sight. The rule for
 /// when lives in `TurnNotifyPolicy`; this type only talks to the system.
 /// A bare `swift run` has no bundle, and UNUserNotificationCenter traps
 /// without one, so every call is a no-op there.
@@ -10,7 +10,7 @@ import UsefulBotCore
 final class TurnNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = TurnNotifier()
 
-    /// Set by the model: open this bot's chat after a notification click.
+    /// Set by the model: open this chat after a notification click.
     var onOpenChat: ((String) -> Void)?
 
     private var center: UNUserNotificationCenter? {
@@ -50,13 +50,13 @@ final class TurnNotifier: NSObject, UNUserNotificationCenterDelegate {
         return await center.notificationSettings().authorizationStatus == .denied
     }
 
-    func post(botId: String, botName: String) {
+    func post(chatId: String, title: String) {
         guard let center else { return }
         let content = UNMutableNotificationContent()
-        content.title = "\(botName) finished"
+        content.title = "\(title.prefix(60)) finished"
         content.sound = .default
-        content.userInfo = ["botId": botId]
-        center.add(UNNotificationRequest(identifier: "turn-\(botId)", content: content, trigger: nil))
+        content.userInfo = ["chatId": chatId]
+        center.add(UNNotificationRequest(identifier: "turn-\(chatId)", content: content, trigger: nil))
     }
 
     func openSystemSettings() {
@@ -73,14 +73,14 @@ final class TurnNotifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
-        guard let botId = response.notification.request.content.userInfo["botId"] as? String else { return }
+        guard let chatId = response.notification.request.content.userInfo["chatId"] as? String else { return }
         await MainActor.run {
             NSApp.activate(ignoringOtherApps: true)
             for window in NSApp.windows where window.canBecomeMain {
                 if window.isMiniaturized { window.deminiaturize(nil) }
                 window.makeKeyAndOrderFront(nil)
             }
-            onOpenChat?(botId)
+            onOpenChat?(chatId)
         }
     }
 

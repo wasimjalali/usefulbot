@@ -19,13 +19,10 @@ struct ComposerTextView: NSViewRepresentable {
     /// `AppModel.draftWriteToken`: this is what separates a real write from a
     /// re-render carrying a stale value.
     var writeToken: UInt64
-    /// False while a turn is in flight: Return then falls through to a
-    /// newline, matching the key handler it replaces.
     var returnSends: Bool
     /// Live reads of the composer state, so a command issued mid-turn sees
     /// the values of that moment rather than of the last render.
     var canSend: () -> Bool
-    var pending: () -> Bool
     var onSend: () -> Void
     var onFocusChange: (Bool) -> Void
     /// Fires when an over-cap paste is cut to the cap, so the composer can
@@ -38,6 +35,10 @@ struct ComposerTextView: NSViewRepresentable {
     var onDropFiles: ([URL]) -> Void = { _ in }
     /// Bumped to put the caret in the field (Reply on a message).
     var focusToken: UInt64 = 0
+    /// True once, when a focus was asked for before this field existed (New
+    /// chat from a page): the caret goes in as soon as the field is in the
+    /// window. Reading it clears the request.
+    var takePendingFocus: () -> Bool = { false }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -58,12 +59,15 @@ struct ComposerTextView: NSViewRepresentable {
         // after it mounted should move the caret.
         context.coordinator.focusToken = focusToken
         let textView = FocusReportingTextView()
+        // Reply blocks with a link are text views too: scripts find this one by id.
+        textView.setAccessibilityIdentifier("composer-input")
         textView.onFocusChange = { [weak coordinator = context.coordinator] focused in
             coordinator?.onFocusChange(focused)
         }
         textView.onDropFiles = { [weak coordinator = context.coordinator] urls in
             coordinator?.onDropFiles(urls)
         }
+        textView.focusOnMount = takePendingFocus()
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.allowsUndo = true
@@ -71,6 +75,11 @@ struct ComposerTextView: NSViewRepresentable {
         textView.drawsBackground = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        // The text view starts at zero width and has to follow the clip view.
+        // Only newer SDKs make NSTextView do that by itself; a binary that
+        // records an older SDK (SwiftPM writes 14.0) kept it 0 pt wide, so
+        // nothing drew and clicks landed on the clip view.
+        textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -97,7 +106,6 @@ struct ComposerTextView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         textView.delegate = context.coordinator
         context.coordinator.canSend = canSend
-        context.coordinator.pending = pending
         context.coordinator.onSend = onSend
         context.coordinator.onFocusChange = onFocusChange
         context.coordinator.onClip = onClip
@@ -106,8 +114,16 @@ struct ComposerTextView: NSViewRepresentable {
         context.coordinator.syncFromModel(into: textView, text: text, writeToken: writeToken)
         if focusToken != context.coordinator.focusToken {
             context.coordinator.focusToken = focusToken
+            // Handled here, so the request does not wait for the next mount.
+            _ = takePendingFocus()
             DispatchQueue.main.async { textView.window?.makeFirstResponder(textView) }
         }
+    }
+
+    /// The field leaves the window with its focus: ⌘↑ and ⌘↓ must not stay
+    /// enabled for a composer that is gone.
+    static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        coordinator.onFocusChange(false)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
@@ -130,7 +146,6 @@ struct ComposerTextView: NSViewRepresentable {
         @Binding var text: String
         var returnSends = true
         var canSend: () -> Bool = { false }
-        var pending: () -> Bool = { false }
         var onSend: () -> Void = {}
         var onFocusChange: (Bool) -> Void = { _ in }
         var onClip: () -> Void = {}
@@ -189,7 +204,6 @@ struct ComposerTextView: NSViewRepresentable {
             }
             if returnSends {
                 if !canSend() { return true }
-                if pending() { return false }
                 onSend()
                 return true
             }
@@ -241,6 +255,18 @@ struct ComposerTextView: NSViewRepresentable {
 private final class FocusReportingTextView: NSTextView {
     var onFocusChange: (Bool) -> Void = { _ in }
     var onDropFiles: ([URL]) -> Void = { _ in }
+    /// Take first responder once the view is in a window.
+    var focusOnMount = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard focusOnMount, window != nil else { return }
+        focusOnMount = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(self)
+        }
+    }
 
     /// File URLs on the drag, or nil when the drag carries none, in which
     /// case the text view handles it as it always did (dropped text).

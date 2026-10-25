@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
 /**
- * SSRF-facing URL rules for owner-approved MCP and OpenAPI servers, and for
+ * SSRF-facing URL rules for owner-approved MCP servers, and for
  * every URL fetched while talking to them (OAuth discovery, token, widget
  * HTML). https anywhere public; http only on 127.0.0.1.
  */
@@ -178,7 +178,7 @@ function v4OfGroups(high: number, low: number): string {
  * v6 form that carries a v4 address (mapped, compatible, NAT64, 6to4), judged
  * by the v4 inside. An address that is not an address is refused.
  */
-function isBlockedAddress(address: string): boolean {
+export function isBlockedAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) return address === "127.0.0.1" || isBlockedV4(address);
   if (family !== 6) return true;
@@ -208,9 +208,9 @@ function isBlockedAddress(address: string): boolean {
  * Not closed: the fetch that follows resolves the name again, so a record that
  * changes between this check and that connection is not caught. Closing it
  * means connecting to the address checked here (a dispatcher whose lookup
- * returns only it). `undici` is not a dependency of this repo, only of eve
- * (8.x) and a few packages (7.x), and every fetch site would have to carry the
- * dispatcher, so the window stays until that is wired.
+ * returns only it). `undici` is not a dependency of this repo, only of a few
+ * packages (7.x), and every fetch site would have to carry the dispatcher, so
+ * the window stays until that is wired.
  */
 export async function assertResolvedPublic(raw: string): Promise<string> {
   const href = assertConnectionUrl(raw);

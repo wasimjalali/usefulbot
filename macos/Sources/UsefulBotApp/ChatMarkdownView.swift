@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UsefulBotCore
 
@@ -32,7 +33,7 @@ struct ChatMarkdownView: View, Equatable {
     private func blockView(_ block: MarkdownBlock) -> some View {
         switch block {
         case .paragraph(let content):
-            Text(inline(content))
+            inlineText(content)
         case .heading(let level, let content):
             Text(inline(content))
                 .font(Theme.font(headingSize(level), .semibold))
@@ -47,7 +48,7 @@ struct ChatMarkdownView: View, Equatable {
                         // Wraps instead of truncating: inside a bubble that
                         // hugs its content the row is offered one line's
                         // height first, and took it.
-                        Text(inline(item))
+                        inlineText(item)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -63,7 +64,7 @@ struct ChatMarkdownView: View, Equatable {
                         // Wraps instead of truncating: inside a bubble that
                         // hugs its content the row is offered one line's
                         // height first, and took it.
-                        Text(inline(item))
+                        inlineText(item)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -116,6 +117,49 @@ struct ChatMarkdownView: View, Equatable {
         }
     }
 
+    /// A block's text. One with a link the reader can open is drawn by
+    /// AppKit (`LinkTextView`): SwiftUI's selectable `Text` keeps the I-beam
+    /// over a link and swallows its click. The rest stay SwiftUI `Text`,
+    /// which a long chat builds faster.
+    @ViewBuilder
+    private func inlineText(_ source: String) -> some View {
+        let spans = ChatMarkdownCache.inline(from: source, streamingKey: streamingKey)
+        if spans.contains(where: { $0.kind == .link && Self.linkTarget($0.href) != nil }) {
+            LinkTextView(text: Self.appKitInline(spans, color: NSColor(textColor)))
+        } else {
+            Text(inline(source))
+        }
+    }
+
+    /// The same spans as `inline`, for AppKit: 15 pt body at the 7 pt line
+    /// gap, code on the sunken mono face, bold, italics and links.
+    private static func appKitInline(_ spans: [InlineSpan], color: NSColor) -> NSAttributedString {
+        let size = DesignTokens.FontSize.chatBody
+        let body = NSFont.systemFont(ofSize: size)
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 7
+        let base: [NSAttributedString.Key: Any] = [.font: body, .foregroundColor: color, .paragraphStyle: style]
+        let out = NSMutableAttributedString()
+        for span in spans {
+            var attributes = base
+            switch span.kind {
+            case .text:
+                break
+            case .code:
+                attributes[.font] = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+                attributes[.backgroundColor] = NSColor(Theme.C.sunken)
+            case .strong:
+                attributes[.font] = NSFont.systemFont(ofSize: size, weight: .semibold)
+            case .emphasized:
+                attributes[.font] = NSFontManager.shared.convert(body, toHaveTrait: .italicFontMask)
+            case .link:
+                if let url = linkTarget(span.href) { attributes[.link] = url }
+            }
+            out.append(NSAttributedString(string: span.text, attributes: attributes))
+        }
+        return out
+    }
+
     /// Inline spans turned into one attributed string: code on the sunken
     /// mono face, bold, italics, and http(s) links only. `_snake_case_` stays
     /// plain and no other emphasis form renders.
@@ -142,8 +186,8 @@ struct ChatMarkdownView: View, Equatable {
                 var run = AttributedString(span.text)
                 if Self.linkTarget(span.href) != nil {
                     run.link = Self.linkTarget(span.href)
-                    // Blue, so a link reads as one at a glance: selectable
-                    // text keeps the I-beam over it, so the pointer can't say so.
+                    // Headings and table cells only: blocks with a link are
+                    // drawn by `LinkTextView`, which gives the pointer.
                     run.foregroundColor = Theme.C.link
                     run.underlineStyle = .single
                 }
@@ -400,5 +444,91 @@ struct CodeBlockView: View {
         .pointerOnHover()
         .accessibilityLabel(copied ? "Copied" : "Copy code")
         .help("Copy")
+    }
+}
+
+/// A block of reply text with a link, drawn by an `NSTextView`: it stays
+/// selectable like the rest, shows the pointing hand over a link and opens it
+/// on click. Sized by the same TextKit layout it draws with, so it wraps and
+/// hugs its content like a SwiftUI `Text`.
+struct LinkTextView: NSViewRepresentable {
+    let text: NSAttributedString
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// Sizes measured for this text, by width. SwiftUI asks several times a
+    /// pass and on every resize; the text only changes in `updateNSView`.
+    final class Measure {
+        var text: NSAttributedString?
+        var natural: CGFloat?
+        var heights: [CGFloat: CGFloat] = [:]
+    }
+
+    func makeNSView(context: Context) -> NSTextView {
+        let view = NSTextView(usingTextLayoutManager: false)
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.isRichText = true
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.widthTracksTextView = true
+        view.isVerticallyResizable = false
+        view.isHorizontallyResizable = false
+        view.linkTextAttributes = [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand,
+        ]
+        view.delegate = context.coordinator
+        view.textStorage?.setAttributedString(text)
+        return view
+    }
+
+    func updateNSView(_ view: NSTextView, context: Context) {
+        if view.textStorage?.isEqual(to: text) != true {
+            view.textStorage?.setAttributedString(text)
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        let measure = context.coordinator.measure
+        if measure.text !== text, measure.text?.isEqual(to: text) != true {
+            measure.text = text
+            measure.natural = nil
+            measure.heights = [:]
+        }
+        let natural = measure.natural ?? Self.layout(text, width: .greatestFiniteMagnitude).width
+        measure.natural = natural
+        let offered = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? natural
+        let width = max(1, min(natural, offered))
+        if let height = measure.heights[width] { return CGSize(width: width, height: height) }
+        let height = Self.layout(text, width: width).height
+        if measure.heights.count > 16 { measure.heights.removeAll() }
+        measure.heights[width] = height
+        return CGSize(width: width, height: height)
+    }
+
+    /// The used size of the text laid out at a width, as `NSTextView` lays it out.
+    private static func layout(_ text: NSAttributedString, width: CGFloat) -> CGSize {
+        let storage = NSTextStorage(attributedString: text)
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        let used = manager.usedRect(for: container)
+        return CGSize(width: ceil(used.width), height: ceil(used.height))
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let measure = Measure()
+
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            guard let url = link as? URL else { return false }
+            NSWorkspace.shared.open(url)
+            return true
+        }
     }
 }

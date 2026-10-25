@@ -3,15 +3,15 @@ import test from "node:test";
 import { execFileSync } from "node:child_process";
 
 // UB-009 PR C: the tool schemas are the biggest fixed cost per turn.
-test("every authored tool stays short and names its siblings in snake_case", async () => {
+test("the 16 declared tools stay short and name their siblings in snake_case", async () => {
   const { join } = await import("node:path");
   const { measureTools } = (await import(join(import.meta.dirname, "../scripts/tool-schema-size.mjs"))) as {
     measureTools: () => Promise<{ name: string; words: number; chars: number }[]>;
   };
   const rows = await measureTools();
-  assert.ok(rows.length >= 30, `only ${rows.length} tools measured; the walk is broken`);
+  assert.equal(rows.length, 16, `${rows.length} tools measured; SPEC 5.8 declares 16`);
   const total = rows.reduce((sum, row) => sum + row.chars, 0);
-  assert.ok(total < 20_200, `authored tools weigh ${total} chars, past the 20,200 ceiling (19,193 after PR C plus about 5%, was 20,309 before)`);
+  assert.ok(total < 15_000, `the 16 tools weigh ${total} chars, past the 15,000 ceiling of SPEC 13`);
   for (const row of rows) {
     assert.ok(row.words <= 120, `${row.name} description is ${row.words} words; the ceiling is 120`);
   }
@@ -22,15 +22,17 @@ test("no tool description, hint or error names a tool in camelCase", async () =>
   const { join } = await import("node:path");
   const dir = join(import.meta.dirname, "../agent/tools");
   const files = readdirSync(dir).filter((name) => name.endsWith(".ts"));
-  // The real names, derived from the file names: list_bots -> listBots.
-  const camel = files
-    .map((file) => file.slice(0, -3))
+  // The real names: list_dir -> listDir.
+  const { allTools } = await import("../agent/tools/index.ts");
+  const camel = allTools()
+    .map((tool) => tool.name)
     .filter((name) => name.includes("_"))
     .map((name) => name.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()));
   const pattern = new RegExp(`\\b(${camel.join("|")})\\b`);
+  for (const tool of allTools()) {
+    assert.equal(pattern.test(tool.description), false, `${tool.name} description names a tool in camelCase`);
+  }
   for (const file of files) {
-    const mod = (await import(join(dir, file))) as { default?: { description?: string } };
-    assert.equal(pattern.test(mod.default?.description ?? ""), false, `${file} description names a tool in camelCase`);
     // Every string literal the model can see (hints, errors, multi-line
     // ternaries), not just lines that say hint: or error:. Code identifiers
     // outside quotes are not text the model reads.
@@ -43,6 +45,20 @@ test("no tool description, hint or error names a tool in camelCase", async () =>
   }
 });
 
+test("the tools array as the model's request carries it fits TOOL_SCHEMA_CHARS with 15% to spare", async () => {
+  const { join } = await import("node:path");
+  const { measureWire } = (await import(join(import.meta.dirname, "../scripts/tool-schema-size.mjs"))) as {
+    measureWire: () => Promise<{ tools: number; chars: number }>;
+  };
+  const { TOOL_SCHEMA_CHARS } = await import("../shared/admission.ts");
+  const wire = await measureWire();
+  assert.equal(wire.tools, 16);
+  assert.ok(
+    wire.chars <= TOOL_SCHEMA_CHARS * 0.85,
+    `the tools array is ${wire.chars} characters against TOOL_SCHEMA_CHARS ${TOOL_SCHEMA_CHARS}; raise the constant in shared/admission.ts with a new measurement`,
+  );
+});
+
 test("the script prints a table with a total", () => {
   const out = execFileSync("/usr/local/bin/node", ["--experimental-strip-types", "scripts/tool-schema-size.mjs"], {
     encoding: "utf8",
@@ -50,51 +66,5 @@ test("the script prints a table with a total", () => {
   });
   assert.match(out, /^TOTAL\s+\d+\s+\d+\s+\d+\s+\d+$/m);
   assert.match(out, /^bash\s+/m);
+  assert.match(out, /^tools: 16$/m);
 });
-
-// An override that re-declares eve's schema must not drift from it: if eve
-// tightens a field, this fails instead of our copy silently validating less.
-function withoutDescriptions(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutDescriptions);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => key !== "description")
-        .map(([key, inner]) => [key, withoutDescriptions(inner)]),
-    );
-  }
-  return value;
-}
-
-for (const [name, eveModule] of [
-  ["web_fetch", "eve/tools/web_fetch"],
-  ["todo", "eve/tools/todo"],
-] as const) {
-  test(`${name} override keeps eve's schema apart from description text`, async () => {
-    const { z } = await import("zod");
-    const { join } = await import("node:path");
-    const ours = (await import(join(import.meta.dirname, `../agent/tools/${name}.ts`))) as { default: { inputSchema: never } };
-    const theirs = (await import(eveModule)) as { default: { inputSchema: never } };
-    const a = z.toJSONSchema(ours.default.inputSchema, { io: "input" });
-    const b = z.toJSONSchema(theirs.default.inputSchema, { io: "input" });
-    assert.deepEqual(withoutDescriptions(a), withoutDescriptions(b));
-  });
-}
-
-for (const [name, eveModule, sameExecute] of [
-  ["web_fetch", "eve/tools/web_fetch", false],
-  ["todo", "eve/tools/todo", true],
-] as const) {
-  test(`${name} override keeps eve's executor and behaviour symbols`, async () => {
-    const { join } = await import("node:path");
-    type Tool = { execute: unknown };
-    const ours = ((await import(join(import.meta.dirname, `../agent/tools/${name}.ts`))) as { default: Tool }).default;
-    const theirs = ((await import(eveModule)) as { default: Tool }).default;
-    assert.equal(typeof ours.execute, "function");
-    // web_fetch wraps eve's execute to fence the page text; todo spreads it as is.
-    if (sameExecute) assert.equal(ours.execute, theirs.execute);
-    for (const symbol of Object.getOwnPropertySymbols(theirs)) {
-      assert.ok(symbol in ours, `${name} override lost eve's ${String(symbol)}`);
-    }
-  });
-}

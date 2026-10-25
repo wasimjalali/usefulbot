@@ -1,0 +1,86 @@
+{
+  "eve": {
+    "t01-files": {
+      "pass": true,
+      "score": 2
+    },
+    "t02-bash-approve": {
+      "pass": true,
+      "score": 3
+    },
+    "t03-deny": {
+      "pass": true,
+      "score": 3
+    },
+    "t04-web-search": {
+      "pass": false,
+      "score": 0
+    },
+    "t05-memory-save": {
+      "pass": true,
+      "score": 3
+    },
+    "t06-memory-recall": {
+      "pass": true,
+      "score": 2
+    },
+    "t07-routine": {
+      "pass": true,
+      "score": 3
+    },
+    "t08-connector": {
+      "pass": true,
+      "score": 3
+    },
+    "t09-question": {
+      "pass": true,
+      "score": 2
+    },
+    "t10-long-chat": {
+      "pass": true,
+      "score": 2
+    }
+  },
+  "pi": {
+    "t01-files": {
+      "pass": true,
+      "score": 2
+    },
+    "t02-bash-approve": {
+      "pass": true,
+      "score": 2
+    },
+    "t03-deny": {
+      "pass": true,
+      "score": 2
+    },
+    "t04-web-search": {
+      "pass": true,
+      "score": 2
+    },
+    "t05-memory-save": {
+      "pass": true,
+      "score": 2
+    },
+    "t06-memory-recall": {
+      "pass": true,
+      "score": 2
+    },
+    "t07-routine": {
+      "pass": true,
+      "score": 2
+    },
+    "t08-connector": {
+      "pass": true,
+      "score": 3
+    },
+    "t09-question": {
+      "pass": true,
+      "score": 3
+    },
+    "t10-long-chat": {
+      "pass": true,
+      "score": 2
+    }
+  }
+}

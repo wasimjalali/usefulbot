@@ -14,19 +14,18 @@ import {
 import { dirname } from "node:path";
 import { MAX_SESSION_TOOLS, MAX_SESSION_TOOL_BYTES } from "./policy.ts";
 import { schemaBytesOf, toolWireBytes } from "./tool-wire-size.ts";
-import { wrapUntrusted } from "./untrusted.ts";
+import { flatLine, wrapUntrusted } from "./untrusted.ts";
 import { rawSchemaHint, toolInputSchema } from "./json-schema-zod.ts";
 import { statePath } from "./stack.ts";
 
 /**
- * Which of a connection's tools a session has asked for, and what each
+ * Which of a connection's tools a chat has asked for, and what each
  * connection's tools are.
  *
- * An MCP server's whole tool set no longer sits in context on every turn:
+ * An MCP server's whole tool set never sits in context on its own:
  * `find_tools` looks through this index and records what it handed over, and
- * the step resolver mounts those. eve can replay a resolver in a fresh
- * process on recovery, so the record has to survive the process, which an
- * in-memory map would not.
+ * the engine registers those for the chat. The record is kept in a file, so
+ * a chat that reopens after a restart still has its tools.
  *
  * Same write rules as the other stores here: 0600, atomic rename, locked
  * merge. Nothing in it is a secret: tool names, descriptions and argument
@@ -49,16 +48,6 @@ export type IndexedTool = {
 export type ConnectionIndex = {
   fetchedAt: string;
   tools: IndexedTool[];
-  /**
-   * An OpenAPI connection's operation count and the argument-schema bytes
-   * eve builds from its spec. eve turns the spec into tools itself and this
-   * side never sees them, so these are what it is weighed by later.
-   */
-  operations?: number;
-  schemaBytes?: number;
-  textBytes?: number;
-  /** The longest tool name eve builds from the spec, unprefixed. */
-  longestName?: number;
   /**
    * The listing was attempted and did not arrive. Kept apart from a listing
    * that came back empty: one is a server this side cannot weigh, the other
@@ -103,7 +92,7 @@ export type ConnectionStatus = {
 
 export type SessionTools = {
   updatedAt: string;
-  /** `<connectionId>__<toolName>`, the name eve mounts and the app parses. */
+  /** `<connectionId>__<toolName>`, the name the engine registers and the app parses. */
   tools: string[];
 };
 
@@ -112,6 +101,7 @@ export type ConnectionToolsStore = {
   index: Record<string, ConnectionIndex>;
   /** Per connection id, beside the listing it describes. */
   status: Record<string, ConnectionStatus>;
+  /** Per chat id: what the chat picked with find_tools. */
   sessions: Record<string, SessionTools>;
   /**
    * Connections removed, and when. A discovery that started before its
@@ -136,7 +126,7 @@ export const INDEX_TTL_MS = 6 * 60 * 60 * 1000;
  * not wait for the cache to forget.
  */
 export const LISTING_RETRY_MS = 2 * 60 * 1000;
-/** Sessions kept. The oldest go first; a dropped one just re-asks. */
+/** Chats kept. The oldest go first; a dropped one just re-asks. */
 const MAX_SESSIONS = 100;
 /**
  * A tool this app can actually mount. The charset is the upstream's, not a
@@ -151,8 +141,7 @@ const TOOL_NAME = /^[a-zA-Z0-9_-]{1,80}$/;
  * The provider validates the mounted name, `<connectionId>__<toolName>`, not
  * the tool's own, against `^[a-zA-Z0-9_-]{1,64}$`. A connection id may run to
  * sixty-four characters and a tool name to eighty, so a tool that passed a
- * screen of its own name could still be refused on the wire, non-retryably,
- * with the session retired behind it.
+ * screen of its own name could still be refused on the wire, non-retryably.
  */
 const MOUNTED_NAME_MAX = 64;
 
@@ -176,7 +165,7 @@ export function connectionToolsPath(root = process.env.UB_CONNECTION_TOOLS_PATH)
   return statePath("connection-tools.json");
 }
 
-/** The name eve mounts a connection's tool under, and the app parses back. */
+/** The name a connection's tool is registered under, and the app parses back. */
 export function mountedToolName(connectionId: string, toolName: string): string {
   return `${connectionId}__${toolName}`;
 }
@@ -239,18 +228,6 @@ export function parseConnectionToolsStore(raw: unknown): ConnectionToolsStore {
     store.index[id] = {
       fetchedAt: typeof row.fetchedAt === "string" ? row.fetchedAt : new Date(0).toISOString(),
       tools,
-      ...(typeof row.operations === "number" && Number.isFinite(row.operations)
-        ? { operations: Math.max(0, Math.trunc(row.operations)) }
-        : {}),
-      ...(typeof row.schemaBytes === "number" && Number.isFinite(row.schemaBytes)
-        ? { schemaBytes: Math.max(0, Math.trunc(row.schemaBytes)) }
-        : {}),
-      ...(typeof row.textBytes === "number" && Number.isFinite(row.textBytes)
-        ? { textBytes: Math.max(0, Math.trunc(row.textBytes)) }
-        : {}),
-      ...(typeof row.longestName === "number" && Number.isFinite(row.longestName)
-        ? { longestName: Math.max(0, Math.trunc(row.longestName)) }
-        : {}),
       ...(row.failed === true ? { failed: true } : {}),
     };
   }
@@ -284,7 +261,7 @@ export function parseConnectionToolsStore(raw: unknown): ConnectionToolsStore {
  * A read never moves the file aside, even when it cannot parse it. Reads run
  * off the lock, on every step and once per mounted tool, so a reader that
  * quarantined a file another process was halfway through writing would wipe
- * the index and every session's activations mid-turn. This is a cache: an
+ * the index and every chat's picks mid-turn. This is a cache: an
  * unreadable one is empty, and the writer under the lock is what sets a
  * genuinely corrupt file aside.
  */
@@ -382,8 +359,8 @@ export function putConnectionIndex(
     store.index[connectionId] = {
       fetchedAt: new Date().toISOString(),
       // Screened here, the one writer every path goes through: a name whose
-      // mounted form the provider refuses would be found, activated and
-      // mounted, and the refusal retires the session.
+      // registered form the provider refuses would be found, activated and
+      // registered, and the refusal fails the turn.
       tools: tools.filter((tool) => isMountableToolName(connectionId, tool.name)).slice(0, 200),
     };
   }, path);
@@ -522,26 +499,6 @@ export function putConnectionPending(
   }, path);
 }
 
-/**
- * Record a status with no listing change, for a connection whose tools are
- * eve's. `unlessNewer` as for `putConnectionDiscovery`.
- */
-export function putConnectionStatus(
-  connectionId: string,
-  status: ConnectionStatus,
-  path = connectionToolsPath(),
-  opts: { unlessNewer?: boolean } = {},
-): boolean {
-  const written = updateConnectionToolsStore((store) => {
-    if (removedSince(store, connectionId, status.checkedAt)) return false;
-    if (opts.unlessNewer && supersededBy(store, connectionId, status.checkedAt)) return false;
-    store.status[connectionId] = status;
-    return true;
-  }, path);
-  if (written) checkedThisRuntime.add(connectionId);
-  return written;
-}
-
 export function connectionStatus(
   connectionId: string,
   path = connectionToolsPath(),
@@ -550,10 +507,10 @@ export function connectionStatus(
 }
 
 /**
- * Forget a connection's listing and status; its sessions shed the tools on
- * their own. Also records the removal, so a write from an attempt that began
- * before it (a slow discovery, a measurement) is dropped instead of bringing
- * the row back.
+ * Forget a connection's listing and status; the chats that picked its tools
+ * shed them on their own. Also records the removal, so a write from an attempt
+ * that began before it (a slow discovery) is dropped instead of bringing the
+ * row back.
  */
 export function removeConnectionIndex(connectionId: string, path = connectionToolsPath()): void {
   const at = nextStamp();
@@ -573,55 +530,11 @@ export function removeConnectionIndex(connectionId: string, path = connectionToo
   checkedThisRuntime.delete(connectionId);
 }
 
-/**
- * Remember how big an OpenAPI connection is, since its tools are eve's.
- * `null` records the attempt without a figure, which is what keeps a spec
- * that cannot be read from being refetched at every turn boundary.
- */
-export function putConnectionOperations(
-  connectionId: string,
-  size: { operations: number; schemaBytes: number; textBytes: number; longestName: number } | null,
-  path = connectionToolsPath(),
-  /** When the measurement started; nothing is written if the connection was removed since. */
-  startedAt?: string,
-): void {
-  updateConnectionToolsStore((store) => {
-    if (startedAt !== undefined && removedSince(store, connectionId, startedAt)) return;
-    const last = store.index[connectionId];
-    store.index[connectionId] = {
-      fetchedAt: new Date().toISOString(),
-      tools: [],
-      // A measurement that did not arrive records the attempt and says so,
-      // rather than reading back later as a connection of no size. The last
-      // figures stay beside it: they were admitted under the budget, and
-      // dropping them on one timeout unmounted the connection for six hours.
-      ...(size === null ? {
-        failed: true,
-        ...(last?.operations !== undefined ? { operations: last.operations } : {}),
-        ...(last?.schemaBytes !== undefined ? { schemaBytes: last.schemaBytes } : {}),
-        ...(last?.textBytes !== undefined ? { textBytes: last.textBytes } : {}),
-        ...(last?.longestName !== undefined ? { longestName: last.longestName } : {}),
-      } : {
-        operations: Math.max(0, Math.trunc(size.operations)),
-        schemaBytes: Math.max(0, Math.trunc(size.schemaBytes)),
-        textBytes: Math.max(0, Math.trunc(size.textBytes)),
-        longestName: Math.max(0, Math.trunc(size.longestName)),
-      }),
-    };
-  }, path);
-}
-
 export function connectionIndex(
   connectionId: string,
   path = connectionToolsPath(),
 ): ConnectionIndex | null {
   return readConnectionToolsStore(path).index[connectionId] ?? null;
-}
-
-export function indexIsStale(index: ConnectionIndex | null, now = Date.now()): boolean {
-  if (!index) return true;
-  const at = Date.parse(index.fetchedAt);
-  return !Number.isFinite(at) || now - at > INDEX_TTL_MS;
 }
 
 /**
@@ -645,15 +558,15 @@ export function listingIsDue(
   return now - at > (working ? INDEX_TTL_MS : LISTING_RETRY_MS);
 }
 
-/** What a session has picked up, in the order it picked it up. */
-export function sessionTools(sessionId: string, path = connectionToolsPath()): string[] {
-  return readConnectionToolsStore(path).sessions[sessionId]?.tools ?? [];
+/** What a chat has picked up, in the order it picked it up. */
+export function sessionTools(chatId: string, path = connectionToolsPath()): string[] {
+  return readConnectionToolsStore(path).sessions[chatId]?.tools ?? [];
 }
 
 export type ActivationOutcome = {
-  /** The names now mounted for this session, including ones it already had. */
+  /** The names now picked for this chat, including ones it already had. */
   tools: string[];
-  /** Names refused because the session is already holding its limit. */
+  /** Names refused because the chat is already holding its limit. */
   refused: string[];
 };
 
@@ -689,7 +602,7 @@ export function mountedDescription(tool: IndexedTool, connectionId: string, conn
 
 /** A connection's name goes outside the fence, so it must not carry lines. */
 function oneLine(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").trim();
+  return flatLine(value);
 }
 
 export function indexedToolBytes(tool: IndexedTool, connectionId = "", connectionName = ""): number {
@@ -701,13 +614,12 @@ export function indexedToolBytes(tool: IndexedTool, connectionId = "", connectio
 }
 
 /**
- * Record that a session may use these tools from now on. The cap is here
+ * Record that a chat may use these tools from now on. The cap is here
  * rather than at the wall the router puts up: past it the model is told it is
- * holding its limit, instead of the turn being refused with an error that
- * retires the session.
+ * holding its limit, instead of the turn being refused with an error.
  */
 export function activateSessionTools(
-  sessionId: string,
+  chatId: string,
   names: string[],
   path = connectionToolsPath(),
   sessionConnectionNames: Record<string, string> = {},
@@ -723,8 +635,8 @@ export function activateSessionTools(
         ? indexedToolBytes(tool, connectionId, sessionConnectionNames[connectionId] ?? "")
         : toolWireBytes(name, "", 4 * 1024);
     };
-    // A tool the index no longer lists cannot be mounted: its server dropped
-    // it, or renamed it. Held on, it kept charging the session for a tool it
+    // A tool the index no longer lists cannot be registered: its server dropped
+    // it, or renamed it. Held on, it kept charging the chat for a tool it
     // could never call, and ten of them told the model it was holding its
     // limit while holding nothing it could use. They are shed here.
     const listed = (name: string): boolean => {
@@ -732,7 +644,7 @@ export function activateSessionTools(
       if (at <= 0) return false;
       return store.index[name.slice(0, at)]?.tools.some((item) => item.name === name.slice(at + 2)) ?? false;
     };
-    const current = (store.sessions[sessionId]?.tools ?? []).filter(listed);
+    const current = (store.sessions[chatId]?.tools ?? []).filter(listed);
     const held = new Set(current);
     let bytes = current.reduce((total, name) => total + sizeOf(name), 0);
     const refused: string[] = [];
@@ -754,7 +666,7 @@ export function activateSessionTools(
       bytes += size;
       current.push(name);
     }
-    store.sessions[sessionId] = { updatedAt: new Date().toISOString(), tools: current };
+    store.sessions[chatId] = { updatedAt: new Date().toISOString(), tools: current };
     return { tools: [...current], refused };
   }, path);
 }

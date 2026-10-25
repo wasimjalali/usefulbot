@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { startRouter } from "../src/index.ts";
 import { LimitStore, estimateInputUnits } from "../src/limits.ts";
 import { CEILING_RETRY_AFTER_MS, ConcurrencyGate } from "../src/concurrency.ts";
@@ -13,6 +14,7 @@ import { AliasCircuit } from "../src/circuit.ts";
 import { RouterError } from "../src/errors.ts";
 import { completeUpstream, upstreamConfigError, type ResolvedUpstream } from "../src/upstreams/opencode.ts";
 import { readPrefix } from "../src/read-capped.ts";
+import { PI_TOOL_IMAGE_TEXT, noteInlineThink } from "../src/inline-think.ts";
 import { emptyLimitsStore, resetBudgetCache, writeLimitsStore } from "../../shared/limits-store.ts";
 import { writeModelsCache } from "../../shared/live-models.ts";
 import { hydrateModel } from "../../shared/models.ts";
@@ -101,7 +103,8 @@ async function withRouter(
     router = startRouter({
       port: 0,
       configPath,
-      lockPath: join(process.cwd(), "package-lock.json"),
+      // The repo's lockfile, whichever folder the tests run from.
+      lockPath: fileURLToPath(new URL("../../package-lock.json", import.meta.url)),
       dbPath,
     });
     await new Promise<void>((resolve) => {
@@ -698,7 +701,7 @@ test("streaming proxies sse and records usage", async () => {
   });
 });
 
-test("a stream cut off after a tool call reaches eve as a tool step", async () => {
+test("a stream cut off after a tool call is relayed as the upstream sent it, split and unterminated blocks included", async () => {
   await withRouter(async (base, tokens) => {
     const res = await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
@@ -708,7 +711,8 @@ test("a stream cut off after a tool call reaches eve as a tool step", async () =
     assert.equal(res.status, 200);
     const text = await res.text();
     const finishes = [...text.matchAll(/"finish_reason":"(\w+)"/g)].map((m) => m[1]);
-    assert.deepEqual(finishes, ["tool_calls"]);
+    // The length stop is not rewritten: the engine fails a truncated tool call on purpose.
+    assert.deepEqual(finishes, ["length"]);
     assert.equal(text.includes("\"arguments\":\"{\\\"command\\\":\\\"ls\\\"}\""), true);
     // The last block had no closing blank line and still arrives.
     assert.equal(text.trimEnd().endsWith("data: [DONE]"), true);
@@ -777,8 +781,8 @@ test("ops sees every registry model", async () => {
 });
 
 test("compaction's temperature and top_p are accepted and never reach the upstream", async () => {
-  // eve's compaction sends temperature: 0, and eve retires the session on any
-  // 4xx from here: every chat past its model's window died this way.
+  // A compaction call sends temperature: 0, and a 4xx from here fails the
+  // turn: every chat past its model's window would die this way.
   let forwarded: Record<string, unknown> = {};
   await withRouter(async (base, tokens) => {
     const res = await fetch(`${base}/v1/chat/completions`, {
@@ -851,7 +855,7 @@ test("unknown completion options are rejected", async () => {
       body: JSON.stringify({
         model: "workhorse",
         messages: [{ role: "user", content: "hi" }],
-        reasoning_effort: "high",
+        logit_bias: { "50256": -100 },
       }),
     });
     assert.equal(res.status, 400);
@@ -859,9 +863,11 @@ test("unknown completion options are rejected", async () => {
   });
 });
 
-test("caller-supplied effort and service tier are rejected", async () => {
+// Caller-supplied effort is accepted and dropped (see the Pi tests below); a
+// service tier still is not, because it moves spend.
+test("caller-supplied service tier is rejected", async () => {
   await withRouter(async (base, tokens) => {
-    for (const extra of [{ service_tier: "priority" }, { reasoning_effort: "high" }]) {
+    for (const extra of [{ service_tier: "priority" }]) {
       const res = await fetch(`${base}/v1/chat/completions`, {
         method: "POST",
         headers: { authorization: `Bearer ${tokens.desktop}`, "content-type": "application/json", ...ids() },
@@ -992,8 +998,8 @@ test("three protocol failures open the alias circuit", async () => {
     assert.equal(opened.status, 503);
     const body = (await opened.json()).error;
     assert.equal(body.code, "circuit_open");
-    // eve keeps only the message of a failed call, so the wait has to be
-    // readable there for the app's countdown.
+    // A client may keep only the message of a failed call, so the wait has to
+    // be readable there for the app's countdown.
     const waited = Number(/retry_after_ms=(\d+)/.exec(body.message)?.[1]);
     assert.ok(waited > 0 && waited <= body.retry_after_ms + 5);
   }, (_req, res) => {
@@ -2589,4 +2595,300 @@ test("a model with no catalog window caps its output at a tenth of 32768, not of
   });
   assert.equal(out.dispatches, 1);
   assert.equal(out.forwarded?.max_tokens, 3_276);
+});
+
+// --- Pi's openai-completions client (Pi engine plan, PR 1) -----------------
+// router/test/fixtures/pi-request.json is built by scripts/dev/pi-golden-payload.mjs
+// with Pi's own request builder: `specCompat` is what the engine will send,
+// `defaultCompat` what Pi sends when no compat flag is set at all.
+
+const PI_GOLDEN = JSON.parse(readFileSync(new URL("./fixtures/pi-request.json", import.meta.url), "utf8")) as {
+  specCompat: Record<string, unknown>;
+  defaultCompat: Record<string, unknown>;
+};
+
+/** A 65,536-token window: the output cap is its last tenth, 6,553, under Pi's 16,384. */
+const PI_WINDOW = 65_536;
+const PI_CAP = 6_553;
+
+/**
+ * Runs `fn` against a router whose picked model (glm-5.3-flash, effort low,
+ * sees images) has a 65,536-token window. Every upstream body is captured,
+ * along with the output tokens reserved while that call was in flight.
+ */
+async function withPiRouter(
+  fn: (base: string, tokens: Record<string, string>, seen: Array<{ body: Record<string, unknown>; reservedOutput: number | null }>) => Promise<void>,
+  model: { id: string; inputs: string[] } = { id: "glm-5.3-flash", inputs: ["text", "image"] },
+) {
+  const previous = process.env.UB_MODELS_CACHE_PATH;
+  const cachePath = join(mkdtempSync(join(tmpdir(), "ub-router-pi-models-")), "models-cache.json");
+  writeFileSync(cachePath, JSON.stringify({
+    schemaVersion: 3,
+    providers: {
+      "opencode-go": {
+        fetchedAt: Date.now(),
+        models: [
+          { id: model.id, label: "Pi test model", efforts: ["low", "high", "max"], defaultEffort: "low", speeds: ["standard"], defaultSpeed: "standard", contextTokens: PI_WINDOW, inputs: model.inputs },
+        ],
+      },
+    },
+  }));
+  process.env.UB_MODELS_CACHE_PATH = cachePath;
+  const seen: Array<{ body: Record<string, unknown>; reservedOutput: number | null }> = [];
+  let routerBase = "";
+  let desktopToken = "";
+  try {
+    await withRouter(async (base, tokens) => {
+      routerBase = base;
+      desktopToken = tokens.desktop;
+      writeFileSync(process.env.UB_PROVIDERS_PATH!, JSON.stringify({
+        schemaVersion: 1,
+        activeProviderId: "opencode-go",
+        keys: { "opencode-go": { key: "test-upstream-key", updatedAt: new Date().toISOString() } },
+        selectedModel: model.id,
+        effort: "low",
+        speed: "standard",
+      }));
+      await fn(base, tokens, seen);
+    }, (req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", async () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+        const usage = await fetch(`${routerBase}/v1/usage`, { headers: { authorization: `Bearer ${desktopToken}` } });
+        seen.push({ body, reservedOutput: ((await usage.json()) as { reserved_output_tokens: number | null }).reserved_output_tokens });
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "pi-ok" } }] })}\n\n`);
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 9, completion_tokens: 2 } })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    });
+  } finally {
+    if (previous === undefined) delete process.env.UB_MODELS_CACHE_PATH;
+    else process.env.UB_MODELS_CACHE_PATH = previous;
+  }
+}
+
+function postCompletion(base: string, token: string, body: unknown): Promise<Response> {
+  return fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...ids() },
+    body: JSON.stringify(body),
+  });
+}
+
+function messagesOf(body: Record<string, unknown>): Array<Record<string, unknown>> {
+  return body.messages as Array<Record<string, unknown>>;
+}
+
+const REASONING_KEYS = ["reasoning_content", "reasoning", "reasoning_text", "reasoning_details"];
+
+/** What both golden requests must look like once the router has forwarded them. */
+function assertPiForwarded(forwarded: Record<string, unknown>) {
+  assert.equal(forwarded.model, "glm-5.3-flash");
+  assert.equal(forwarded.stream, true);
+  assert.deepEqual(forwarded.stream_options, { include_usage: true });
+  // Pi asks for 16,384; the model's cap is the last tenth of its window.
+  assert.equal(forwarded.max_tokens, PI_CAP);
+  // The router's own effort, never the caller's "high".
+  assert.equal(forwarded.reasoning_effort, "low");
+  for (const key of ["max_completion_tokens", "store", "prompt_cache_key", "prompt_cache_retention"]) {
+    assert.equal(key in forwarded, false, `${key} must not reach the upstream`);
+  }
+  assert.deepEqual((forwarded.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name), ["read_file", "screenshot"]);
+  const messages = messagesOf(forwarded);
+  assert.deepEqual(messages.map((message) => message.role), ["system", "user", "assistant", "assistant", "user", "assistant", "tool", "tool", "user"]);
+  assert.equal(messages[0].content, "You are Useful Bot.");
+  // Earlier turns lose their reasoning whatever field it rode in.
+  for (const earlier of [messages[2], messages[3]]) {
+    for (const key of REASONING_KEYS) assert.equal(key in earlier, false, `earlier-turn ${key} must be dropped`);
+  }
+  assert.equal(messages[2].content, "It is a single transparent pixel.");
+  assert.equal(messages[3].content, "Anything else?");
+  // The current turn keeps it: Pi's tool-image carrier (the last user
+  // message) does not open a new turn.
+  assert.equal(messages[5].reasoning_content, "Two tools, one after the other.");
+  assert.deepEqual((messages[5].tool_calls as Array<{ id: string }>).map((call) => call.id), ["call_read_1", "call_shot_2"]);
+  assert.deepEqual([messages[6].tool_call_id, messages[7].tool_call_id], ["call_read_1", "call_shot_2"]);
+  const carrier = messages[8].content as Array<Record<string, unknown>>;
+  assert.deepEqual(carrier.map((part) => part.type), ["text", "image_url"]);
+  // The owner's own picture in the first turn still goes (the model sees images).
+  assert.deepEqual((messages[1].content as Array<Record<string, unknown>>).map((part) => part.type), ["text", "image_url"]);
+}
+
+test("Pi's golden request (SPEC 5.3 compat) is accepted and forwarded as expected", async () => {
+  assert.equal(PI_GOLDEN.specCompat.max_tokens, 16_384);
+  await withPiRouter(async (base, tokens, seen) => {
+    const res = await postCompletion(base, tokens.desktop, PI_GOLDEN.specCompat);
+    assert.equal(res.status, 200);
+    assert.equal((await res.text()).includes("pi-ok"), true);
+    assert.equal(seen.length, 1);
+    assertPiForwarded(seen[0].body);
+    // The reservation was made with the clamped size, not Pi's 16,384.
+    assert.equal(seen[0].reservedOutput, PI_CAP);
+  });
+});
+
+test("Pi's request with no compat flags (developer role, max_completion_tokens, store, effort, cache keys) is accepted too", async () => {
+  const golden = PI_GOLDEN.defaultCompat;
+  // The fixture really carries every insurance case.
+  assert.equal(messagesOf(golden)[0].role, "developer");
+  assert.equal(golden.max_completion_tokens, 16_384);
+  assert.equal(golden.store, false);
+  assert.equal(golden.reasoning_effort, "high");
+  assert.equal(typeof golden.prompt_cache_key, "string");
+  assert.equal(golden.prompt_cache_retention, "24h");
+  await withPiRouter(async (base, tokens, seen) => {
+    const res = await postCompletion(base, tokens.desktop, golden);
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal(seen.length, 1);
+    assertPiForwarded(seen[0].body);
+    assert.equal(seen[0].reservedOutput, PI_CAP);
+  });
+});
+
+test("max_tokens is clamped to the model's cap, never refused for size, and a size under the cap passes as sent", async () => {
+  await withPiRouter(async (base, tokens, seen) => {
+    const hi = [{ role: "user", content: "hi" }];
+    for (const [extra, expected] of [
+      [{ max_tokens: 1_000_000 }, PI_CAP],
+      [{ max_tokens: 4097 }, 4097],
+      [{ max_completion_tokens: 50_000 }, PI_CAP],
+      [{ max_tokens: 200, max_completion_tokens: 200 }, 200],
+      [{}, PI_CAP],
+    ] as const) {
+      const res = await postCompletion(base, tokens.desktop, { model: "workhorse", messages: hi, stream: true, ...extra });
+      assert.equal(res.status, 200, JSON.stringify(extra));
+      await res.text();
+      const last = seen.at(-1)!;
+      assert.equal(last.body.max_tokens, expected, JSON.stringify(extra));
+      assert.equal("max_completion_tokens" in last.body, false);
+    }
+  });
+});
+
+test("a malformed or conflicting max token count is refused before any dispatch", async () => {
+  await withPiRouter(async (base, tokens, seen) => {
+    const hi = [{ role: "user", content: "hi" }];
+    for (const [extra, reason] of [
+      [{ max_tokens: 0 }, "max_tokens"],
+      [{ max_tokens: 1.5 }, "max_tokens"],
+      [{ max_tokens: "100" }, "max_tokens"],
+      [{ max_completion_tokens: -1 }, "max_tokens"],
+      [{ max_tokens: 100, max_completion_tokens: 200 }, "max_tokens_conflict"],
+    ] as const) {
+      const res = await postCompletion(base, tokens.desktop, { model: "workhorse", messages: hi, ...extra });
+      assert.equal(res.status, 400, JSON.stringify(extra));
+      const error = (await res.json()).error as { code: string; detail?: string };
+      assert.equal(error.code, "invalid_request");
+      assert.equal(error.detail, reason);
+    }
+    assert.equal(seen.length, 0);
+  });
+});
+
+test("discarded client keys of the wrong type are refused, null ones dropped", async () => {
+  await withPiRouter(async (base, tokens, seen) => {
+    const hi = [{ role: "user", content: "hi" }];
+    for (const extra of [{ store: "no" }, { reasoning_effort: 3 }, { prompt_cache_key: {} }, { prompt_cache_retention: 24 }]) {
+      const res = await postCompletion(base, tokens.desktop, { model: "workhorse", messages: hi, ...extra });
+      assert.equal(res.status, 400, JSON.stringify(extra));
+      assert.equal((await res.json()).error.code, "unsupported_parameter");
+    }
+    assert.equal(seen.length, 0);
+    const res = await postCompletion(base, tokens.desktop, { model: "workhorse", messages: hi, stream: true, store: null, prompt_cache_key: null });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal("store" in seen[0].body, false);
+    assert.equal("prompt_cache_key" in seen[0].body, false);
+  });
+});
+
+test("a developer message anywhere in the history goes upstream as system", async () => {
+  await withPiRouter(async (base, tokens, seen) => {
+    const res = await postCompletion(base, tokens.desktop, {
+      model: "workhorse",
+      stream: true,
+      messages: [
+        { role: "developer", content: "Be brief." },
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "hello" },
+        { role: "developer", content: "Now be briefer." },
+        { role: "user", content: "again" },
+      ],
+    });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.deepEqual(messagesOf(seen[0].body).map((message) => message.role), ["system", "user", "assistant", "system", "user"]);
+  });
+});
+
+test("reasoning fields of the wrong shape are refused before any dispatch", async () => {
+  await withPiRouter(async (base, tokens, seen) => {
+    for (const [extra, reason] of [
+      [{ reasoning_content: 1 }, "message_reasoning_content"],
+      [{ reasoning: { text: "x" } }, "message_reasoning"],
+      [{ reasoning_text: ["x"] }, "message_reasoning_text"],
+      [{ reasoning_details: "x" }, "message_reasoning_details"],
+      [{ reasoning_details: [1] }, "message_reasoning_details"],
+      [{ reasoning_details: [[]] }, "message_reasoning_details"],
+    ] as const) {
+      const res = await postCompletion(base, tokens.desktop, {
+        model: "workhorse",
+        messages: [{ role: "user", content: "hi" }, { role: "assistant", content: "hello", ...extra }, { role: "user", content: "again" }],
+      });
+      assert.equal(res.status, 400, JSON.stringify(extra));
+      const error = (await res.json()).error as { code: string; detail?: string };
+      assert.equal(error.code, "invalid_request");
+      assert.equal(error.detail, reason);
+    }
+    assert.equal(seen.length, 0);
+  });
+});
+
+test("Pi's tool-image carrier may hold five images per tool result it follows, an owner message still five", async () => {
+  const image = { type: "image_url", image_url: { url: PNG_DATA_URL } };
+  const call = (id: string) => ({ id, type: "function", function: { name: "screenshot", arguments: "{}" } });
+  const afterTools = (tools: number, images: number, text = PI_TOOL_IMAGE_TEXT) => ({
+    model: "workhorse",
+    stream: true,
+    messages: [
+      { role: "user", content: "screenshot these" },
+      { role: "assistant", content: null, tool_calls: Array.from({ length: tools }, (_, i) => call(`c${i}`)) },
+      ...Array.from({ length: tools }, (_, i) => ({ role: "tool", tool_call_id: `c${i}`, content: "(see attached image)" })),
+      { role: "user", content: [{ type: "text", text }, ...Array.from({ length: images }, () => image)] },
+    ],
+  });
+  await withPiRouter(async (base, tokens, seen) => {
+    for (const [body, status] of [
+      [afterTools(2, 10), 200],
+      [afterTools(2, 11), 400],
+      [afterTools(1, 6), 400],
+      // Not the carrier's text: the owner's own allowance.
+      [afterTools(2, 6, "look at these"), 400],
+    ] as const) {
+      const res = await postCompletion(base, tokens.desktop, body);
+      assert.equal(res.status, status);
+      if (status === 400) assert.equal((await res.json()).error.code, "unsupported_parameter");
+      else await res.text();
+    }
+    assert.equal(seen.length, 1);
+  });
+});
+
+test("an inline-thinking text-only model still gets the current turn's reasoning back when Pi's carrier loses its images", async () => {
+  noteInlineThink("opencode-go", "pi-inline-text");
+  await withPiRouter(async (base, tokens, seen) => {
+    const res = await postCompletion(base, tokens.desktop, PI_GOLDEN.specCompat);
+    assert.equal(res.status, 200);
+    await res.text();
+    const messages = messagesOf(seen[0].body);
+    assert.equal(messages[5].content, "<think>Two tools, one after the other.</think>");
+    assert.equal("reasoning_content" in messages[5], false);
+    // The carrier's image became a note for the text-only model.
+    const carrier = messages[8].content as Array<Record<string, unknown>>;
+    assert.equal(carrier.some((part) => part.type === "image_url"), false);
+  }, { id: "pi-inline-text", inputs: ["text"] });
 });

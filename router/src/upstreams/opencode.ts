@@ -339,6 +339,21 @@ function timedFetch(timing: { firstByteAt: number | null }, onSend?: () => void)
   };
 }
 
+/**
+ * The most output one call to the resolved model may ask for. The engine
+ * compacts at 75% of the model's window (it reads the same catalog), so the
+ * cap keeps to the last tenth: a prompt at the threshold plus a full answer
+ * still fits a small model's window. `modelOption` falls back to
+ * the list's first model; only the picked model's own window may size its
+ * cap. A model with no catalog window is sized from the same unknown window
+ * the agent compacts at.
+ */
+export function outputCapFor(entry: RegistryEntry, resolved: ResolvedUpstream): number {
+  const option = modelOption(resolved.connection.id, resolved.model, catalogFor(resolved.connection.id));
+  const sized = option?.id === resolved.model && option.contextTokens && option.contextTokens > 0 ? option.contextTokens : null;
+  return Math.min(entry.maxOutputTokens, Math.floor((sized ?? UNKNOWN_WINDOW_TOKENS) / 10));
+}
+
 export async function completeUpstream(input: {
   entry: RegistryEntry;
   body: unknown;
@@ -397,23 +412,21 @@ export async function completeUpstream(input: {
   // Without a match the model reads as unlisted, so a refusal drops it for the
   // sending account (and only the merged GPT-6 ids are ever dropped).
   let listedAtDispatch = listedForAccount(resolved.connection.id, model, accountKey(credential));
-  // eve compacts at 75% of the model's window (agent/lib/model-window.ts reads
-  // the same catalog), so the output cap keeps to the last tenth: a prompt at
-  // the threshold plus a full answer still fits a small model's window.
-  // `modelOption` falls back to the list's first model; only the picked
-  // model's own window may size its cap. A model with no catalog window is
-  // sized from the same unknown window the agent compacts at.
-  const sized = option?.id === model && option.contextTokens && option.contextTokens > 0 ? option.contextTokens : null;
-  const outputCap = Math.min(input.entry.maxOutputTokens, Math.floor((sized ?? UNKNOWN_WINDOW_TOKENS) / 10));
+  const outputCap = outputCapFor(input.entry, resolved);
   // Reasoning from earlier turns may belong to another model: only the
   // current turn keeps it (see stripEarlierReasoning).
-  const history = withoutImagesForTextModel(stripEarlierReasoning(forwardedBody.messages), sees);
+  const history = stripEarlierReasoning(forwardedBody.messages);
   const forwarded = applyReasoning(resolved.providerId, resolved.effort, resolved.speed, {
     ...forwardedBody,
-    // A model that writes its thinking inline gets it back the same way.
-    messages: resolved.protocol === "openai-chat" && usesInlineThink(resolved.providerId, model)
-      ? rewrapThinkHistory(history)
-      : history,
+    // A model that writes its thinking inline gets it back the same way. The
+    // rewrap reads turn boundaries, so it runs before images become notes: a
+    // tool-image carrier without its images would read as a new turn.
+    messages: withoutImagesForTextModel(
+      resolved.protocol === "openai-chat" && usesInlineThink(resolved.providerId, model)
+        ? rewrapThinkHistory(history)
+        : history,
+      sees,
+    ),
     model,
     // OpenAI documents prompt_cache_key; other vendors may refuse the field.
     ...(resolved.providerId === "openai"
@@ -612,7 +625,7 @@ export async function completeUpstream(input: {
     status: 502,
     type: "upstream_error",
     code: "upstream_protocol_error",
-    // eve folds this message into the failed turn's text. Only the status and
+    // The client folds this message into the failed turn's text. Only the status and
     // the provider's error type and code travel: its free-text message can
     // quote a masked key or the request, so that stays in the local log.
     message: `upstream_protocol_error (${refusal.kind})`,

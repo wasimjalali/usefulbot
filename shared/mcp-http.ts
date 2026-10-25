@@ -1,10 +1,9 @@
-import { assertConnectionUrl, assertResolvedPublic } from "./connection-url.ts";
-import { measureOpenApiSpecText, type SpecSize } from "./tool-wire-size.ts";
+import { assertResolvedPublic } from "./connection-url.ts";
 import { mountedSchemaBytes } from "./json-schema-zod.ts";
 
 /**
  * Tiny Streamable HTTP JSON-RPC client for listing tools and reading UI
- * resources. Tool execution stays in eve. Tests inject fetch.
+ * resources and calling tools. Tests inject fetch.
  */
 
 export type McpToolInfo = {
@@ -105,7 +104,6 @@ function activeFetch(): FetchFn {
  * limit is enforced while reading, not after.
  */
 const MAX_RPC_BODY_BYTES = 4 * 1024 * 1024;
-const MAX_SPEC_BODY_BYTES = 1024 * 1024;
 
 async function boundedText(res: Response, max: number): Promise<string> {
   const reader = res.body?.getReader();
@@ -690,32 +688,3 @@ export async function callMcpTool(
   if (JSON.stringify(rec).length > TOOL_RESULT_MAX) throw new Error("mcp_tool_result_too_large");
   return rec;
 }
-
-/**
- * How big an OpenAPI connection is: its operation count and the argument
- * schema bytes eve will build from it, resolved the way eve resolves them.
- * Null when the spec could not be read or is not one.
- */
-export async function measureOpenApiConnection(
-  specUrl: string,
-  headers: Record<string, string> = {},
-): Promise<SpecSize | null> {
-  const target = await assertResolvedPublic(specUrl);
-  try {
-    const res = await activeFetch()(target, {
-      headers: { accept: "application/json", ...headers },
-      // Same reason as the JSON-RPC call above.
-      redirect: "error",
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!res.ok) return null;
-    // Bounded while reading: the old check ran after the whole thing was
-    // already in memory, which is the part that hurts.
-    const body = await boundedText(res, MAX_SPEC_BODY_BYTES);
-    return measureOpenApiSpecText(body);
-  } catch {
-    return null;
-  }
-}
-
-

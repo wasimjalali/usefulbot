@@ -2,10 +2,9 @@
 import Foundation
 
 /// The services a release build runs. A release carries them in
-/// `Contents/Resources/runtime` (scripts/build-runtime.mjs), but eve compiles
-/// and keeps its sessions under the folder it runs from, and an update replaces
-/// the whole bundle. So the payload is copied to a writable folder and run
-/// from there; `.eve/` in that folder is never touched by a copy.
+/// `Contents/Resources/runtime` (scripts/build-runtime.mjs), and an update
+/// replaces the whole bundle. So the payload is copied to a writable folder and
+/// run from there.
 ///
 /// The dev build (`AppVariant.dev`) does the same, in its own folder
 /// (`~/Library/Application Support/Useful Bot Dev/app`), never reading the
@@ -194,15 +193,14 @@ public enum RuntimeInstall {
             if (try? String(contentsOf: stamp, encoding: .utf8)) != wanted {
                 // The stamp goes first, so a copy cut short is redone on the next launch.
                 try? fm.removeItem(at: stamp)
-                // Everything the payload owns is replaced; what the services wrote
-                // at runtime (.eve, eve's production output) and the lock stay.
-                try runTool(ToolInvocation(tool: "/usr/bin/rsync", arguments: ["-a", "--delete", "--exclude", "/.eve/", "--exclude", "/.output/",
+                // Everything the payload owns is replaced; the lock stays.
+                try runTool(ToolInvocation(tool: "/usr/bin/rsync", arguments: ["-a", "--delete",
                                            "--exclude", "/\(stampName)", "--exclude", "/.ub-install.lock",
                                            bundled.path + "/", root.path + "/"]), 600)
                 // A payload unpacked from a download can carry the quarantine flag,
                 // and Gatekeeper would then stop the first `node` it runs. `-d`
                 // fails on every file without the flag, so all extended attributes
-                // are cleared, on the payload's own files only (never .eve).
+                // are cleared, on the payload's own files only.
                 let owned = try fm.contentsOfDirectory(atPath: bundled.path).filter { $0 != stampName }
                 try runTool(ToolInvocation(tool: "/usr/bin/xattr", arguments: ["-cr"] + owned.map { root.appendingPathComponent($0).path }), 300)
                 try wanted.write(to: stamp, atomically: true, encoding: .utf8)

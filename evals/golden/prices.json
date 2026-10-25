@@ -1,0 +1,22 @@
+{
+  "model": "deepseek-flash (served by DeepSeek-V4.1-Flash-1017)",
+  "provider": "deepseek",
+  "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+  "fetched": "2026-10-25",
+  "currency": "$ as printed on the page (no currency code given; read as USD)",
+  "per_million_tokens": {
+    "input_cache_hit": { "offpeak": 0.003, "peak": 0.006 },
+    "input_cache_miss": { "offpeak": 0.15, "peak": 0.3 },
+    "output": { "offpeak": 0.6, "peak": 1.2 }
+  },
+  "peak_utc": {
+    "days": "Mon-Fri",
+    "windows": [["01:00", "04:00"], ["06:00", "10:00"]]
+  },
+  "notes": [
+    "Off-peak is half the peak rate. Peak is 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday, except Chinese public holidays. Everything else is off-peak. cost.py applies the windows per request from its timestamp and does not know the holiday calendar, so a run on a Chinese public holiday is priced slightly high.",
+    "The router's usage table records input and output tokens only, not how many input tokens were cache hits. cost.py prices every input token at the cache-miss rate, so the input cost is an upper bound (cache hits cost 2 percent of that).",
+    "DeepSeek also bills server-side Search and Fetch at $0.75 per 1,000 successful requests, but that does not apply here: Useful Bot's web_search goes through the router's own search provider. cost.py reports the router's search_hits count for the window and does not price it.",
+    "The model name on the page is deepseek-flash; the legacy name deepseek-v4-flash is billed at the same Flash price. The router rows for this app carry model deepseek-flash."
+  ]
+}

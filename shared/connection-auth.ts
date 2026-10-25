@@ -5,10 +5,9 @@ import { McpError } from "./mcp-http.ts";
 import { OAUTH_TIMEOUT_MS, OAuthRefreshError, refreshMcpOAuth, type OAuthTokenBundle } from "./mcp-oauth.ts";
 
 /**
- * How a connection proves who it is. eve owns this for the connections it
- * mounts; the tools this app mounts on demand call the same server over plain
- * HTTP and need the same headers, so the builders live here rather than
- * inside the eve registry file that used to hold them.
+ * How a connection proves who it is. The tools a chat picks from a server call
+ * it over plain HTTP and need the headers, so the builders live here, beside
+ * the Keychain items they read.
  */
 
 export function parseBundle(raw: string | null): OAuthTokenBundle | null {
@@ -218,8 +217,8 @@ function refreshOnce(id: string): Promise<OAuthTokenBundle> {
 
 /**
  * The access token for an OAuth connection, refreshed when it is about to
- * expire. The refreshed bundle is written back, so the next caller (eve's own
- * registry or a tool wrapper) reads the live one.
+ * expire. The refreshed bundle is written back, so the next caller
+ * (a tool call or a listing) reads the live one.
  */
 export async function oauthToken(entry: ConnectionEntry): Promise<{ token: string; expiresAt?: number }> {
   let bundle = parseBundle(keychainGet(connectionSecretService(entry.id)));

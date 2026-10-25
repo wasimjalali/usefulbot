@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import UsefulBotCore
 
-/// A send refused before eve took the turn leaves a failed bubble: the text
+/// A send refused before the engine took the turn leaves a failed bubble: the text
 /// lives there, not back in the composer. These pin where that bubble goes,
 /// that it outlives a rebuild and a relaunch, and what Retry and Edit do.
 @Suite struct UnsentMessageTests {
@@ -19,17 +19,20 @@ import Testing
         )
     }
 
-    private func replay() -> StreamProjection {
-        var p = StreamProjection()
-        p.apply(EveEvent(type: "message.received", id: "u1", message: "hi", turnId: "t1", index: 1, sessionId: "s"))
-        p.apply(EveEvent(type: "message.completed", id: "a1", message: "Hello", turnId: "t1", index: 2, sessionId: "s"))
-        p.apply(EveEvent(type: "turn.completed", id: "c1", turnId: "t1", index: 3, sessionId: "s"))
-        return p
+    private func replay() -> ChatProjection {
+        var projection = ChatProjection()
+        projection.load(RowsPage(
+            rows: [
+                ChatRow(rowId: "u1", kind: .user, turnId: "t1", text: "hi"),
+                ChatRow(rowId: "a1", kind: .assistant, turnId: "t1", text: "Hello"),
+            ],
+            tailSeq: 3, epoch: "e1"
+        ))
+        return projection
     }
 
-    private func rows(_ p: StreamProjection, _ unsent: [UnsentMessage]) -> [String] {
-        Transcript.merge(events: [], messages: p.messages, failures: p.failureMarks, unsent: unsent)
-            .map { "\($0.kind.rawValue):\($0.id)" }
+    private func rows(_ projection: ChatProjection, _ unsent: [UnsentMessage]) -> [String] {
+        projection.transcript(localUnsent: unsent).map { "\($0.kind.rawValue):\($0.id)" }
     }
 
     // MARK: placement
@@ -37,7 +40,7 @@ import Testing
     /// One refused send is one user bubble and one failed line, under its
     /// anchor, with the reason in plain words.
     @Test func aRefusalIsOneBubbleAndOneLineUnderItsAnchor() {
-        let merged = Transcript.merge(events: [], messages: replay().messages, unsent: [item()])
+        let merged = replay().transcript(localUnsent: [item()])
         #expect(merged.map { "\($0.kind.rawValue):\($0.id)" } == [
             "user:u1", "assistant:a1", "user:unsent-m1", "unsent:unsent-line-m1",
         ])
@@ -45,9 +48,9 @@ import Testing
         #expect(merged[3].text == "Not sent. The local server refused it.")
     }
 
-    /// A reload replays the session into a fresh projection. The failed
-    /// bubble was never stored by eve, so it has to come from the ledger and
-    /// land in the same place.
+    /// A reload reads the rows into a fresh projection. The failed bubble was
+    /// never stored by the engine, so it has to come from the ledger and land
+    /// in the same place.
     @Test func theMarkSurvivesATranscriptRebuild() {
         let before = rows(replay(), [item()])
         let after = rows(replay(), [item()])
@@ -75,13 +78,16 @@ import Testing
     /// A turn that started and failed is the existing failure row, never a
     /// "Not sent" mark.
     @Test func aTurnThatStartedAndFailedKeepsItsFailureRow() {
-        var p = StreamProjection()
-        p.beginTurn()
-        p.apply(EveEvent(type: "message.received", id: "\(EveStream.optimisticUserPrefix)x", message: "hi"), live: true)
-        p.apply(EveEvent(type: "message.received", id: "u1", message: "hi", turnId: "t1", index: 1, sessionId: "s"), live: true)
-        p.apply(EveEvent(type: "turn.failed", id: "f1", message: "upstream_protocol_error (400 invalid_request_error)", turnId: "t1", index: 2, sessionId: "s"), live: true)
-        let got = rows(p, [])
-        #expect(got.contains("failure:failure-f1"))
+        var failure = ChatRow(rowId: "t1:f", kind: .failure, turnId: "t1")
+        failure.code = "upstream_protocol_error"
+        failure.detail = "upstream_protocol_error (400 invalid_request_error)"
+        var projection = ChatProjection()
+        projection.load(RowsPage(
+            rows: [ChatRow(rowId: "t1:u", kind: .user, turnId: "t1", text: "hi"), failure],
+            tailSeq: 2, epoch: "e1"
+        ))
+        let got = rows(projection, [])
+        #expect(got.contains("failure:t1:f"))
         #expect(!got.contains { $0.hasPrefix("unsent:") })
     }
 
@@ -142,11 +148,11 @@ import Testing
     @Test func theQuoteRoundTrips() throws {
         let store = tempStore()
         var original = item("m1")
-        original.quote = UnsentQuote(botId: "bot1", text: "an earlier reply", author: "Ada")
-        try store.save([original], botId: "bot1")
-        #expect(store.load(botId: "bot1")[0].quote == UnsentQuote(botId: "bot1", text: "an earlier reply", author: "Ada"))
+        original.quote = UnsentQuote(botId: "bot1", text: "an earlier reply")
+        try store.save([original], chatId: "chat1")
+        #expect(store.load(chatId: "chat1")[0].quote == UnsentQuote(botId: "bot1", text: "an earlier reply"))
         // Files saved before the field existed still load.
-        #expect(store.load(botId: "bot2").isEmpty)
+        #expect(store.load(chatId: "chat2").isEmpty)
     }
 
     /// The file keeps the newest 20, and no bytes or file bodies reach it.
@@ -155,8 +161,8 @@ import Testing
         let doc = UsefulBotCore.Attachment(id: "f2", name: "notes.txt", bytes: 5, text: "secret body")
         let picture = UsefulBotCore.Attachment(id: "f1", name: "c.png", bytes: 9, text: nil, mediaType: "image/png", dataUrl: "data:image/png;base64,AAAA")
         let many = (0..<25).map { item("m\($0)", files: $0 == 24 ? [doc, picture] : []) }
-        try store.save(many, botId: "bot1")
-        let loaded = store.load(botId: "bot1")
+        try store.save(many, chatId: "chat1")
+        let loaded = store.load(chatId: "chat1")
         #expect(loaded.count == UnsentList.cap)
         #expect(loaded.first?.id == "m5")
         #expect(loaded.last?.files[0].text == nil)
@@ -190,11 +196,10 @@ import Testing
         #expect(sent?.message == "hello")
         list.remove("m1")
         #expect(list.items.isEmpty)
-        // The retried send shows as its own optimistic row, once.
+        // The retried send shows as its own pending row, once.
         var p = replay()
-        p.beginTurn()
-        p.apply(EveEvent(type: "message.received", id: "\(EveStream.optimisticUserPrefix)y", message: "hello"), live: true)
-        let got = Transcript.merge(events: [], messages: p.messages, unsent: list.items)
+        p.addPending(.init(clientId: "c9", text: "hello"))
+        let got = p.transcript(localUnsent: list.items)
         #expect(got.filter { $0.text == "hello" }.count == 1)
         #expect(!got.contains { $0.kind == .unsent })
     }
@@ -245,8 +250,8 @@ import Testing
         let picture = UsefulBotCore.Attachment(id: "f1", name: "cat-ab12.png", bytes: 9, text: nil, mediaType: "image/png", dataUrl: "data:image/png;base64,AAAA")
         let doc = UsefulBotCore.Attachment(id: "f2", name: "notes.txt", bytes: 5, text: "notes", mediaType: nil, dataUrl: nil)
         let original = item("m1", message: "look", anchor: "a1", files: [picture, doc])
-        try store.save([original, item("m2")], botId: "bot1")
-        let loaded = store.load(botId: "bot1")
+        try store.save([original, item("m2")], chatId: "chat1")
+        let loaded = store.load(chatId: "chat1")
         #expect(loaded.count == 2)
         #expect(loaded[0].message == "look")
         #expect(loaded[0].reason == original.reason)
@@ -258,25 +263,25 @@ import Testing
         // A file body stays in memory only.
         #expect(loaded[0].files[1].text == nil)
         // Another bot's list is its own.
-        #expect(store.load(botId: "bot2").isEmpty)
+        #expect(store.load(chatId: "chat2").isEmpty)
     }
 
     /// Saving an empty list removes the file, and clear drops it for good.
     @Test func clearingTheStoreForgetsTheBot() throws {
         let store = tempStore()
-        try store.save([item()], botId: "bot1")
-        try store.save([], botId: "bot1")
-        #expect(store.load(botId: "bot1").isEmpty)
-        try store.save([item()], botId: "bot1")
-        store.clear(botId: "bot1")
-        #expect(store.load(botId: "bot1").isEmpty)
+        try store.save([item()], chatId: "chat1")
+        try store.save([], chatId: "chat1")
+        #expect(store.load(chatId: "chat1").isEmpty)
+        try store.save([item()], chatId: "chat1")
+        store.clear(chatId: "chat1")
+        #expect(store.load(chatId: "chat1").isEmpty)
     }
 
     /// A bot id with path pieces cannot reach outside the folder.
     @Test func aHostileBotIdStaysInsideTheFolder() throws {
         let store = tempStore()
-        try store.save([item()], botId: "../../escape")
-        #expect(store.load(botId: "../../escape").count == 1)
+        try store.save([item()], chatId: "../../escape")
+        #expect(store.load(chatId: "../../escape").count == 1)
         #expect(!FileManager.default.fileExists(atPath: store.directory.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("escape.json").path))
     }
 

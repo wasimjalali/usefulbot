@@ -9,6 +9,15 @@ import Testing
         return try JSONDecoder().decode(DirectConnection.self, from: Data(json.utf8))
     }
 
+    @Test func readyServerWithToolCountShowsKindAndCount() throws {
+        func ready(_ count: Int) throws -> ConnectorTile {
+            let json = #"{"id":"x","name":"X","url":"https://x.com/mcp","kind":"mcp","authKind":"none","builtin":false,"state":"ready","toolCount":\#(count),"tools":[]}"#
+            return ConnectorTile(server: try JSONDecoder().decode(DirectConnection.self, from: Data(json.utf8)))
+        }
+        #expect(try ready(2).status == "MCP server · 2 tools")
+        #expect(try ready(1).status == "MCP server · 1 tool")
+    }
+
     private func app(_ slug: String, name: String, connected: Bool = true) -> ConnectorToolkit {
         ConnectorToolkit(slug: slug, name: name, logo: "https://logos.composio.dev/api/\(slug)", noAuth: false, connected: connected, accountId: "ca_\(slug)", status: "ACTIVE")
     }
@@ -39,6 +48,25 @@ import Testing
         #expect(tile.mark == .added)
         #expect(tile.logoURL == "https://logos.composio.dev/api/gmail")
         #expect(tile.id == "app:gmail")
+    }
+
+    @Test func rowDecodesEveryAccountIdAndDefaultsToTheOne() throws {
+        let many = #"{"slug":"gmail","name":"Gmail","accountId":"ca_1","accountIds":["ca_1","ca_2"],"needsSignIn":true}"#
+        #expect(try JSONDecoder().decode(ConnectorToolkit.self, from: Data(many.utf8)).accountIds == ["ca_1", "ca_2"])
+        let old = #"{"slug":"gmail","name":"Gmail"}"#
+        #expect(try JSONDecoder().decode(ConnectorToolkit.self, from: Data(old.utf8)).accountIds == [])
+        #expect(app("gmail", name: "Gmail").accountIds == ["ca_gmail"])
+    }
+
+    @Test func appWhoseSignInLapsedStaysAddedWithSignInAgain() throws {
+        let lapsed = ConnectorToolkit(slug: "gmail", name: "Gmail", logo: nil, noAuth: false, connected: false, accountId: "ca_gmail", status: "EXPIRED", needsSignIn: true)
+        let tile = ConnectorTile(app: lapsed)
+        #expect(tile.needsSignIn)
+        #expect(tile.mark == .added)
+        #expect(tile.status == "Sign-in expired")
+        // An app that is neither connected nor lapsed is still left out of the added list.
+        let tiles = ConnectorTile.merge(apps: [lapsed, app("notion", name: "Notion", connected: false)], servers: [])
+        #expect(tiles.map(\.id) == ["app:gmail"])
     }
 
     @Test func mergeListsReadyFirstThenByNameAndSkipsUnconnectedApps() throws {

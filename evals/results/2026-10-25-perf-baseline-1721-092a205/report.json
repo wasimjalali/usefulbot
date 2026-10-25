@@ -1,0 +1,684 @@
+{
+  "breaches": [
+    "cold_launch: cold-cold_first_open_tools-1: never landed",
+    "cold_launch: cold-cold_first_open_tools-1: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_replies-1: never landed",
+    "cold_launch: cold-cold_first_open_replies-1: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_tools-2: never landed",
+    "cold_launch: cold-cold_first_open_tools-2: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_replies-2: never landed",
+    "cold_launch: cold-cold_first_open_replies-2: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_tools-3: never landed",
+    "cold_launch: cold-cold_first_open_tools-3: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_replies-3: never landed",
+    "cold_launch: cold-cold_first_open_replies-3: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_tools-4: never landed",
+    "cold_launch: cold-cold_first_open_tools-4: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_replies-4: never landed",
+    "cold_launch: cold-cold_first_open_replies-4: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_tools-5: never landed",
+    "cold_launch: cold-cold_first_open_tools-5: opened on , not Perf Short A",
+    "cold_launch: cold-cold_first_open_replies-5: never landed",
+    "cold_launch: cold-cold_first_open_replies-5: opened on , not Perf Short A"
+  ],
+  "command": "baseline",
+  "facts": {
+    "app": "/Users/wasimjalali/Desktop/useful-bot/macos/dist/Useful Bot Dev.app",
+    "appSha256": "684057ff6dfd50cdd13dfc300bd2126a67e543d5988cab21409c53919960fae3",
+    "appSourcesMatch": true,
+    "busy": [
+      "cold-cold_first_open_tools-1 342% (48% syspolicyd; 40% WindowServer; 23% coreaudiod)",
+      "cold-cold_first_open_replies-2 304% (41% WindowServer; 40% Brave; 26% (node))"
+    ],
+    "externalCpu": 159,
+    "externalCpuDuringRun": [
+      [
+        "cold-cold_first_open_tools-1",
+        342,
+        [
+          "48% syspolicyd",
+          "40% WindowServer",
+          "23% coreaudiod"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-1",
+        222,
+        [
+          "34% WindowServer",
+          "25% (node)",
+          "19% Brave"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-2",
+        238,
+        [
+          "41% WindowServer",
+          "20% coreaudiod",
+          "12% Brave"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-2",
+        304,
+        [
+          "41% WindowServer",
+          "40% Brave",
+          "26% (node)"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-3",
+        183,
+        [
+          "38% WindowServer",
+          "13% node",
+          "13% Brave"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-3",
+        174,
+        [
+          "38% WindowServer",
+          "12% Brave",
+          "11% tccd"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-4",
+        186,
+        [
+          "33% WindowServer",
+          "26% node",
+          "17% coreaudiod"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-4",
+        215,
+        [
+          "40% WindowServer",
+          "22% (node)",
+          "20% coreaudiod"
+        ]
+      ],
+      [
+        "cold-cold_first_open_tools-5",
+        195,
+        [
+          "40% WindowServer",
+          "20% coreaudiod",
+          "11% tccd"
+        ]
+      ],
+      [
+        "cold-cold_first_open_replies-5",
+        180,
+        [
+          "36% WindowServer",
+          "24% (node)",
+          "10% tccd"
+        ]
+      ],
+      [
+        "warm",
+        205,
+        [
+          "33% WindowServer",
+          "26% node",
+          "20% coreaudiod"
+        ]
+      ],
+      [
+        "end",
+        186,
+        [
+          "43% WindowServer",
+          "16% spotlightknowledged.updater",
+          "16% Brave"
+        ]
+      ]
+    ],
+    "gitDirty": false,
+    "gitSha": "092a2058239933c85e41ef9161f17124d159189f",
+    "loadAverage": "{ 3.30 4.88 6.16 }",
+    "lowPowerMode": false,
+    "macOS": "27.0.1",
+    "machine": "Apple M4",
+    "memoryFree": "61%",
+    "power": "AC",
+    "runtimeStamp": "0.0.0-dev+3d5c303f.e00ed0ae",
+    "screenLocked": false,
+    "thermal": "Note: No thermal warning level has been recorded Note: No performance warning level has been recorded Note: No CPU power status has been recorded",
+    "webMode": "production"
+  },
+  "failures": [
+    "warm: the app aborted the scenario: step 0: Perf Long Tools never landed"
+  ],
+  "kind": "baseline",
+  "samples": [
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 804.354834,
+      "last_change_t": 323511458071333,
+      "launch": "cold-cold_first_open_tools-1",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323508376264666,
+      "visual_ms": 3081.806667
+    },
+    {
+      "app_ms": 354.278416,
+      "blocks": 61,
+      "case": "cold_first_open_tools",
+      "chat": "Perf Long Tools",
+      "first_change_ms": 76.131125,
+      "last_change_t": 323512649181708,
+      "launch": "cold-cold_first_open_tools-1",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 77.7005,
+      "rows_first_paint_ms": 77.638041,
+      "stall_ms": 1.970792,
+      "t0": 323512249418750,
+      "visual_ms": 399.762958
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 539.446542,
+      "last_change_t": 323522264776708,
+      "launch": "cold-cold_first_open_replies-1",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323521240012666,
+      "visual_ms": 1024.764042
+    },
+    {
+      "app_ms": 726.790292,
+      "blocks": 61,
+      "case": "cold_first_open_replies",
+      "chat": "Perf Long Replies",
+      "first_change_ms": 57.555917,
+      "last_change_t": 323524346766250,
+      "launch": "cold-cold_first_open_replies-1",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 106.72075,
+      "rows_first_paint_ms": 104.426417,
+      "stall_ms": 47.4535,
+      "t0": 323523467428541,
+      "visual_ms": 879.337709
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 389.487958,
+      "last_change_t": 323534024829833,
+      "launch": "cold-cold_first_open_tools-2",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323532952327500,
+      "visual_ms": 1072.502333
+    },
+    {
+      "app_ms": 380.494292,
+      "blocks": 61,
+      "case": "cold_first_open_tools",
+      "chat": "Perf Long Tools",
+      "first_change_ms": 66.676,
+      "last_change_t": 323535610359166,
+      "launch": "cold-cold_first_open_tools-2",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 75.610375,
+      "rows_first_paint_ms": 75.567458,
+      "stall_ms": 40.317917,
+      "t0": 323535195328333,
+      "visual_ms": 415.030833
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 573.150916,
+      "last_change_t": 323545395228000,
+      "launch": "cold-cold_first_open_replies-2",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323544285249500,
+      "visual_ms": 1109.9785
+    },
+    {
+      "app_ms": 632.420583,
+      "blocks": 61,
+      "case": "cold_first_open_replies",
+      "chat": "Perf Long Replies",
+      "first_change_ms": 75.484083,
+      "last_change_t": 323547332220500,
+      "launch": "cold-cold_first_open_replies-2",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 68.821125,
+      "rows_first_paint_ms": 66.735416,
+      "stall_ms": 44.887709,
+      "t0": 323546545418750,
+      "visual_ms": 786.80175
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 388.875292,
+      "last_change_t": 323557025379916,
+      "launch": "cold-cold_first_open_tools-3",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323555839260291,
+      "visual_ms": 1186.119625
+    },
+    {
+      "app_ms": 360.450167,
+      "blocks": 61,
+      "case": "cold_first_open_tools",
+      "chat": "Perf Long Tools",
+      "first_change_ms": 82.35275,
+      "last_change_t": 323558437671083,
+      "launch": "cold-cold_first_open_tools-3",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 85.113375,
+      "rows_first_paint_ms": 85.026334,
+      "stall_ms": 37.788792,
+      "t0": 323558028780791,
+      "visual_ms": 408.890292
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 427.974375,
+      "last_change_t": 323568122705666,
+      "launch": "cold-cold_first_open_replies-3",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323567085579333,
+      "visual_ms": 1037.126333
+    },
+    {
+      "app_ms": 613.783542,
+      "blocks": 61,
+      "case": "cold_first_open_replies",
+      "chat": "Perf Long Replies",
+      "first_change_ms": 63.181875,
+      "last_change_t": 323570029160916,
+      "launch": "cold-cold_first_open_replies-3",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 69.393625,
+      "rows_first_paint_ms": 69.346083,
+      "stall_ms": 66.009833,
+      "t0": 323569269155708,
+      "visual_ms": 760.005208
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 523.604583,
+      "last_change_t": 323579759657500,
+      "launch": "cold-cold_first_open_tools-4",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323578703674458,
+      "visual_ms": 1055.983042
+    },
+    {
+      "app_ms": 348.460291,
+      "blocks": 61,
+      "case": "cold_first_open_tools",
+      "chat": "Perf Long Tools",
+      "first_change_ms": 59.863958,
+      "last_change_t": 323581318777541,
+      "launch": "cold-cold_first_open_tools-4",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 73.21625,
+      "rows_first_paint_ms": 73.137375,
+      "stall_ms": 44.166667,
+      "t0": 323580926323750,
+      "visual_ms": 392.453791
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 586.265,
+      "last_change_t": 323590945897291,
+      "launch": "cold-cold_first_open_replies-4",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323589889765291,
+      "visual_ms": 1056.132
+    },
+    {
+      "app_ms": 659.41525,
+      "blocks": 61,
+      "case": "cold_first_open_replies",
+      "chat": "Perf Long Replies",
+      "first_change_ms": 68.574375,
+      "last_change_t": 323592868425833,
+      "launch": "cold-cold_first_open_replies-4",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 71.453417,
+      "rows_first_paint_ms": 71.401583,
+      "stall_ms": 40.688833,
+      "t0": 323592045520708,
+      "visual_ms": 822.905125
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 391.395209,
+      "last_change_t": 323602355747666,
+      "launch": "cold-cold_first_open_tools-5",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323601317082666,
+      "visual_ms": 1038.665
+    },
+    {
+      "app_ms": 353.36,
+      "blocks": 61,
+      "case": "cold_first_open_tools",
+      "chat": "Perf Long Tools",
+      "first_change_ms": 82.711541,
+      "last_change_t": 323603927831708,
+      "launch": "cold-cold_first_open_tools-5",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 79.812208,
+      "rows_first_paint_ms": 79.714125,
+      "stall_ms": 30.309666,
+      "t0": 323603478898875,
+      "visual_ms": 448.932833
+    },
+    {
+      "case": "cold_launch",
+      "chat": "",
+      "first_change_ms": 544.713958,
+      "last_change_t": 323613593851541,
+      "launch": "cold-cold_first_open_replies-5",
+      "problems": [
+        "never landed",
+        "opened on , not Perf Short A"
+      ],
+      "t0": 323612483016750,
+      "visual_ms": 1110.834791
+    },
+    {
+      "app_ms": 604.391166,
+      "blocks": 61,
+      "case": "cold_first_open_replies",
+      "chat": "Perf Long Replies",
+      "first_change_ms": 80.19075,
+      "last_change_t": 323615413434375,
+      "launch": "cold-cold_first_open_replies-5",
+      "loaded": 60,
+      "problems": [],
+      "reason": "settled",
+      "rows": 60,
+      "rows_done_ms": 65.117458,
+      "rows_first_paint_ms": 65.040708,
+      "stall_ms": 41.733834,
+      "t0": 323614662366875,
+      "visual_ms": 751.0675
+    }
+  ],
+  "seconds": 149,
+  "sheets": {
+    "cold_first_open_replies": {
+      "file": "sheet-cold_first_open_replies.jpg",
+      "frameOffsetsMs": [
+        -49,
+        -14,
+        20,
+        75,
+        109,
+        144,
+        196,
+        230,
+        265,
+        316,
+        351,
+        385,
+        437,
+        471,
+        504,
+        557,
+        593,
+        628,
+        679,
+        713,
+        748,
+        810,
+        844,
+        913
+      ],
+      "launch": "cold-cold_first_open_replies-1"
+    },
+    "cold_first_open_tools": {
+      "file": "sheet-cold_first_open_tools.jpg",
+      "frameOffsetsMs": [
+        -35,
+        -3,
+        34,
+        83,
+        101,
+        117,
+        136,
+        154,
+        189,
+        204,
+        221,
+        238,
+        256,
+        274,
+        290,
+        307,
+        343,
+        360,
+        376,
+        396,
+        411,
+        429,
+        449,
+        483
+      ],
+      "launch": "cold-cold_first_open_tools-5"
+    },
+    "cold_launch": {
+      "file": "sheet-cold_launch.jpg",
+      "frameOffsetsMs": [
+        804,
+        919,
+        1022,
+        1110,
+        1210,
+        1300,
+        1404,
+        1491,
+        1594,
+        1683,
+        1786,
+        1874,
+        1976,
+        2063,
+        2168,
+        2255,
+        2360,
+        2446,
+        2551,
+        2640,
+        2741,
+        2828,
+        2931,
+        3117
+      ],
+      "launch": "cold-cold_first_open_tools-1"
+    }
+  },
+  "stamp": "2026-10-25-172113",
+  "summary": {
+    "cold_first_open_replies": {
+      "app_ms": {
+        "best": 604.4,
+        "median": 632.4,
+        "n": 5,
+        "worst": 726.8
+      },
+      "n": 5,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "rows_done_ms": {
+        "best": 65.1,
+        "median": 69.4,
+        "n": 5,
+        "worst": 106.7
+      },
+      "rows_first_paint_ms": {
+        "best": 65.0,
+        "median": 69.3,
+        "n": 5,
+        "worst": 104.4
+      },
+      "sources": [],
+      "stall_ms": {
+        "best": 40.7,
+        "median": 44.9,
+        "n": 5,
+        "worst": 66.0
+      },
+      "visual_ms": {
+        "best": 751.1,
+        "median": 786.8,
+        "n": 5,
+        "worst": 879.3
+      }
+    },
+    "cold_first_open_tools": {
+      "app_ms": {
+        "best": 348.5,
+        "median": 354.3,
+        "n": 5,
+        "worst": 380.5
+      },
+      "n": 5,
+      "problems": [],
+      "reasons": [
+        "settled"
+      ],
+      "rows_done_ms": {
+        "best": 73.2,
+        "median": 77.7,
+        "n": 5,
+        "worst": 85.1
+      },
+      "rows_first_paint_ms": {
+        "best": 73.1,
+        "median": 77.6,
+        "n": 5,
+        "worst": 85.0
+      },
+      "sources": [],
+      "stall_ms": {
+        "best": 2.0,
+        "median": 37.8,
+        "n": 5,
+        "worst": 44.2
+      },
+      "visual_ms": {
+        "best": 392.5,
+        "median": 408.9,
+        "n": 5,
+        "worst": 448.9
+      }
+    },
+    "cold_launch": {
+      "app_ms": null,
+      "n": 10,
+      "problems": [
+        "cold-cold_first_open_tools-1: never landed",
+        "cold-cold_first_open_tools-1: opened on , not Perf Short A",
+        "cold-cold_first_open_replies-1: never landed",
+        "cold-cold_first_open_replies-1: opened on , not Perf Short A",
+        "cold-cold_first_open_tools-2: never landed",
+        "cold-cold_first_open_tools-2: opened on , not Perf Short A",
+        "cold-cold_first_open_replies-2: never landed",
+        "cold-cold_first_open_replies-2: opened on , not Perf Short A",
+        "cold-cold_first_open_tools-3: never landed",
+        "cold-cold_first_open_tools-3: opened on , not Perf Short A",
+        "cold-cold_first_open_replies-3: never landed",
+        "cold-cold_first_open_replies-3: opened on , not Perf Short A",
+        "cold-cold_first_open_tools-4: never landed",
+        "cold-cold_first_open_tools-4: opened on , not Perf Short A",
+        "cold-cold_first_open_replies-4: never landed",
+        "cold-cold_first_open_replies-4: opened on , not Perf Short A",
+        "cold-cold_first_open_tools-5: never landed",
+        "cold-cold_first_open_tools-5: opened on , not Perf Short A",
+        "cold-cold_first_open_replies-5: never landed",
+        "cold-cold_first_open_replies-5: opened on , not Perf Short A"
+      ],
+      "reasons": [
+        "None"
+      ],
+      "rows_done_ms": null,
+      "rows_first_paint_ms": null,
+      "sources": [],
+      "stall_ms": null,
+      "visual_ms": {
+        "best": 1024.8,
+        "median": 1064.3,
+        "n": 10,
+        "worst": 3081.8
+      }
+    }
+  }
+}

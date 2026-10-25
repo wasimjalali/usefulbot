@@ -106,6 +106,10 @@ function readReseedMark(path: string): ReseedMark | "unreadable" | null {
 export function shellWasReseeded(path = defaultShellPath()): boolean {
   const mark = readReseedMark(path);
   if (!mark) return false;
+  // No age ends this. The owner's bots exist only on the backup, and nothing
+  // says how long the owner will take to restore it; their routines must
+  // outlive that. The orphan sweep skips the routines for as long as the mark
+  // stands (see `sweepOrphanState`).
   // A mark that exists but says nothing legible still says a reseed happened.
   if (mark === "unreadable") return true;
   const shell = peekShell(path);
@@ -121,7 +125,7 @@ export function shellWasReseeded(path = defaultShellPath()): boolean {
  * Read the roster without repairing it. `readShell` treats an unreadable store
  * as a reason to reseed, which is right for the app (an owner with a broken
  * store still gets a working one) and catastrophic for anything that deletes
- * by absence: every other bot's routines and transcripts become orphans.
+ * by absence: every routine whose bot is not on the stub becomes an orphan.
  *
  * Callers that delete must use this, do nothing when it returns null, and
  * check `shellWasReseeded` as well: null only covers a file this process could
@@ -136,7 +140,12 @@ export function peekShell(path = defaultShellPath()): ShellStore | null {
   }
 }
 
+/** The roster. A missing file is seeded; one that will not parse (any other version included) is backed up and reseeded. */
 export function readShell(path = defaultShellPath()): ShellStore {
+  return readShellFile(path);
+}
+
+function readShellFile(path: string): ShellStore {
   if (!existsSync(path)) {
     const seeded = seedStore();
     // A missing store lost nothing, so a mark left over from an older file
@@ -162,7 +171,12 @@ export function readShell(path = defaultShellPath()): ShellStore {
   }
 }
 
+/** Write the roster. */
 export function writeShell(store: ShellStore, path = defaultShellPath()): void {
+  writeShellFile(store, path);
+}
+
+function writeShellFile(store: ShellStore, path: string): void {
   const parsed = parseShell(store);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.${Date.now()}.${crypto.randomUUID().slice(0, 8)}.tmp`;
@@ -199,18 +213,56 @@ function sleep(ms: number): void {
 }
 
 /**
- * Locked read-modify-write for the shell store. The route and the handoff pump
- * both update bot rows, and a plain read/apply/write pair can drop the other
- * writer's row when they overlap; the directory lock keeps the update whole
+ * Locked read-modify-write for the shell store. The route and the engine both
+ * update the bot row, and a plain read/apply/write pair can drop the other
+ * writer's change when they overlap; the directory lock keeps the update whole
  * across requests and across processes.
  */
 export function updateShell(
   mutate: (store: ShellStore) => ShellStore,
   path = defaultShellPath(),
 ): ShellStore {
+  const release = acquireShellLock(path);
+  try {
+    const next = mutate(readShellFile(path));
+    writeShell(next, path);
+    return next;
+  } finally {
+    release();
+  }
+}
+
+/**
+ * `updateShell` for a caller that must not wait: when the lock stays held for
+ * `timeoutMs` it returns null instead of blocking for the full lock timeout,
+ * and the caller tries again later.
+ */
+export function tryUpdateShell(
+  mutate: (store: ShellStore) => ShellStore,
+  timeoutMs: number,
+  path = defaultShellPath(),
+): ShellStore | null {
+  let release: () => void;
+  try {
+    release = acquireShellLock(path, timeoutMs);
+  } catch (error) {
+    if (error instanceof Error && error.message === "shell_store_locked") return null;
+    throw error;
+  }
+  try {
+    const next = mutate(readShellFile(path));
+    writeShell(next, path);
+    return next;
+  } finally {
+    release();
+  }
+}
+
+/** The shell store's directory lock; the returned function releases it. */
+function acquireShellLock(path: string, timeoutMs = LOCK_TIMEOUT_MS): () => void {
   const lock = `${path}.lock`;
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   let held = false;
   while (!held) {
     try {
@@ -225,11 +277,7 @@ export function updateShell(
     }
   }
   if (!held) throw new Error("shell_store_locked");
-  try {
-    const next = mutate(readShell(path));
-    writeShell(next, path);
-    return next;
-  } finally {
+  return () => {
     try { rmdirSync(lock); } catch { /* ignore */ }
-  }
+  };
 }

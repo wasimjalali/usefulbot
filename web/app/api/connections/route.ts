@@ -16,7 +16,7 @@ import { webOrigin } from "../../../../shared/stack.ts";
 export const runtime = "nodejs";
 
 /**
- * Direct (MCP and OpenAPI) connections for the Connectors page. Same desktop
+ * Direct MCP connections for the Connectors page. Same desktop
  * gate, CSRF header and rate limit as the connectors route. Nothing returned
  * carries a token, a header or a Keychain item: the app sees what a
  * connection is, how it is doing and what tools it listed.

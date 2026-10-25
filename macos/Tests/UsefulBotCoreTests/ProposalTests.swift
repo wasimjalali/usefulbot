@@ -7,56 +7,13 @@ import Testing
         try JSONDecoder().decode(Proposal.self, from: Data(json.utf8))
     }
 
-    @Test func decodesACreateBotProposal() throws {
-        let proposal = try decode("""
-        {"id":"p1","kind":"createBot","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "name":"Scout","petname":"New Bot 2","title":"Research","description":"Find things",
-         "sectionId":null,"brief":"Find pricing","threadId":"bot-useful"}
-        """)
-        #expect(proposal.kind == .createBot)
-        #expect(proposal.name == "Scout")
-        #expect(proposal.petname == "New Bot 2")
-        #expect(proposal.title == "Research")
-        #expect(proposal.brief == "Find pricing")
-        #expect(proposal.isOpen())
-    }
-
-    @Test func decodesAProfileProposalWithAPatch() throws {
-        let proposal = try decode("""
-        {"id":"p2","kind":"updateBotProfile","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "botId":"b1","patch":{"name":"Scout","petname":"Scout","title":"Research Lead",
-         "description":"Owns research","avatarShape":"hex","avatarColor":"blue"}}
-        """)
-        #expect(proposal.botId == "b1")
-        #expect(proposal.patch?.avatarShape == "hex")
-        #expect(proposal.patch?.title == "Research Lead")
-    }
-
-    @Test func decodesAFanoutProposal() throws {
-        let proposal = try decode("""
-        {"id":"p3","kind":"fanout","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "message":"ship it","targetIds":["b1","b2"],"groupId":"g1","sourceBotId":"b9"}
-        """)
-        #expect(proposal.fanoutTargetId == "g1")
-        #expect(proposal.sourceBotId == "b9")
-    }
-
-    @Test func aPrunedFanoutHasNoTarget() throws {
-        let proposal = try decode("""
-        {"id":"p4","kind":"fanout","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "message":"nobody","targetIds":[],"groupId":null}
-        """)
-        #expect(proposal.fanoutTargetId == nil)
-        #expect(ProposalActions.confirm(proposal) == nil)
-    }
-
     @Test func expiredOrAnsweredProposalsAreNotOpen() throws {
         let expired = try decode("""
-        {"id":"p5","kind":"createBot","status":"pending","expiresAt":"2000-01-01T00:00:00.000Z","name":"Old"}
+        {"id":"p5","kind":"connectApp","status":"pending","expiresAt":"2000-01-01T00:00:00.000Z","name":"Old"}
         """)
         #expect(!expired.isOpen())
         let dismissed = try decode("""
-        {"id":"p6","kind":"createBot","status":"dismissed","expiresAt":"2099-01-01T00:00:00.000Z","name":"No"}
+        {"id":"p6","kind":"connectApp","status":"dismissed","expiresAt":"2099-01-01T00:00:00.000Z","name":"No"}
         """)
         #expect(!dismissed.isOpen())
     }
@@ -70,44 +27,11 @@ import Testing
         #expect(ProposalActions.confirm(proposal) == nil)
     }
 
-    @Test func profileProposalWithoutAPatchNeverConfirms() throws {
-        let proposal = try decode("""
-        {"id":"p8","kind":"updateBotProfile","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "botId":"b1","patch":null}
-        """)
-        #expect(proposal.patch == nil)
-        #expect(ProposalActions.confirm(proposal) == nil)
-    }
-
     @Test func unparseableExpiryIsClosed() throws {
         let proposal = try decode("""
-        {"id":"p9","kind":"createBot","status":"pending","expiresAt":"not a date","name":"Scout"}
+        {"id":"p9","kind":"connectApp","status":"pending","expiresAt":"not a date","name":"Scout"}
         """)
         #expect(!proposal.isOpen())
-    }
-
-    @Test func profileConfirmCarriesVisibleFieldsAndValidFaces() throws {
-        // Name/title/description plus a valid avatar travel; petname is never
-        // sent and the server's confirm would reject a mismatched avatar.
-        let proposal = try decode("""
-        {"id":"p10","kind":"updateBotProfile","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z",
-         "botId":"b1","patch":{"name":"Scout","petname":"Scout Two","title":"Research","description":"Owns it",
-          "avatarShape":"hex","avatarColor":"blue"}}
-        """)
-        let action = try #require(ProposalActions.confirm(proposal))
-        let patch = try #require(action["patch"] as? [String: Any])
-        #expect(patch["name"] as? String == "Scout")
-        #expect(patch["label"] as? String == "Research")
-        #expect(patch["petname"] == nil)
-        #expect(patch["avatarShape"] as? String == "hex")
-        #expect(patch["avatarColor"] as? String == "blue")
-    }
-
-    @Test func createConfirmRequiresAName() throws {
-        let proposal = try decode("""
-        {"id":"p12","kind":"createBot","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z"}
-        """)
-        #expect(ProposalActions.confirm(proposal) == nil)
     }
 
     @Test func decodesAConnectAppProposalInEveryPhase() throws {
@@ -257,7 +181,7 @@ import Testing
         #expect(waiting.busyMarkHolds(tapPhase: .waiting, tapWaitingSince: "2026-10-04T10:00:00.000Z", requestFinishedAt: nil, now: tap.addingTimeInterval(60)))
         // A card that is not a connect card has no tap record to cap it.
         let other = try decode("""
-        {"id":"p9","kind":"createBot","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z","name":"Old"}
+        {"id":"p9","kind":"somethingNew","status":"pending","expiresAt":"2099-01-01T00:00:00.000Z","name":"Old"}
         """)
         #expect(other.busyMarkHolds(tapPhase: .proposed, tapWaitingSince: nil, requestFinishedAt: tap, now: tap.addingTimeInterval(60)))
     }

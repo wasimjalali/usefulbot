@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { confinedCommand, sandboxAvailable, sandboxProfile, type ConfineOptions } from "../agent/lib/sandbox.ts";
-import { selectSandbox } from "../shared/sandbox.ts";
 import { resetOwnerPath } from "../shared/user-path.ts";
 
 const execFileAsync = promisify(execFile);
@@ -41,15 +40,6 @@ test("the profile names the folder and refuses credential files inside it", () =
   const readOnly = sandboxProfile(null);
   assert.equal(readOnly.includes("(allow file-write* (subpath \"/Users"), false);
   assert.ok(readOnly.includes('(deny file-read* (regex #"/\\.env($|[/.])"))'));
-});
-
-test("a pinned just-bash stays just-bash even when docker is on PATH", () => {
-  const decision = selectSandbox("just-bash", (name) => name === "docker");
-  assert.equal(decision.backend, "just-bash");
-  assert.equal(decision.isolation, "non-vm");
-  // The binaries are still reported for the setup and verify scripts.
-  assert.equal(decision.binaries.docker, true);
-  assert.equal(decision.binaries.microsandbox, false);
 });
 
 test("a confined line writes inside the folder and nowhere else", { skip: !darwin || !sandboxAvailable() }, async () => {

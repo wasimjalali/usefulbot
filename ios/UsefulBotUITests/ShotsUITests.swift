@@ -394,12 +394,12 @@ final class ShotsUITests: XCTestCase {
         app.terminate()
     }
 
-    /// Runtime-down banner: the gate kills eve (:4321) but leaves the web
+    /// Runtime-down banner: the gate kills the engine (:4321) but leaves the web
     /// service up, so `/api/status` answers with the probe failed and the
     /// chat-down copy shows. The paired app is left on the sim from leg C.
     func testRuntimeDownBanner() throws {
-        guard FileManager.default.contents(atPath: "/tmp/ub-eve-down") != nil else {
-            throw XCTSkip("/tmp/ub-eve-down missing — only valid while the gate holds eve down")
+        guard FileManager.default.contents(atPath: "/tmp/ub-engine-down") != nil else {
+            throw XCTSkip("/tmp/ub-engine-down missing — only valid while the gate holds the engine down")
         }
         for appearance in ["light", "dark"] {
             let app = XCUIApplication()

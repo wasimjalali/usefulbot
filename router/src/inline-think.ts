@@ -1,8 +1,8 @@
 // Some models write their thinking into the answer as `<think>…</think>`
 // instead of the reasoning field: MiniMax M3 through OpenCode does, and so
-// does MiniMax's own API unless asked otherwise. The AI SDK only reads the
-// field, so the thinking reached eve as answer text and both apps showed it
-// in the bubble. A think block that opens a message is moved into the
+// does MiniMax's own API unless asked otherwise. A client only reads the
+// field, so the thinking reached the app as answer text and showed in the
+// bubble. A think block that opens a message is moved into the
 // reasoning field here, for any model, so it lands where every other model's
 // thinking does. A tag further into the answer is left alone: that is the
 // model writing about tags.
@@ -11,7 +11,7 @@
 // (MiniMax's docs: keep the thinking in `content`, unmodified), so a model
 // seen doing this gets its reasoning re-wrapped into the content it sends.
 
-import { MAX_HELD_QUOTED, THINK_TAGS, scanThink, splitLeadingThink, type ThinkTag } from "../../shared/inline-think.ts";
+import { MAX_HELD_QUOTED, REASONING_FIELDS, REASONING_TEXT_FIELDS, THINK_TAGS, scanThink, splitLeadingThink, type ThinkTag } from "../../shared/inline-think.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -183,7 +183,7 @@ export function flushThinkStream(stream: ThinkStream): string | null {
  * moved into the reasoning field. Held text is released on the choice's
  * finish reason, or before `[DONE]` when none came. A choice that first
  * appears after every earlier one reached its answer passes through as it
- * is; eve never asks for more than one.
+ * is; the engine never asks for more than one.
  */
 export function splitThinkBlock(block: string, stream: ThinkStream): string {
   // Once the answer is under way, blocks pass straight through unparsed.
@@ -293,20 +293,53 @@ export function usesInlineThink(providerId: string, model: string): boolean {
   return inlineThinkModels.has(modelKey(providerId, model));
 }
 
-/** Index of the last user message, or -1 when there is none. */
+/**
+ * The text Pi's `openai-completions` client puts in front of a tool result's
+ * images. Chat Completions only takes images on user messages, so Pi sends
+ * them in a user message of their own, right after the tool results.
+ */
+export const PI_TOOL_IMAGE_TEXT = "Attached image(s) from tool result:";
+
+/**
+ * Pi's carrier for a tool result's images: a user message right after a tool
+ * message, holding that exact text and images only. It belongs to the turn
+ * of the tool call before it, not a new one.
+ */
+export function isToolImageCarrier(messages: unknown[], index: number): boolean {
+  const item = messages[index];
+  const before = messages[index - 1];
+  if (!isRecord(item) || !isRecord(before) || before.role !== "tool" || !Array.isArray(item.content)) return false;
+  let images = 0;
+  for (const part of item.content) {
+    if (!isRecord(part)) return false;
+    if (part.type === "image_url") images += 1;
+    else if (part.type !== "text" || part.text !== PI_TOOL_IMAGE_TEXT) return false;
+  }
+  return images > 0;
+}
+
+/**
+ * Index of the last user message that opens a turn, or -1 when there is none.
+ * Pi's tool-image carriers are skipped: they sit inside a turn.
+ */
 export function lastUserIndex(messages: unknown[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const item = messages[index];
-    if (isRecord(item) && item.role === "user") return index;
+    if (isRecord(item) && item.role === "user" && !isToolImageCarrier(messages, index)) return index;
   }
   return -1;
 }
 
 const REASONING_PART_TYPES = new Set(["reasoning", "thinking", "redacted_thinking"]);
 
-/** An assistant message without its reasoning field or reasoning parts. */
+/** A message without any of the reasoning fields. A new object. */
+function withoutReasoningFields(item: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !REASONING_FIELDS.includes(key)));
+}
+
+/** An assistant message without its reasoning fields or reasoning parts. */
 export function withoutReasoning(item: Record<string, unknown>): Record<string, unknown> {
-  const { reasoning_content: _reasoning, ...rest } = item;
+  const rest = withoutReasoningFields(item);
   if (Array.isArray(rest.content)) {
     return { ...rest, content: rest.content.filter((part) => !(isRecord(part) && typeof part.type === "string" && REASONING_PART_TYPES.has(part.type))) };
   }
@@ -343,11 +376,11 @@ export function rewrapThinkHistory(messages: unknown): unknown {
   return messages.map((item, index) => {
     if (!isRecord(item) || item.role !== "assistant") return item;
     if (index < turnStart) return withoutReasoning(item);
-    const reasoning = item.reasoning_content;
-    if (typeof reasoning !== "string" || !reasoning) return item;
+    const reasoning = REASONING_TEXT_FIELDS.map((field) => item[field]).find((value) => typeof value === "string" && value);
+    if (typeof reasoning !== "string") return item;
     // Only text or nothing can take a think block in front of it.
     if (item.content !== null && item.content !== undefined && typeof item.content !== "string") return item;
-    const { reasoning_content: _reasoning, ...rest } = item;
+    const rest = withoutReasoningFields(item);
     const content = typeof rest.content === "string" ? rest.content : "";
     if (splitLeadingThink(content)) return rest;
     return { ...rest, content: content ? `<think>${reasoning}</think>\n\n${content}` : `<think>${reasoning}</think>` };

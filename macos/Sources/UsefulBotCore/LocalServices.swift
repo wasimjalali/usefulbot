@@ -32,13 +32,11 @@ public struct LocalServices: Sendable {
     private let terminateGraceSeconds: Double
     /// How long `stopOwnServices` waits for the stopped services' processes to
     /// actually exit after SIGTERM before it sends SIGKILL. A freed port is not
-    /// an exit: Next and eve close their listener first and drain after.
+    /// an exit: Next and the engine close their listener first and drain after.
     private let stopExitGraceSeconds: Double
-    /// Where the dev app runs its services from. A daily app never adopts an
-    /// eve running from here.
-    private let devRuntimeRoot: String
-    private let releaseRuntimeRoot: String
-    private let checkoutRoot: String
+    /// The one running watch (see `startWatching`). A class, because the
+    /// struct is copied around and every copy must see the same task.
+    private let watcher = WatchHandle()
 
     public init(
         runner: ProcessRunner = FoundationProcessRunner(),
@@ -49,14 +47,8 @@ public struct LocalServices: Sendable {
         startGraceSeconds: Double = 20,
         restartIntervalSeconds: Double = 15,
         terminateGraceSeconds: Double = 3,
-        stopExitGraceSeconds: Double = 10,
-        devRuntimeRoot: String = RuntimeInstall.installRoot(variant: .dev).path,
-        releaseRuntimeRoot: String = RuntimeInstall.installRoot(variant: .daily).path,
-        checkoutRoot: String = (ServerConfig.defaultRepoPath as NSString).expandingTildeInPath
+        stopExitGraceSeconds: Double = 10
     ) {
-        self.devRuntimeRoot = devRuntimeRoot
-        self.releaseRuntimeRoot = releaseRuntimeRoot
-        self.checkoutRoot = checkoutRoot
         self.terminateGraceSeconds = terminateGraceSeconds
         self.stopExitGraceSeconds = stopExitGraceSeconds
         self.restartIntervalSeconds = restartIntervalSeconds
@@ -133,12 +125,12 @@ public struct LocalServices: Sendable {
         }
     }
 
-    private static let allModes: [ServiceMode] = [.router, .eve, .web]
+    private static let allModes: [ServiceMode] = [.router, .engine, .web]
 
     private func port(of mode: ServiceMode, variant: AppVariant) -> Int {
         switch mode {
         case .router: return variant.routerPort
-        case .eve: return variant.evePort
+        case .engine: return variant.enginePort
         case .web: return variant.webPort
         }
     }
@@ -184,7 +176,7 @@ public struct LocalServices: Sendable {
             let remaining = runner.strayServicePids(matching: matches)
             if !remaining.isEmpty, !Task.isCancelled { runner.terminate(pids: remaining, force: true) }
             // A launcher that exited on SIGTERM can leave its detached child
-            // (eve's) running; those were recorded when the SIGTERM went out.
+            // running; those were recorded when the SIGTERM went out.
             if !Task.isCancelled { runner.killTermedSurvivors() }
         }
     }
@@ -204,55 +196,43 @@ public struct LocalServices: Sendable {
     /// turn failed at the model call instead. The three are asked at once, so
     /// one unreachable service costs one probe timeout rather than three.
     ///
-    /// Ready also means it is OUR stack: the web and the router say which
-    /// stack they belong to, and one that says another (or, for dev, nothing)
-    /// is foreign. eve is a third-party service with no stack field; its port
-    /// is the variant's own, so up is asked of it, plus that whatever listens
-    /// there is a process of this install: another install's eve (or anything
-    /// else that answers 200) is foreign, never adopted or signalled.
+    /// Ready also means it is OUR stack: each of the three says which stack it
+    /// belongs to, and one that says another (or, for dev, nothing) is foreign.
     private func stackState(config: ServerConfig) async -> StackState {
         let variant = config.variant
         async let web = probe.read(config.healthURL)
         async let router = probe.read(variant.routerHealthURL)
-        async let eve = probe.read(variant.eveHealthURL)
+        async let engine = probe.read(variant.engineHealthURL)
         let webState = variant.readiness(of: await web)
         let routerState = variant.readiness(of: await router)
-        let eveUp = await eve != nil
-        if case .foreign = webState { return .foreign }
-        if case .foreign = routerState { return .foreign }
-        if eveUp {
-            if runner.hasForeignListener(port: variant.evePort, owns: eveOwnership(config: config)) { return .foreign }
+        let engineState = variant.readiness(of: await engine)
+        for state in [webState, routerState, engineState] {
+            if case .foreign = state { return .foreign }
         }
-        return webState == .ready && routerState == .ready && eveUp ? .ready : .notReady
+        return webState == .ready && routerState == .ready && engineState == .ready ? .ready : .notReady
     }
 
-    private func eveOwnership(config: ServerConfig) -> @Sendable (String) -> Bool {
-        let supervisor = self.supervisor
-        let repoPath = config.repoPath
-        let variant = config.variant
-        let devRoot = devRuntimeRoot
-        let releaseRoot = releaseRuntimeRoot
-        let checkout = checkoutRoot
-        return {
-            supervisor.isOwnEveProcess(
-                $0, variant: variant, repoPath: repoPath, devRuntimeRoot: devRoot,
-                releaseRuntimeRoot: releaseRoot, checkoutRoot: checkout)
-        }
-    }
-
-    /// For a `.foreignStack` outcome caused by the eve listener: which process
-    /// holds the port, with the path it runs from and its parent's. Nil when
-    /// it is not eve. The process lookups run off the main actor, with the
-    /// same ownership rule the readiness check used.
+    /// For a `.foreignStack` outcome: which process holds the port of a
+    /// service that answers as another stack, with the path it runs from and
+    /// its parent's. Nil when none is found. The process lookups run off the
+    /// main actor.
     public func foreignListenerDetail(config: ServerConfig) async -> String? {
-        let owns = eveOwnership(config: config)
+        let repoPath = config.repoPath
+        let supervisor = self.supervisor
+        let owns: @Sendable (String) -> Bool = { supervisor.isOwnNodeProcess($0, repoPath: repoPath) }
         let runner = self.runner
-        let port = config.variant.evePort
-        let foreign = await Task.detached { runner.foreignListeners(port: port, owns: owns).first }.value
-        guard let foreign else { return nil }
+        let variant = config.variant
+        let ports = [variant.enginePort, variant.routerPort, variant.webPort]
+        let found = await Task.detached { () -> (port: Int, pid: pid_t, command: String, parent: String?)? in
+            for port in ports {
+                if let first = runner.foreignListeners(port: port, owns: owns).first { return (port, first.pid, first.command, first.parent) }
+            }
+            return nil
+        }.value
+        guard let found else { return nil }
         func clip(_ text: String) -> String { text.count > 200 ? String(text.prefix(200)) + "..." : text }
-        var detail = "The agent (eve) on port \(port) is pid \(foreign.pid): \(clip(foreign.command))"
-        if let parent = foreign.parent, !parent.isEmpty { detail += " (parent: \(clip(parent)))" }
+        var detail = "The service on port \(found.port) is pid \(found.pid): \(clip(found.command))"
+        if let parent = found.parent, !parent.isEmpty { detail += " (parent: \(clip(parent)))" }
         return detail
     }
 
@@ -261,7 +241,7 @@ public struct LocalServices: Sendable {
         let ports: (ServiceMode) -> Int = { mode in
             switch mode {
             case .router: return variant.routerPort
-            case .eve: return variant.evePort
+            case .engine: return variant.enginePort
             case .web: return variant.webPort
             }
         }
@@ -281,8 +261,8 @@ public struct LocalServices: Sendable {
     /// as a wedged process and signal it. True on the first pass, where the
     /// listener predates this app's attempt; false on the retries, where it
     /// would be killing something this call just started.
-    func startMissing(config: ServerConfig, allowRestart: Bool = true, deadline: Date? = nil) async {
-        await ensureService(
+    func startMissing(config: ServerConfig, allowRestart: Bool = true, deadline: Date? = nil, only: ServiceMode? = nil) async {
+        if only == nil || only == .router { await ensureService(
             mode: .router,
             port: config.variant.routerPort,
             health: config.variant.routerHealthURL,
@@ -290,17 +270,17 @@ public struct LocalServices: Sendable {
             variant: config.variant,
             allowRestart: allowRestart,
             deadline: deadline
-        )
-        await ensureService(
-            mode: .eve,
-            port: config.variant.evePort,
-            health: config.variant.eveHealthURL,
+        ) }
+        if only == nil || only == .engine { await ensureService(
+            mode: .engine,
+            port: config.variant.enginePort,
+            health: config.variant.engineHealthURL,
             repoPath: config.repoPath,
             variant: config.variant,
             allowRestart: allowRestart,
             deadline: deadline
-        )
-        await ensureService(
+        ) }
+        if only == nil || only == .web { await ensureService(
             mode: .web,
             port: config.variant.webPort,
             health: config.healthURL,
@@ -308,7 +288,54 @@ public struct LocalServices: Sendable {
             variant: config.variant,
             allowRestart: allowRestart,
             deadline: deadline
-        )
+        ) }
+    }
+
+    // MARK: - Watching after launch
+
+    /// How many times one service is restarted inside `restartWindowSeconds`
+    /// before it is left dead: a service that keeps dying has a cause a restart
+    /// does not fix, and a loop would only hide it.
+    static let maxRestarts = 3
+    static let restartWindowSeconds: TimeInterval = 300
+
+    /// Watches the stack for the rest of the app's life, after `ensure` has
+    /// succeeded. Replaces a watch already running, so there is never a second.
+    /// `stopOwnServices` and `stopWatching` end it.
+    public func startWatching(config: ServerConfig, intervalSeconds: Double = 10) {
+        let ledger = RestartLedger()
+        watcher.replace(with: Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(intervalSeconds * 1_000_000_000))
+                if Task.isCancelled { return }
+                await watchTick(config: config, ledger: ledger, now: Date())
+            }
+        })
+    }
+
+    public func stopWatching() {
+        watcher.replace(with: nil)
+    }
+
+    /// One look at the stack. A service whose port has no listener and which
+    /// has no live process of ours is started again, through the same path as
+    /// the launch retries: `allowRestart: false` fills an empty port and never
+    /// signals a listener, so a slow starter and a foreign process are left be.
+    func watchTick(config: ServerConfig, ledger: RestartLedger, now: Date) async {
+        for mode in Self.allModes {
+            if Task.isCancelled { return }
+            guard runner.listeners(port: port(of: mode, variant: config.variant)).isEmpty,
+                  !runner.hasLiveSpawn(of: mode) else { continue }
+            switch ledger.record(mode, now: now) {
+            case .restart(let number):
+                runner.logServiceEvent(mode, "service \(mode.rawValue) is down, restarting (\(number) of \(Self.maxRestarts) in 5 minutes)")
+                await startMissing(config: config, allowRestart: false, only: mode)
+            case .giveUp:
+                runner.logServiceEvent(mode, "service \(mode.rawValue) died \(Self.maxRestarts) times in 5 minutes, giving up on restarting it")
+            case .stillGivenUp:
+                break
+            }
+        }
     }
 
     /// A service is left alone when its health endpoint answers. Otherwise any
@@ -398,12 +425,12 @@ public struct LocalServices: Sendable {
         return true
     }
 
-    /// Stops this checkout's own router, eve and web, leaving any foreign
+    /// Stops this checkout's own router, engine and web, leaving any foreign
     /// listener alone. The services outlive the app, so after an update the
     /// old version is still serving; its files are about to be replaced.
     ///
     /// Returns only once every process of this install has exited, not when a
-    /// port is free: Next and eve close the listener first and drain after (a
+    /// port is free: Next and the engine close the listener first and drain after (a
     /// write in flight, a child shutting down), and an old-version writer that
     /// survived into the runtime swap would write into the new files. The
     /// processes are found from the process table by the install-path ownership
@@ -418,6 +445,8 @@ public struct LocalServices: Sendable {
     /// recorded with.
     @discardableResult
     public func stopOwnServices(config: ServerConfig) async -> ServiceStopResult {
+        // Stopped first: a watch running during the stop would start them again.
+        stopWatching()
         let repoPath = config.repoPath
         let owns: @Sendable (String) -> Bool = { [supervisor] line in
             supervisor.isOwnNodeProcess(line, repoPath: repoPath)
@@ -425,7 +454,7 @@ public struct LocalServices: Sendable {
         let variant = config.variant
         let services: [(port: Int, health: URL, checksStack: Bool)] = [
             (variant.webPort, config.healthURL, true),
-            (variant.evePort, variant.eveHealthURL, false),
+            (variant.enginePort, variant.engineHealthURL, true),
             (variant.routerPort, variant.routerHealthURL, true),
         ]
         // Read before any signal, while the parent links still exist.
@@ -436,7 +465,7 @@ public struct LocalServices: Sendable {
             runner.stopOwnListeners(port: port, owns: owns)
             if await waitForPortFree(port: port, timeout: 5_000) { continue }
             // A cancelled wait returns at once; force-killing then would cut
-            // eve off mid-write. The retry's own boot stops them again.
+            // the engine off mid-write. The retry's own boot stops them again.
             if Task.isCancelled { return .cancelled }
             runner.forceStopOwnListeners(port: port, owns: owns)
             _ = await waitForPortFree(port: port, timeout: 1_000)
@@ -503,6 +532,48 @@ public struct LocalServices: Sendable {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return true
+    }
+}
+
+/// The restarts the watch has made, per service, so one that keeps dying is
+/// left after `LocalServices.maxRestarts` inside the window.
+final class RestartLedger: @unchecked Sendable {
+    enum Verdict: Equatable {
+        case restart(number: Int)
+        /// The limit was just reached: logged once.
+        case giveUp
+        case stillGivenUp
+    }
+
+    private let lock = NSLock()
+    private var restarts: [ServiceMode: [Date]] = [:]
+    private var givenUp: Set<ServiceMode> = []
+
+    /// Asks for a restart of `mode` at `now` and records it when allowed.
+    func record(_ mode: ServiceMode, now: Date) -> Verdict {
+        lock.lock(); defer { lock.unlock() }
+        let recent = (restarts[mode] ?? []).filter { now.timeIntervalSince($0) < LocalServices.restartWindowSeconds }
+        restarts[mode] = recent
+        if recent.count >= LocalServices.maxRestarts {
+            return givenUp.insert(mode).inserted ? .giveUp : .stillGivenUp
+        }
+        givenUp.remove(mode)
+        restarts[mode] = recent + [now]
+        return .restart(number: recent.count + 1)
+    }
+}
+
+/// Holds the one watch task; replacing it cancels the one before.
+final class WatchHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+
+    func replace(with next: Task<Void, Never>?) {
+        lock.lock()
+        let previous = task
+        task = next
+        lock.unlock()
+        previous?.cancel()
     }
 }
 
@@ -583,9 +654,12 @@ public protocol ProcessRunner: Sendable {
     /// SIGTERM (SIGKILL when `force`) to `process` if, checked immediately
     /// before the signal, it is still the same process. False when it was not.
     func signalProcess(_ process: OwnedProcess, force: Bool) -> Bool
+    /// One line in `mode`'s `service-<mode>.log`, stamped with the time.
+    func logServiceEvent(_ mode: ServiceMode, _ line: String)
 }
 
 extension ProcessRunner {
+    public func logServiceEvent(_ mode: ServiceMode, _ line: String) {}
     public func ownServiceProcesses(owns: @escaping @Sendable (String) -> Bool) -> [OwnedProcess] { [] }
     public func isStillRunning(_ process: OwnedProcess) -> Bool { false }
     public func signalProcess(_ process: OwnedProcess, force: Bool) -> Bool { false }
@@ -885,6 +959,10 @@ public struct FoundationProcessRunner: ProcessRunner {
         }
     }
 
+    public func logServiceEvent(_ mode: ServiceMode, _ line: String) {
+        Self.appendEvent(line, to: Self.logFile(label: mode.rawValue))
+    }
+
     public func hasLiveSpawn(of mode: ServiceMode) -> Bool {
         registry.hasLive(mode: mode)
     }
@@ -897,7 +975,7 @@ public struct FoundationProcessRunner: ProcessRunner {
         for pid in registry.livePids(mode: mode) { signalTree(pid, signal: force ? SIGKILL : SIGTERM) }
     }
 
-    /// The launcher and everything below it, deepest first. eve forks its
+    /// The launcher and everything below it, deepest first. A launcher can fork its
     /// server detached, so killing only the launcher would leave that child
     /// running, reparented to launchd, and holding the port. The tree is read
     /// before anything is signalled, while the parent links still exist, and
@@ -905,7 +983,7 @@ public struct FoundationProcessRunner: ProcessRunner {
     /// line changed (the pid was reused, or it exec'd) is skipped. A SIGTERM
     /// records the tree so `killTermedSurvivors` can finish what ignored it.
     /// `launcherArgs` is what the root was seen running earlier, when the pid
-    /// came from a scan before this call. Not a process group: eve's child
+    /// came from a scan before this call. Not a process group: a detached child
     /// starts its own session, which a group signal would miss.
     private func signalTree(_ pid: pid_t, signal: Int32, launcherArgs: String? = nil) {
         let tree = ProcessTable.treeDeepestFirst(of: pid, in: ProcessTable.read())

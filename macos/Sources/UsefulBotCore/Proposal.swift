@@ -5,15 +5,15 @@ import Foundation
 /// decoding is tolerant per kind and the UI reads only what it needs.
 public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
     public enum Kind: String, Sendable {
-        case createBot
-        case createGroup
-        case updateBotProfile
-        case fanout
         case connectApp
         case connectServer
         /// A kind this build does not know. It renders as unsupported and can
         /// never be confirmed; it must not collapse into a known action.
         case unknown
+
+        init(wire raw: String) {
+            self = Kind(rawValue: raw) ?? .unknown
+        }
     }
 
     public enum ServerAuthKind: String, Sendable {
@@ -54,34 +54,12 @@ public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
         }
     }
 
-    public struct ProfilePatch: Decodable, Equatable, Sendable {
-        public var name: String
-        public var title: String
-        /// Nil means the card leaves the description alone.
-        public var description: String?
-        public var petname: String?
-        public var avatarShape: String?
-        public var avatarColor: String?
-    }
-
     public let id: String
     public let kind: Kind
     public let status: String
     public let expiresAt: String
 
     public let name: String?
-    public let petname: String?
-    public let title: String?
-    public let description: String?
-    public let sectionId: String?
-    public let brief: String?
-    public let memberIds: [String]
-    public let botId: String?
-    public let patch: ProfilePatch?
-    public let message: String?
-    public let targetIds: [String]
-    public let groupId: String?
-    public let sourceBotId: String?
     public let slug: String?
     public let logo: String?
     public let purpose: String?
@@ -97,26 +75,10 @@ public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
-        kind = Kind(rawValue: (try? c.decode(String.self, forKey: .kind)) ?? "") ?? .unknown
+        kind = Kind(wire: (try? c.decode(String.self, forKey: .kind)) ?? "")
         status = (try? c.decode(String.self, forKey: .status)) ?? "pending"
         expiresAt = (try? c.decode(String.self, forKey: .expiresAt)) ?? ""
         name = try? c.decodeIfPresent(String.self, forKey: .name)
-        petname = try? c.decodeIfPresent(String.self, forKey: .petname)
-        title = try? c.decodeIfPresent(String.self, forKey: .title)
-        description = try? c.decodeIfPresent(String.self, forKey: .description)
-        sectionId = try? c.decodeIfPresent(String.self, forKey: .sectionId)
-        brief = try? c.decodeIfPresent(String.self, forKey: .brief)
-        memberIds = (try? c.decode([String].self, forKey: .memberIds)) ?? []
-        botId = try? c.decodeIfPresent(String.self, forKey: .botId)
-        if let raw = try? c.decodeIfPresent(ProfilePatch.self, forKey: .patch) {
-            patch = raw
-        } else {
-            patch = nil
-        }
-        message = try? c.decodeIfPresent(String.self, forKey: .message)
-        targetIds = (try? c.decode([String].self, forKey: .targetIds)) ?? []
-        groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
-        sourceBotId = try? c.decodeIfPresent(String.self, forKey: .sourceBotId)
         slug = try? c.decodeIfPresent(String.self, forKey: .slug)
         logo = try? c.decodeIfPresent(String.self, forKey: .logo)
         purpose = try? c.decodeIfPresent(String.self, forKey: .purpose)
@@ -135,8 +97,7 @@ public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, status, expiresAt, name, petname, title, description
-        case sectionId, brief, memberIds, botId, patch, message, targetIds, groupId, sourceBotId
+        case id, kind, status, expiresAt, name
         case slug, logo, purpose, phase, reason, toolCount
         case connectionId, urlHost, authKind, redirectHost, waitingSince
     }
@@ -175,13 +136,6 @@ public struct Proposal: Identifiable, Decodable, Equatable, Sendable {
         if let finished = requestFinishedAt, now.timeIntervalSince(finished) >= 10 { return false }
         guard phase == .waiting || phase == .failed else { return true }
         return phase == tapPhase && waitingSince == tapWaitingSince
-    }
-
-    /// The bot a fan-out proposal sends to, or nil when every target was
-    /// pruned. A nil means confirm must be disabled, never a guessed recipient.
-    public var fanoutTargetId: String? {
-        if let groupId { return groupId }
-        return targetIds.first
     }
 
     /// Composio cards only open composio.dev. Server cards only open the

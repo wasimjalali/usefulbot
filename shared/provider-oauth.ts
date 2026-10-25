@@ -1,7 +1,5 @@
-import { unlinkSync } from "node:fs";
 import { refreshChatGptCredential } from "./chatgpt-signin.ts";
 import { isLegacyChatGptCredential, type Credential } from "./providers.ts";
-import { statePath } from "./stack.ts";
 
 /**
  * Credential refresh and token choice for OAuth sign-ins. The only sign-in
@@ -38,18 +36,4 @@ export function accessTokenFor(
   }
   const expired = credential.expiresAt !== null && credential.expiresAt <= Date.now();
   return { token: credential.accessToken, expired, headers: {} };
-}
-
-/**
- * The pending device-flow file the removed GitHub Copilot sign-in left behind
- * (UB-015). Nothing reads it now, so it is deleted: missing is fine, any other
- * failure is logged, never thrown (the tick calls this).
- */
-export function dropLegacyDeviceFlowFile(path = statePath("provider-oauth.json")): void {
-  try {
-    unlinkSync(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    console.error(`[useful-bot] legacy device-flow file was not removed: ${(error as NodeJS.ErrnoException).code ?? "unlink_failed"}`);
-  }
 }

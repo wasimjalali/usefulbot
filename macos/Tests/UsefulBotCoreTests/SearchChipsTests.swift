@@ -8,7 +8,7 @@ import Testing
     }
 
     @Test func parsesAnArrayPayload() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         [{"title":"Coffee prices","url":"https://example.com/coffee","snippet":"A survey"}]
         """))
         #expect(chips.count == 1)
@@ -18,7 +18,7 @@ import Testing
     }
 
     @Test func parsesResultsObject() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[{"title":"One","url":"http://example.com/1"}]}
         """))
         #expect(chips.count == 1)
@@ -26,18 +26,18 @@ import Testing
     }
 
     @Test func parsesNestedResultAndOutputShapes() throws {
-        let nested = EveStream.parseSearchChips(try value("""
+        let nested = ChatText.parseSearchChips(try value("""
         {"result":{"results":[{"url":"https://example.com/a"}]}}
         """))
         #expect(nested.first?.title == "https://example.com/a")
-        let output = EveStream.parseSearchChips(try value("""
+        let output = ChatText.parseSearchChips(try value("""
         {"output":{"results":[{"url":"https://example.com/b","description":"desc"}]}}
         """))
         #expect(output.first?.snippet == "desc")
     }
 
     @Test func parsesAStringPayload() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         "{\\"results\\":[{\\"title\\":\\"From string\\",\\"url\\":\\"https://example.com/s\\"}]}"
         """))
         #expect(chips.count == 1)
@@ -45,7 +45,7 @@ import Testing
     }
 
     @Test func refusesNonHttpRows() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[{"title":"Local","url":"file:///etc/passwd"},{"title":"Bad","url":"javascript:alert(1)"}]}
         """))
         #expect(chips.isEmpty)
@@ -54,7 +54,7 @@ import Testing
     @Test func refusesLoopbackAndPrivateResults() throws {
         // These links must never be rendered as chips: opening them would
         // target the local server with the desktop session cookie.
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[
           {"title":"Local","url":"http://127.0.0.1:4320/api/shell"},
           {"title":"Short","url":"http://127.1/"},
@@ -69,40 +69,34 @@ import Testing
 
     @Test func capsAtFiveRows() throws {
         let rows = (1...8).map { "{\"url\":\"https://example.com/\($0)\"}" }.joined(separator: ",")
-        let chips = EveStream.parseSearchChips(try value("{\"results\":[\(rows)]}"))
+        let chips = ChatText.parseSearchChips(try value("{\"results\":[\(rows)]}"))
         #expect(chips.count == 5)
         #expect(chips.last?.url == "https://example.com/5")
     }
 
-    @Test func eventDataSurvivesDecoding() throws {
-        let event = try JSONDecoder().decode(EveEvent.self, from: Data("""
-        {"type":"action.result","meta":{"id":"e1"},
-         "data":{"results":[{"title":"Hit","url":"https://example.com/hit"}]}}
-        """.utf8))
-        let chips = EveStream.parseSearchChips(event.data)
-        #expect(chips.count == 1)
-        #expect(chips[0].title == "Hit")
-    }
-
-    @Test func projectionStoresChipsAndClearsOnNewTurn() throws {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(
-            type: "action.result",
-            id: "e1",
-            data: try value("""
-            {"results":[{"title":"Hit","url":"https://example.com/hit"}]}
-            """)
-        ))
-        #expect(projection.searchHits.count == 1)
-        projection.apply(EveEvent(type: "turn.started", id: "e2"))
+    @Test func chipsComeFromAToolResultAndClearOnTheNextTurn() throws {
+        let epoch = "e1"
+        var projection = ChatProjection()
+        projection.load(RowsPage(rows: [], tailSeq: 0, epoch: epoch))
+        projection.apply(ChatEvent.parse(line: #"{"seq":1,"epoch":"e1","chatId":"c","turnId":"t1","type":"turn.started","origin":"owner"}"#)!)
+        projection.apply(ChatEvent.parse(line: #"{"seq":2,"epoch":"e1","chatId":"c","turnId":"t1","type":"tool.result","callId":"c1","name":"web_search","isError":false,"searchResults":[{"title":"Hit","url":"https://example.com/hit","snippet":"s"},{"title":"Local","url":"http://localhost:4320/x","snippet":"s"}]}"#)!)
+        // The local link is never a chip.
+        #expect(projection.searchHits.map(\.title) == ["Hit"])
+        projection.apply(ChatEvent.parse(line: #"{"seq":3,"epoch":"e1","chatId":"c","turnId":"t1","type":"turn.completed"}"#)!)
+        projection.apply(ChatEvent.parse(line: #"{"seq":4,"epoch":"e1","chatId":"c","turnId":"t2","type":"turn.started","origin":"owner"}"#)!)
         #expect(projection.searchHits.isEmpty)
     }
 
-    @Test func projectionIgnoresEmptyChipPayloads() throws {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(type: "action.result", id: "e1", data: try value("""
-        {"results":[{"title":"Local","url":"file:///tmp/x"}]}
-        """)))
+    @Test func aReloadedChatShowsTheNewestTurnsChips() {
+        var assistant = ChatRow(rowId: "t1:a0", kind: .assistant, turnId: "t1", text: "Here you go.")
+        assistant.searchResults = [SearchChip(title: "Hit", url: "https://example.com/hit", snippet: "")]
+        var projection = ChatProjection()
+        projection.load(RowsPage(rows: [assistant], tailSeq: 3, epoch: "e1"))
+        #expect(projection.searchHits.count == 1)
+        // Once the owner has said something after it, the chips belong to the past.
+        var user = ChatRow(rowId: "t2:u", kind: .user, turnId: "t2", text: "Thanks")
+        user.clientId = "c2"
+        projection.load(RowsPage(rows: [assistant, user], tailSeq: 4, epoch: "e1"))
         #expect(projection.searchHits.isEmpty)
     }
 
@@ -110,7 +104,7 @@ import Testing
         let title = String(repeating: "t", count: 260)
         let url = "https://example.com/" + String(repeating: "u", count: 2100)
         let snippet = String(repeating: "s", count: 900)
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[{"title":"\(title)","url":"\(url)","snippet":"\(snippet)"}]}
         """))
         #expect(chips.count == 1)
@@ -120,21 +114,21 @@ import Testing
     }
 
     @Test func stringifiesScalarTitles() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[{"title":42,"url":"https://example.com/n"}]}
         """))
         #expect(chips.first?.title == "42")
     }
 
     @Test func ignoresNullAndNonArrayResults() throws {
-        let nullResults = EveStream.parseSearchChips(try value(#"{"results":null}"#))
-        let scalarResults = EveStream.parseSearchChips(try value(#"{"results":"nope"}"#))
+        let nullResults = ChatText.parseSearchChips(try value(#"{"results":null}"#))
+        let scalarResults = ChatText.parseSearchChips(try value(#"{"results":"nope"}"#))
         #expect(nullResults.isEmpty)
         #expect(scalarResults.isEmpty)
     }
 
     @Test func keepsDuplicateUrls() throws {
-        let chips = EveStream.parseSearchChips(try value("""
+        let chips = ChatText.parseSearchChips(try value("""
         {"results":[
           {"title":"One","url":"https://example.com/x"},
           {"title":"Two","url":"https://example.com/x"}
@@ -144,50 +138,6 @@ import Testing
         #expect(chips.map(\.title) == ["One", "Two"])
     }
 
-    @Test func optimisticUserRowFoldsIntoTheEcho() {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(
-            type: "message.received",
-            id: "\(EveStream.optimisticUserPrefix)abc",
-            message: "hi"
-        ))
-        projection.apply(EveEvent(type: "message.received", id: "evt-1", message: "hi"))
-        #expect(projection.messages.count == 1)
-        #expect(projection.messages.first?.id == "evt-1")
-    }
-
-    @Test func repeatedUserTextStillAppends() {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(type: "message.received", id: "u-1", message: "hi"))
-        projection.apply(EveEvent(type: "message.received", id: "u-2", message: "hi"))
-        #expect(projection.messages.count == 2)
-    }
-
-    @Test func completionStripsTheThreadPrefix() {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(type: "message.received", id: "u-1", message: "hi"))
-        projection.apply(EveEvent(
-            type: "message.completed",
-            id: "a-1",
-            message: "You are Echo.\nStanding instructions: be kind.\n\nhello there"
-        ))
-        #expect(projection.messages.last?.text == "hello there")
-    }
-
-    @Test func reusedDeltaIdsDropLikeTheWeb() {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(type: "message.appended", id: "d1", messageDelta: "he"))
-        // The web dedupes every identified event, replay included.
-        projection.apply(EveEvent(type: "message.appended", id: "d1", messageDelta: "llo"))
-        #expect(projection.messages.last?.text == "he")
-    }
-
-    @Test func duplicateIdentifiedEventsDrop() {
-        var projection = StreamProjection()
-        projection.apply(EveEvent(type: "message.received", id: "u1", message: "hi"))
-        projection.apply(EveEvent(type: "message.received", id: "u1", message: "hi"))
-        #expect(projection.messages.count == 1)
-    }
 }
 
 @Suite struct ApprovalAndSettingsDecodingTests {
@@ -318,11 +268,12 @@ import Testing
 
     @Test func decodesStatus() throws {
         let data = Data("""
-        {"ok":true,"eve":"available","operator":{"name":"Wasim","initials":"WA"},
+        {"ok":true,"engine":"available","operator":{"name":"Wasim","initials":"WA"},
          "version":"0.2.0","theme":"light"}
         """.utf8)
         let status = try JSONDecoder().decode(AppStatus.self, from: data)
         #expect(status.name == "Wasim")
+        #expect(status.engine == "available")
         #expect(status.initials == "WA")
         #expect(status.version == "0.2.0")
         #expect(status.theme == "light")

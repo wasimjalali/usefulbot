@@ -1,7 +1,7 @@
 /**
- * Pull an MCP App widget out of an eve action event. Excalidraw's
- * create_view carries `_meta.ui.resourceUri` on the tool and `elements` in
- * the input. We persist the arguments; the host page fetches the HTML.
+ * Pull an MCP App widget out of a tool call. Excalidraw's create_view carries
+ * `_meta.ui.resourceUri` on the tool and `elements` in the input. We persist
+ * the arguments; the host page fetches the HTML.
  */
 
 export type WidgetDraft = {
@@ -84,4 +84,18 @@ export function parseWidgetDraft(data: unknown): WidgetDraft | null {
   const looksLikeApp = Boolean(resourceUri) || toolName.endsWith("__create_view") || typeof args.elements === "string";
   if (!looksLikeApp) return null;
   return { connectionId, toolName, resourceUri, arguments: args };
+}
+
+/**
+ * Whether a tool call draws a widget, from the call alone: a tool named
+ * `<connectionId>__<tool>` that is a view (`create_view`) or carries an
+ * `elements` string. The engine puts the result on `tool.call` so the app can
+ * start drawing before the result arrives.
+ */
+export function widgetForCall(
+  name: string,
+  args: Record<string, unknown>,
+): { connectionId: string; toolName: string; arguments: Record<string, unknown> } | null {
+  const draft = parseWidgetDraft({ toolName: name, arguments: args });
+  return draft ? { connectionId: draft.connectionId, toolName: draft.toolName, arguments: draft.arguments } : null;
 }

@@ -94,10 +94,10 @@ import Foundation
         #expect(v.appBundleName == "Useful Bot.app")
         #expect(v.routerPort == 4319)
         #expect(v.webPort == 4320)
-        #expect(v.evePort == 4321)
+        #expect(v.enginePort == 4321)
         #expect(v.webBaseURL.absoluteString == "http://127.0.0.1:4320")
         #expect(v.routerHealthURL.absoluteString == "http://127.0.0.1:4319/health/live")
-        #expect(v.eveHealthURL.absoluteString == "http://127.0.0.1:4321/eve/v1/health")
+        #expect(v.engineHealthURL.absoluteString == "http://127.0.0.1:4321/health")
         #expect(v.keychainPrefix == "com.usefulbot")
         #expect(v.deviceTokenService == "com.usefulbot.device.desktop")
         #expect(v.stateRoot(home: home).path == "/Users/test/.useful-bot")
@@ -131,10 +131,10 @@ import Foundation
         #expect(v.appBundleName == "Useful Bot Dev.app")
         #expect(v.routerPort == 4419)
         #expect(v.webPort == 4420)
-        #expect(v.evePort == 4421)
+        #expect(v.enginePort == 4421)
         #expect(v.webBaseURL.absoluteString == "http://127.0.0.1:4420")
         #expect(v.routerHealthURL.absoluteString == "http://127.0.0.1:4419/health/live")
-        #expect(v.eveHealthURL.absoluteString == "http://127.0.0.1:4421/eve/v1/health")
+        #expect(v.engineHealthURL.absoluteString == "http://127.0.0.1:4421/health")
         #expect(v.keychainPrefix == "com.usefulbot.dev")
         #expect(v.deviceTokenService == "com.usefulbot.dev.device.desktop")
         #expect(v.stateRoot(home: home).path == "/Users/test/.useful-bot-dev-app")
@@ -161,7 +161,7 @@ import Foundation
             "UB_STATE_ROOT": "/Users/test/.useful-bot-dev-app",
             "UB_ROUTER_PORT": "4419",
             "UB_WEB_PORT": "4420",
-            "UB_EVE_PORT": "4421",
+            "UB_ENGINE_PORT": "4421",
             "UB_KEYCHAIN_PREFIX": "com.usefulbot.dev",
             "UB_MEDIA_DIR": "/Users/test/Documents/Useful Bot Dev",
             "UB_WEB_BASE_URL": "http://127.0.0.1:4420",
@@ -190,7 +190,7 @@ import Foundation
             #expect(!(a + "/").hasPrefix(b + "/"))
             #expect(!(b + "/").hasPrefix(a + "/"))
         }
-        #expect(Set([daily.routerPort, daily.webPort, daily.evePort]).isDisjoint(with: [dev.routerPort, dev.webPort, dev.evePort]))
+        #expect(Set([daily.routerPort, daily.webPort, daily.enginePort]).isDisjoint(with: [dev.routerPort, dev.webPort, dev.enginePort]))
         #expect(daily.deviceTokenService != dev.deviceTokenService)
         #expect(daily.bundleIdentifier != dev.bundleIdentifier)
         #expect(daily.logSubsystem != dev.logSubsystem)

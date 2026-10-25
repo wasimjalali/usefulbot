@@ -1,0 +1,30 @@
+{
+  "run_id": "2026-10-25-eve-r3-t07",
+  "prices": "prices.json",
+  "db": "/Users/wasimjalali/.useful-bot-dev-app/router/usage.sqlite",
+  "tasks": {
+    "t07-routine": {
+      "requests": 3,
+      "input_tokens": 24376,
+      "output_tokens": 1432,
+      "usd": 0.004516,
+      "peak_requests": 0,
+      "callers": [
+        "desktop"
+      ],
+      "search_hits": 0,
+      "other_models": {},
+      "window_ms": [
+        1792904830720,
+        1792904879007
+      ]
+    }
+  },
+  "total": {
+    "input_tokens": 24376,
+    "output_tokens": 1432,
+    "requests": 3,
+    "usd": 0.004516
+  },
+  "note": "Input is priced at the cache-miss rate (the router does not record cache hits): an upper bound."
+}

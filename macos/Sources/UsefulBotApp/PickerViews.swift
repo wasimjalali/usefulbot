@@ -1,278 +1,136 @@
 import SwiftUI
 import UsefulBotCore
 
-/// `new-chat-picker.tsx`: the To: picker shown by the rail's New Bot button.
-struct NewChatPickerView: View {
-    @EnvironmentObject private var model: AppModel
-    let store: ShellStore
-    let onClose: () -> Void
-    let onCreateBot: () -> Void
-    let onCreateGroup: () -> Void
-    let onSelectBot: (String) -> Void
-    /// Window frame of the rail's New Bot plus button, tolerated as the
-    /// picker's toggle trigger.
-    var plusTrigger: (() -> CGRect)? = nil
-
-    @State private var query = ""
-    @State private var headerFrame = CGRect.zero
-    @FocusState private var focused: Bool
-
-    private var bots: [ShellBot] {
-        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        // Hidden bots and the frozen "Perf ..." fixtures only show when searched for.
-        let visible = store.bots.filter { !$0.hidden && !$0.name.hasPrefix("Perf ") }
-        guard !needle.isEmpty else { return visible }
-        return store.bots.filter { bot in
-            "\(bot.name) \(bot.label) \(bot.description) \(bot.lastPreview)"
-                .lowercased()
-                .contains(needle)
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Text("To")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.C.inkMuted)
-                ZStack(alignment: .leading) {
-                    if query.isEmpty {
-                        Text("Search or create bots")
-                            .font(.system(size: 15))
-                            .foregroundStyle(Theme.C.inkFaint)
-                    }
-                    TextField("", text: $query)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.C.ink)
-                        .focused($focused)
-                        .onKeyPress(.escape) {
-                            onClose()
-                            return .handled
-                        }
-                        .onKeyPress(phases: .down) { press in
-                            if press.modifiers.contains(.command), press.key == "1" {
-                                onCreateBot()
-                                return .handled
-                            }
-                            if press.modifiers.contains(.command), press.key == "2" {
-                                onCreateGroup()
-                                return .handled
-                            }
-                            return .ignored
-                        }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 20)
-            .frame(minHeight: DesignTokens.Space.chatHead)
-            .overlay(alignment: .bottom) { Hairline() }
-            .trackWindowFrame($headerFrame)
-
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        MenuRowButton(action: onCreateBot) {
-                            hitRow {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Theme.C.ink)
-                                Text("New Bot")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.C.ink)
-                                Spacer(minLength: 0)
-                                kbd("⌘1")
-                            }
-                        }
-                        .accessibilityIdentifier("picker-new-bot")
-                        MenuRowButton(action: onCreateGroup) {
-                            hitRow {
-                                Image(systemName: "person.2")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Theme.C.ink)
-                                Text("Create group chat")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.C.ink)
-                                Spacer(minLength: 0)
-                                kbd("⌘2")
-                            }
-                        }
-                        .accessibilityIdentifier("picker-new-group")
-                        ForEach(bots) { bot in
-                            MenuRowButton(action: { onSelectBot(bot.id) }) {
-                                hitRow {
-                                    BotAvatarView(bot: bot, size: 24)
-                                    Text(bot.name)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Theme.C.ink)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                    if !bot.label.isEmpty, !sameAsName(bot.label, bot.name) {
-                                        BotLabelChip(text: bot.label, fitsFully: true)
-                                    }
-                                }
-                            }
-                            .accessibilityIdentifier("picker-bot-\(bot.id)")
-                        }
-                        if bots.isEmpty {
-                            Text("No matching bots.")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.C.inkMuted)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 12)
-                        }
-                    }
-                    .padding(8)
-                }
-                .uvScroll()
-            }
-            .frame(width: 440, alignment: .leading)
-            .frame(maxHeight: 420)
-            .background(Theme.C.surface)
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Radius.lg, style: .continuous)
-                    .strokeBorder(Theme.C.edge, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.lg, style: .continuous))
-            .raiseShadow()
-            .dismissOnOutsideClick(triggers: { [headerFrame] + (plusTrigger.map { [$0()] } ?? []) }) {
-                onClose()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Spacer(minLength: 0)
-        }
-        .onAppear { focused = true }
-        .onExitCommand(perform: onClose)
-        // Picking a bot in the rail while the picker is open closes it.
-        .onChange(of: model.selectTick) { _, _ in onClose() }
-    }
-
-    private func hitRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 10) {
-            content()
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(minHeight: 40)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func kbd(_ value: String) -> some View {
-        Text(value)
-            .font(.system(size: DesignTokens.FontSize.kbd, weight: .semibold))
-            .tracking(0.02 * DesignTokens.FontSize.kbd)
-            .foregroundStyle(Theme.C.inkFaint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .background(Theme.C.sunken)
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignTokens.Radius.xs, style: .continuous)
-                    .strokeBorder(Theme.C.edge, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.xs, style: .continuous))
-    }
-}
-
 /// `chat-search-dialog.tsx`: the ⌘K palette with tabs and keyboard navigation.
 struct SearchPaletteView: View {
     @EnvironmentObject private var model: AppModel
 
     let onClose: () -> Void
     let onNewChat: () -> Void
-    let onSelect: (String) -> Void
-    let onOpenRecent: (_ recentId: String, _ sessionId: String?) -> Void
+    let onOpen: (ChatEntry) -> Void
+    let onOpenMessage: (ChatSearchHit) -> Void
+    let onOpenRoutine: (String) -> Void
+    let onOpenLibrary: (String) -> Void
+    let onOpenSettings: () -> Void
+    let onOpenConnectors: () -> Void
+    let onOpenUsage: () -> Void
 
     @State private var query = ""
     @State private var tab: SearchTab = .all
     @State private var active = 0
+    @State private var media: [MediaItem] = []
+    @State private var mediaFailed = false
+    /// Message-text hits from the engine, for the current query.
+    @State private var textHits: [ChatSearchHit] = []
+    @State private var textSearch: Task<Void, Never>?
+    @State private var escapeMonitor: Any?
     @FocusState private var focused: Bool
 
-    // Only tabs `hits` can actually fill; a tab with no data source would
-    // never return a row and would always read "Nothing in X yet."
     enum SearchTab: String, CaseIterable {
-        case all, messages, bots, groups
+        case all, chats, library, routines
 
         var label: String {
             switch self {
             case .all: return "All"
-            case .messages: return "Messages"
-            case .bots: return "Bots"
-            case .groups: return "Groups"
+            case .chats: return "Chats"
+            case .library: return "Library"
+            case .routines: return "Routines"
             }
         }
     }
 
+    enum Command: String, CaseIterable {
+        case newChat, settings, connectors, usage
+
+        var title: String {
+            switch self {
+            case .newChat: return "New chat"
+            case .settings: return "Open settings"
+            case .connectors: return "Connectors"
+            case .usage: return "Token usage"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .newChat: return "square.and.pencil"
+            case .settings: return "gearshape"
+            case .connectors: return "powerplug"
+            case .usage: return "gauge.with.dots.needle.33percent"
+            }
+        }
+
+        var shortcut: String? { self == .newChat ? "⌘N" : nil }
+    }
+
     enum Hit: Identifiable {
-        case newChat
-        case recent(ShellRecent, ShellBot?)
-        case bot(ShellBot)
+        case chat(ChatEntry)
+        case message(ChatSearchHit)
+        case media(MediaItem)
+        case routine(Routine)
+        case command(Command)
 
         var id: String {
             switch self {
-            case .newChat: return "new-chat"
-            case .recent(let recent, _): return "recent-\(recent.id)"
-            case .bot(let bot): return "bot-\(bot.id)"
+            case .chat(let entry): return "chat-\(entry.id)"
+            case .message(let hit): return "message-\(hit.id)"
+            case .media(let item): return "media-\(item.id)"
+            case .routine(let routine): return "routine-\(routine.id)"
+            case .command(let command): return "command-\(command.rawValue)"
+            }
+        }
+
+        var section: String {
+            switch self {
+            case .chat, .message: return "Chats"
+            case .media: return "Library"
+            case .routine: return "Routines"
+            case .command: return "Commands"
             }
         }
     }
 
     private var hits: [Hit] {
-        guard let store = model.store else { return [] }
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         var results: [Hit] = []
-        if tab == .all { results.append(.newChat) }
 
-        if tab == .all || tab == .messages {
-            let recents = store.recents.filter { recent in
-                guard !needle.isEmpty else { return true }
-                let bot = store.bots.first { $0.id == recent.botId }
-                return "\(recent.title) \(recent.preview) \(bot?.name ?? "") \(bot?.label ?? "")"
-                    .lowercased()
-                    .contains(needle)
+        if tab == .all || tab == .chats {
+            let entries = model.chatEntries.filter { entry in
+                needle.isEmpty || "\(entry.title) \(entry.preview)".lowercased().contains(needle)
             }
-            // The same message from the same bot shows once, newest first.
-            var seen = Set<String>()
-            let unique = recents.sorted { $0.updatedAt > $1.updatedAt }.filter { recent in
-                seen.insert("\(recent.botId)|\(Self.recentText(recent))").inserted
-            }
-            for recent in (needle.isEmpty ? Array(unique.prefix(8)) : unique) {
-                results.append(.recent(recent, store.bots.first { $0.id == recent.botId }))
-            }
+            let shown = tab == .all && needle.isEmpty ? Array(entries.prefix(8)) : entries
+            results.append(contentsOf: shown.map(Hit.chat))
+            // Words inside chats, found by the engine; a chat whose title
+            // already matched is not listed twice for the same row.
+            results.append(contentsOf: textHits.map(Hit.message))
         }
 
-        if tab == .all || tab == .bots || tab == .groups {
-            let bots = store.bots.filter { bot in
-                if tab == .bots && bot.kind != "bot" { return false }
-                if tab == .groups && bot.kind != "group" { return false }
-                guard !needle.isEmpty else { return !bot.hidden }
-                return "\(bot.name) \(bot.label) \(bot.description) \(bot.lastPreview)"
-                    .lowercased()
-                    .contains(needle)
-            }
-            results.append(contentsOf: bots.map { .bot($0) })
+        if tab == .library || (tab == .all && !needle.isEmpty) {
+            let items = media.filter { needle.isEmpty || $0.displayTitle.lowercased().contains(needle) }
+            results.append(contentsOf: items.map(Hit.media))
+        }
+
+        if tab == .routines || (tab == .all && !needle.isEmpty) {
+            let routines = model.routines.filter { needle.isEmpty || $0.name.lowercased().contains(needle) }
+            results.append(contentsOf: routines.map(Hit.routine))
+        }
+
+        if tab == .all {
+            let commands = Command.allCases.filter { needle.isEmpty || $0.title.lowercased().contains(needle) }
+            results.append(contentsOf: commands.map(Hit.command))
         }
         return results
     }
 
-    private func heading(for index: Int) -> String? {
+    private func heading(for index: Int, in hits: [Hit]) -> String? {
         guard tab == .all else { return nil }
         let hit = hits[index]
-        let previous = index > 0 ? hits[index - 1] : nil
-        if case .recent = hit {
-            if case .recent = previous { return nil }
-            return "Recents"
-        }
-        if case .bot = hit {
-            if case .bot = previous { return nil }
-            return "Bots"
-        }
-        return nil
+        if index > 0, hits[index - 1].section == hit.section { return nil }
+        return hit.section
     }
 
     var body: some View {
+        let hits = hits
         ZStack(alignment: .top) {
             Theme.C.overlay
                 .ignoresSafeArea()
@@ -294,10 +152,6 @@ struct SearchPaletteView: View {
                             .font(.system(size: 15))
                             .foregroundStyle(Theme.C.ink)
                             .focused($focused)
-                        .onKeyPress(.escape) {
-                            onClose()
-                            return .handled
-                        }
                         .onKeyPress(.downArrow) {
                                 active = (active + 1) % max(hits.count, 1)
                                 return .handled
@@ -318,7 +172,7 @@ struct SearchPaletteView: View {
                 .overlay(alignment: .bottom) { Hairline() }
 
                 tabs
-                results
+                results(hits)
             }
             .frame(maxWidth: 560)
             .background(Theme.C.surface)
@@ -335,14 +189,36 @@ struct SearchPaletteView: View {
             focused = true
             active = 0
         }
-        .onExitCommand {
-            if query.isEmpty {
-                onClose()
-            } else {
-                query = ""
+        .task {
+            // The Library has no copy in the model; read it when the palette opens.
+            do {
+                media = try await GeneratedImageCache.shared.mediaList().items
+            } catch {
+                mediaFailed = true
             }
         }
-        .onChange(of: query) { _, _ in active = 0 }
+        // Esc closes the palette wherever the window's first responder is.
+        // A key handler on the field or `onExitCommand` here only sees Esc
+        // while the field holds focus, and the composer's text view can keep
+        // it: Esc then went to the composer and the palette stayed open.
+        .onAppear {
+            guard escapeMonitor == nil else { return }
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                guard event.keyCode == 53, NSApp.modalWindow == nil else { return event }
+                // Esc during an input method's composition cancels that first.
+                if let editor = event.window?.firstResponder as? NSTextView, editor.hasMarkedText() { return event }
+                onClose()
+                return nil
+            }
+        }
+        .onDisappear {
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
+        }
+        .onChange(of: query) { _, next in
+            active = 0
+            searchText(next)
+        }
         .onChange(of: tab) { _, _ in active = 0 }
     }
 
@@ -375,13 +251,13 @@ struct SearchPaletteView: View {
         .overlay(alignment: .bottom) { Hairline() }
     }
 
-    private var results: some View {
+    private func results(_ hits: [Hit]) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(hits.enumerated()), id: \.element.id) { index, hit in
                         VStack(alignment: .leading, spacing: 0) {
-                            if let heading = heading(for: index) {
+                            if let heading = heading(for: index, in: hits) {
                                 Text(heading)
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(Theme.C.inkFaint)
@@ -407,6 +283,14 @@ struct SearchPaletteView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
                     }
+                    // Library hits are missing, not absent: say so quietly.
+                    if mediaFailed, tab == .all || tab == .library {
+                        Text("Couldn't load the library")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.C.inkFaint)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
                 }
                 .padding(8)
             }
@@ -419,61 +303,93 @@ struct SearchPaletteView: View {
     }
 
     private var emptyCopy: String {
-        tab == .all
-            ? "No matching chats or bots."
-            : "Nothing in \(tab.label) yet."
+        let searching = !query.trimmingCharacters(in: .whitespaces).isEmpty
+        return searching || tab == .all ? "No matches." : "Nothing in \(tab.label) yet."
     }
 
     @ViewBuilder
     private func hitRow(_ hit: Hit) -> some View {
         HStack(spacing: 10) {
             switch hit {
-            case .newChat:
-                Image(systemName: "plus.bubble")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.C.ink)
-                Text("New Bot")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.C.ink)
-            case .recent(let recent, let bot):
-                if let bot {
-                    BotAvatarView(bot: model.liveBot(bot), size: 24)
-                } else {
-                    Image(systemName: "bubble.left")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.C.ink)
-                }
+            case .chat(let entry):
+                icon("bubble.left")
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(Self.recentText(recent))
+                    Text(entry.title)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.C.ink)
                         .lineLimit(1)
-                    Text([bot?.name, Self.relativeTime(recent.updatedAt)].compactMap { $0 }.joined(separator: " · "))
+                    // The title is the preview with its markdown marks gone, and
+                    // may be clipped: a preview that starts with it adds nothing.
+                    let previewLine = ChatEntry.plain(entry.preview)
+                    let titleText = entry.title.trimmingCharacters(in: CharacterSet(charactersIn: "… "))
+                    if !previewLine.isEmpty, !previewLine.hasPrefix(titleText) {
+                        Text(previewLine)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.C.inkMuted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let updatedAt = entry.updatedAt {
+                    Text(ChatEntry.timeLabel(updatedAt))
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(Theme.C.inkFaint)
+                }
+            case .message(let hit):
+                icon("text.bubble")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(ChatEntry.plain(hit.snippet))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.ink)
+                        .lineLimit(1)
+                    Text(ChatEntry.plain(hit.title))
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.C.inkMuted)
                         .lineLimit(1)
                 }
-            case .bot(let bot):
-                BotAvatarView(bot: bot, size: 24)
-                Text(bot.name)
+                Spacer(minLength: 0)
+                if let at = hit.at {
+                    Text(ChatEntry.timeLabel(at))
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(Theme.C.inkFaint)
+                }
+            case .media(let item):
+                icon(Self.mediaIcon(item.kind))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(item.displayTitle)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.ink)
+                        .lineLimit(1)
+                    Text(Self.mediaKind(item.kind))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.C.inkMuted)
+                }
+                Spacer(minLength: 0)
+            case .routine(let routine):
+                icon("clock")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(routine.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.C.ink)
+                        .lineLimit(1)
+                    Text(routine.active ? RoutineCopy.scheduleLine(routine.schedules) : "Paused")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.C.inkMuted)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            case .command(let command):
+                icon(command.icon)
+                Text(command.title)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.C.ink)
-                    .lineLimit(1)
                 Spacer(minLength: 0)
-                if !bot.label.isEmpty, !sameAsName(bot.label, bot.name) {
-                    BotLabelChip(text: bot.label, fitsFully: true)
-                }
-                if bot.hidden {
-                    Text("HIDDEN")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.C.inkMuted)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Theme.C.sunken)
-                        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.xs, style: .continuous))
+                if let shortcut = command.shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.C.inkFaint)
                 }
             }
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -481,62 +397,60 @@ struct SearchPaletteView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The message as plain text: markdown marks stripped, whitespace folded.
-    /// A recent as one plain line. Only markdown's own marks go: links keep
-    /// their text, code ticks and paired emphasis drop their marks, and a
-    /// heading or quote marker goes at the start of a line. "C#", "issue #42"
-    /// and "clear_history" stay as written.
-    private static func recentText(_ recent: ShellRecent) -> String {
-        let raw = AppModel.previewText(recent.title.isEmpty || recent.title == "Chat" ? recent.preview : recent.title)
-        var text = raw.replacingOccurrences(of: "\\[([^\\]]*)\\]\\([^)]*\\)", with: "$1", options: .regularExpression)
-        text = text.replacingOccurrences(of: "(?m)^\\s*(#{1,6}\\s+|>\\s)", with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: "`+", with: "", options: .regularExpression)
-        for mark in ["\\*\\*", "__", "\\*", "_", "~~"] {
-            text = text.replacingOccurrences(
-                of: "(?<![A-Za-z0-9])\(mark)(?=\\S)(.+?)(?<=\\S)\(mark)(?![A-Za-z0-9])",
-                with: "$1",
-                options: .regularExpression
-            )
-        }
-        text = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func icon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 14))
+            .foregroundStyle(Theme.C.ink)
+            .frame(width: 20)
     }
 
-    private static let plainISO = ISO8601DateFormatter()
-    private static let fractionalISO: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let relative: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
+    private static func mediaIcon(_ kind: String) -> String {
+        switch kind {
+        case "drawing": return "scribble.variable"
+        case "page": return "globe"
+        default: return "photo"
+        }
+    }
 
-    private static func relativeTime(_ iso: String) -> String? {
-        guard let date = fractionalISO.date(from: iso) ?? plainISO.date(from: iso) else { return nil }
-        return relative.localizedString(for: date, relativeTo: Date())
+    private static func mediaKind(_ kind: String) -> String {
+        switch kind {
+        case "drawing": return "Drawing"
+        case "page": return "Page"
+        default: return "Image"
+        }
+    }
+
+    /// Looks inside the chats once the owner pauses typing.
+    private func searchText(_ text: String) {
+        textSearch?.cancel()
+        let needle = text.trimmingCharacters(in: .whitespaces)
+        guard needle.count >= 2 else {
+            textHits = []
+            return
+        }
+        textSearch = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            let found = await model.searchChatText(needle)
+            guard !Task.isCancelled else { return }
+            textHits = found
+        }
     }
 
     private func run(_ hit: Hit?) {
         guard let hit else { return }
         switch hit {
-        case .newChat:
-            onNewChat()
-        case .recent(let recent, _):
-            onOpenRecent(recent.id, recent.sessionId)
-        case .bot(let bot):
-            onSelect(bot.id)
+        case .chat(let entry): onOpen(entry)
+        case .message(let hit): onOpenMessage(hit)
+        case .media(let item): onOpenLibrary(item.id)
+        case .routine(let routine): onOpenRoutine(routine.id)
+        case .command(let command):
+            switch command {
+            case .newChat: onNewChat()
+            case .settings: onOpenSettings()
+            case .connectors: onOpenConnectors()
+            case .usage: onOpenUsage()
+            }
         }
     }
-}
-
-/// True when a role label only repeats the bot's name ("Generalist" under
-/// "Generalist"), ignoring case, spaces and punctuation.
-func sameAsName(_ label: String, _ name: String) -> Bool {
-    func fold(_ value: String) -> String {
-        value.lowercased().filter { $0.isLetter || $0.isNumber }
-    }
-    return fold(label) == fold(name)
 }

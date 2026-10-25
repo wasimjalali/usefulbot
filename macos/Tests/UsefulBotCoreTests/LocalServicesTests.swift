@@ -63,7 +63,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
 
 @Suite struct LocalServicesTests {
     private var routerHealth: String { AppVariant.daily.routerHealthURL.absoluteString }
-    private var eveHealth: String { AppVariant.daily.eveHealthURL.absoluteString }
+    private var engineHealth: String { AppVariant.daily.engineHealthURL.absoluteString }
     private var webHealth: String { ServerConfig(repoPath: "/repo", port: 4320).healthURL.absoluteString }
 
     private func modes(_ runner: FakeRunner) -> [String] { runner.started.map { $0.arguments.last ?? "" } }
@@ -72,14 +72,14 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         let runner = FakeRunner()
         let services = LocalServices(runner: runner, probe: FakeProbe(), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
-        #expect(modes(runner) == ["router", "eve", "web"])
+        #expect(modes(runner) == ["router", "engine", "web"])
         #expect(runner.stopped.isEmpty)
         #expect(runner.forceStopped.isEmpty)
     }
 
-    @Test func startsOnlyWebWhenRouterAndEveAreHealthy() async {
+    @Test func startsOnlyWebWhenRouterAndEngineAreHealthy() async {
         let runner = FakeRunner()
-        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [routerHealth, eveHealth]), startGraceSeconds: 0)
+        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [routerHealth, engineHealth]), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(modes(runner) == ["web"])
         #expect(runner.stopped.isEmpty)
@@ -88,7 +88,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
     @Test func restartsWedgedWebListenerThenStarts() async {
         let runner = FakeRunner()
         runner.listening = [4320: [14301]]
-        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [routerHealth, eveHealth]), startGraceSeconds: 0)
+        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [routerHealth, engineHealth]), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(runner.stopped == [4320])
         #expect(modes(runner) == ["web"])
@@ -97,7 +97,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
     @Test func restartsWedgedRouterListenerThenStarts() async {
         let runner = FakeRunner()
         runner.listening = [4319: [14302]]
-        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [eveHealth]), startGraceSeconds: 0)
+        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [engineHealth]), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(runner.stopped == [4319])
         #expect(modes(runner) == ["router", "web"])
@@ -107,7 +107,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         let runner = FakeRunner()
         runner.listening = [4319: [14303]]
         runner.stubborn = [4319]
-        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [eveHealth]), startGraceSeconds: 0)
+        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [engineHealth]), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(runner.stopped == [4319])
         #expect(runner.forceStopped == [4319])
@@ -118,7 +118,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         let runner = FakeRunner()
         runner.listening = [4319: [14304]]
         runner.foreign = [4319]
-        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [eveHealth]), startGraceSeconds: 0)
+        let services = LocalServices(runner: runner, probe: FakeProbe(healthy: [engineHealth]), startGraceSeconds: 0)
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320))
         #expect(!modes(runner).contains("router"))
         #expect(modes(runner) == ["web"])
@@ -138,7 +138,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         let config = ServerConfig(repoPath: "/repo", port: 4320)
         let services = LocalServices(
             runner: runner,
-            probe: FakeProbe(healthy: [config.healthURL.absoluteString, routerHealth, eveHealth]),
+            probe: FakeProbe(healthy: [config.healthURL.absoluteString, routerHealth, engineHealth]),
             supervisor: ServiceSupervisor(nodeExists: { _ in true })
         )
         let outcome = await services.ensure(config: config)
@@ -154,7 +154,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         let config = ServerConfig(repoPath: "/repo", port: 4320)
         let services = LocalServices(
             runner: runner,
-            probe: FakeProbe(healthy: [config.healthURL.absoluteString, eveHealth]),
+            probe: FakeProbe(healthy: [config.healthURL.absoluteString, engineHealth]),
             supervisor: ServiceSupervisor(nodeExists: { _ in true }),
             startGraceSeconds: 0
         )
@@ -169,7 +169,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         // race on every attempt.
         let runner = FakeRunner()
         runner.listening = [4319: [14305]]
-        let probe = FakeProbe(healthy: [eveHealth])
+        let probe = FakeProbe(healthy: [engineHealth])
         let services = LocalServices(runner: runner, probe: probe, startGraceSeconds: 1)
         // It answers a moment later, as a slow starter does.
         Task {
@@ -189,7 +189,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         runner.listening = [4319: [14306]]
         let services = LocalServices(
             runner: runner,
-            probe: FakeProbe(healthy: [eveHealth]),
+            probe: FakeProbe(healthy: [engineHealth]),
             startGraceSeconds: 0
         )
         await services.startMissing(config: ServerConfig(repoPath: "/repo", port: 4320), allowRestart: false)
@@ -220,7 +220,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
 
     @Test func aServiceThatNeverBindsIsSpawnedOncePerModeAcrossTheWholeBudget() async {
         // The 2026-10-01 leak: every service blocked on a permission prompt, the ports
-        // stayed empty, and each retry round spawned a fresh router, eve and web.
+        // stayed empty, and each retry round spawned a fresh router, engine and web.
         let runner = HungRunner()
         let config = ServerConfig(repoPath: "/repo", port: 4420, variant: .dev)
         let services = LocalServices(
@@ -232,10 +232,10 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         )
         let outcome = await services.ensure(config: config, timeoutSeconds: 3)
         #expect(runner.count(.router) == 1)
-        #expect(runner.count(.eve) == 1)
+        #expect(runner.count(.engine) == 1)
         #expect(runner.count(.web) == 1)
         // Said out loud, naming each service that never opened its port.
-        #expect(outcome == .neverBound([.router, .eve, .web]))
+        #expect(outcome == .neverBound([.router, .engine, .web]))
     }
 
     @Test func aRetryAfterTheBudgetStillDoesNotStackAHungService() async {
@@ -251,7 +251,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         _ = await services.ensure(config: config, timeoutSeconds: 1)
         let outcome = await services.ensure(config: config, timeoutSeconds: 1)
         #expect(runner.started.count == 3)
-        #expect(outcome == .neverBound([.router, .eve, .web]))
+        #expect(outcome == .neverBound([.router, .engine, .web]))
     }
 
     @Test func aServiceThatExitsIsStartedAgainAndIsNotReportedAsHung() async {
@@ -280,7 +280,7 @@ private final class HungRunner: ProcessRunner, @unchecked Sendable {
         #expect(message.contains("4420"))
         #expect(!message.contains("4421"))
         #expect(message.contains("UsefulBotDev"))
-        #expect(LocalServices.neverBoundMessage([.eve], variant: .daily).contains("4321"))
+        #expect(LocalServices.neverBoundMessage([.engine], variant: .daily).contains("4321"))
     }
 }
 #endif

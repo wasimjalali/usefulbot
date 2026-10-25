@@ -1,0 +1,131 @@
+{
+  "task_id": "t07-routine",
+  "title": "Routine",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r3",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created a routine (checked: a new routine with a weekly Monday to Friday schedule at 09:00 exists) whose instruction asks for a one-line weather summary for Berlin. The reply confirms the schedule it set, in plain words, and does not promise anything the routine does not do. The harness never deletes the routine: the orchestrator removes it after the run.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t07-routine",
+  "errors": [],
+  "prompts": [
+    "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792904378009,
+    "end": 1792904407724
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up.",
+      "sent_at_ms": 1792904378278,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 2.7,
+          "label": "Writing a routine"
+        },
+        {
+          "t": 3.7,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 9.12,
+      "wall_s": 8.85,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792904404057,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "Done. One thing to flag: a \"Berlin weekday weather\" routine with exactly this schedule (Mon-Fri 09:00, Europe/Berlin) was already active. I created a second one by mistake, then deleted my duplicate, so you'll get one message, not two.\nThe existing routine is active and next runs tomorrow, Monday 26 October, at 09:00 Berlin time. It fetches real data (wttr.in or a web search) and replies with a single line like \"Berlin: sunny, 3-11°C, 10% rain.\"\nYou can pause or edit it in the chat details pane.",
+      "reply_items": [
+        {
+          "text": "Done. One thing to flag: a \"Berlin weekday weather\" routine with exactly this schedule (Mon-Fri 09:00, Europe/Berlin) was already active. I created a second one by mistake, then deleted my duplicate, so you'll get one message, not two.",
+          "bot": true,
+          "y": 288.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "The existing routine is active and next runs tomorrow, Monday 26 October, at 09:00 Berlin time. It fetches real data (wttr.in or a web search) and replies with a single line like \"Berlin: sunny, 3-11°C, 10% rain.\"",
+          "bot": true,
+          "y": 381.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "You can pause or edit it in the chat details pane.",
+          "bot": true,
+          "y": 464.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r3/shots/t07-routine-turn1.png",
+      "transcript_full": "Done. One thing to flag: a \"Berlin weekday weather\" routine with exactly this schedule (Mon-Fri 09:00, Europe/Berlin) was already active. I created a second one by mistake, then deleted my duplicate, so you'll get one message, not two.\nThe existing routine is active and next runs tomorrow, Monday 26 October, at 09:00 Berlin time. It fetches real data (wttr.in or a web search) and replies with a single line like \"Berlin: sunny, 3-11°C, 10% rain.\"\nYou can pause or edit it in the chat details pane.\nUSER: Every weekday at 09:00, give me a one-line weather summary for Berlin. Set that up."
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 2.7,
+      "label": "Writing a routine"
+    },
+    {
+      "t": 3.7,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "routine_created",
+      "gating": true,
+      "pass": false,
+      "detail": "new routines: []"
+    }
+  ],
+  "checks_pass": false,
+  "wall_s_total": 8.85,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

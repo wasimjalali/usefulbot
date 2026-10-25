@@ -439,7 +439,6 @@ struct ProvidersPaneView: View {
 
     private func roleDetail(_ role: String) -> RolePublic? {
         switch role {
-        case "reviewer": return model.reviewerRole
         case "image": return model.imageRole
         default: return model.defaultRole
         }
@@ -467,10 +466,8 @@ struct ProvidersPaneView: View {
             let effort = model.defaultRole?.effort
             Task { await model.saveDefaultModel(connectionId: connectionId, modelId: option.id, effort: effort) }
         } else {
-            // Image and reviewer both persist through the generic role write;
-            // image carries no effort.
-            let effort = role == "reviewer" ? model.reviewerRole?.effort : nil
-            Task { await model.saveRole(role, connectionId: connectionId, modelId: option.id, effort: effort) }
+            // Image persists through the generic role write and carries no effort.
+            Task { await model.saveRole(role, connectionId: connectionId, modelId: option.id, effort: nil) }
         }
     }
 

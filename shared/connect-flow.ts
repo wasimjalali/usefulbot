@@ -1,6 +1,5 @@
 import {
   agentStorePath,
-  appendAgentEvent,
   listProposalsOfKind,
   readProposal,
   updateProposal,
@@ -8,15 +7,14 @@ import {
 } from "./agent-store.ts";
 import { authorizeConnector, countToolkitTools, forgetConnected, listConnectorToolkits } from "./composio.ts";
 import { connectorsPath as defaultConnectorsPath } from "./connectors-store.ts";
-import { listHandoffs, queueHandoff } from "./handoffs.ts";
-import { readShell } from "./shell-io.ts";
-import { DEFAULT_BOT_ID, orchestratorId } from "./shell-store.ts";
+import { engineNoteRow, engineSystemTurn } from "./engine-client.ts";
+import { wrapUntrusted } from "./untrusted.ts";
 
 /**
  * The connect card's server side. Confirm starts Composio OAuth and parks the
  * card in `waiting`; the tick calls pumpConnects, which asks Composio whether
- * the account is active and, once it is, queues the resume handoff for the
- * bot that asked. The redirect URL is returned to the caller once and never
+ * the account is active and, once it is, starts the resume system turn in the
+ * bot's chat through the engine. The redirect URL is returned to the caller once and never
  * stored.
  */
 
@@ -50,7 +48,7 @@ function oneLine(value: string, max: number): string {
  * comes from Composio's catalogue and is data, not an instruction.
  */
 function resumeMessage(card: Stored): string {
-  return `The owner connected the app ${card.slug}. Continue the task: ${oneLine(card.purpose, 120)}`;
+  return `The owner connected the app ${card.slug}. Continue the task you said it was for:\n${wrapUntrusted("connect-purpose", oneLine(card.purpose, 120))}`;
 }
 
 export async function startConnectAuthorize(
@@ -90,67 +88,34 @@ export async function startConnectAuthorize(
 }
 
 /**
- * Queue the bot's resume for a connected card and record its id. Returns
- * false when the record could not be written; the caller retries later.
+ * Start the bot's resume for a connected card and record its key. The key is
+ * the card's, so the engine runs the turn once however many times this is
+ * retried. Returns false when the engine did not take it or the key could not
+ * be written; the caller retries on the next tick.
  */
-function queueResume(card: Stored, now: number, storePath: string): boolean {
-  const targetId = card.sourceBotId ?? card.threadId;
-  let targetName = "Useful Bot";
-  // The resume is sent by the orchestrator under its real name. The roster
-  // not reading falls back to the default bot, as the name always did.
-  let source = { id: DEFAULT_BOT_ID, name: "Useful Bot" };
+async function queueResume(card: Stored, storePath: string): Promise<boolean> {
+  const key = `connect:${card.id}`;
   try {
-    const shell = readShell();
-    targetName = shell.bots.find((bot) => bot.id === targetId)?.name ?? targetName;
-    const orchestrator = shell.bots.find((bot) => bot.id === orchestratorId(shell));
-    if (orchestrator) source = { id: orchestrator.id, name: orchestrator.name };
-  } catch {
-    /* the names are cosmetic */
-  }
-  const message = resumeMessage(card);
-  let handoffId: string;
-  try {
-    // Idempotent: a resume already queued for this card (the id write failed
-    // last time) is adopted, never queued twice, whatever its status now,
-    // since a delivered one already gave the bot its turn. Only this cycle's
-    // record counts: waitingSince is stamped at the flip, so an older record
-    // from an earlier connect of the same app is not this card's resume.
-    const flippedAt = Date.parse(card.waitingSince ?? "");
-    const existing = listHandoffs().find(
-      (record) => record.targetBotId === targetId
-        && record.message === message
-        && record.sourceBotId === source.id
-        // A resume that gave up never reached the bot: queue a fresh one.
-        && record.status !== "failed"
-        && Number.isFinite(flippedAt)
-        && Date.parse(record.createdAt) >= flippedAt - 1_000,
-    );
-    handoffId = existing?.id ?? queueHandoff({
-      sourceBotId: source.id,
-      sourceName: source.name,
-      targetBotId: targetId,
-      targetName,
-      message,
-      depth: 0,
-    }).id;
-  } catch {
+    if (!await engineSystemTurn(card.sourceBotId ?? card.threadId, key, resumeMessage(card))) return false;
+  } catch (err) {
+    console.error(`[useful-bot] connect resume for ${card.slug} not started: ${err instanceof Error ? err.message : "unknown"}`);
     return false;
   }
   try {
     updateProposal(card.id, (item) => {
-      if (item.kind !== "connectApp" || item.handoffId) return;
-      item.handoffId = handoffId;
+      if (item.kind !== "connectApp" || item.resumeKey) return;
+      item.resumeKey = key;
     }, storePath);
   } catch {
-    // The record exists; the next sweep finds it by message and records it.
+    // The turn exists; the next sweep asks again with the same key and gets the same turn.
     return false;
   }
   return true;
 }
 
-// Single-flight, like the handoff pump: the tick fires this on every poll and
-// two overlapping runs could both read a card with no resume id and queue
-// the resume twice. Callers queue behind the run in progress.
+// Single-flight: the tick fires this on every poll and two overlapping runs
+// could both read a card with no resume key. The engine dedupes by key, but
+// callers still queue behind the run in progress.
 let pumpQueue: Promise<unknown> = Promise.resolve();
 
 export function pumpConnects(
@@ -176,7 +141,7 @@ async function pumpConnectsOnce(
   for (const card of cards.filter((item) => item.phase === "connected")) {
     const since = Date.parse(card.waitingSince ?? "");
     const lingered = !Number.isFinite(since) || now - since > CONNECT_LINGER_MS;
-    const queued = card.handoffId ? true : queueResume(card, now, storePath);
+    const queued = card.resumeKey ? true : await queueResume(card, storePath);
     if (queued || lingered) {
       // Only from pending: a dismiss that landed since the read above wins.
       updateProposal(card.id, (item) => {
@@ -232,14 +197,15 @@ async function pumpConnectsOnce(
     }, storePath);
     if (!didFlip) continue;
     try {
-      appendAgentEvent(card.threadId, { kind: "note", text: `${card.name} connected`, connectedName: card.name, connectedLogo: card.logo }, storePath);
-    } catch {
-      /* the resume still tells the owner */
+      await engineNoteRow(card.sourceBotId ?? card.threadId, `connect:${card.id}`, `Connected ${card.name}.`);
+    } catch (err) {
+      // The resume still tells the owner.
+      console.error(`[useful-bot] connected note for ${card.slug} not written: ${err instanceof Error ? err.message : "unknown"}`);
     }
-    // The card leaves the dock the moment the resume is queued: the note row
-    // and the bot's next turn tell the rest. A queue failure leaves it
-    // Connected with no handoff id and the sweep above retries next tick.
-    if (queueResume(card, now, storePath)) {
+    // The card leaves the dock the moment the resume is accepted: the note row
+    // and the bot's next turn tell the rest. A failure leaves it Connected
+    // with no resume key and the sweep above retries next tick.
+    if (await queueResume(card, storePath)) {
       updateProposal(card.id, (item) => {
         if (item.status === "pending") item.status = "confirmed";
       }, storePath);

@@ -1,0 +1,247 @@
+{
+  "task_id": "t01-files",
+  "title": "Files, tool choice",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r2",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot looked at the folder with its file tools (a listing, or a command that sizes the files) instead of guessing. The reply gives the right number of .md files counting the subfolder and names the largest one (the fixture has a larger .txt file that must not be named as the largest markdown file). One short answer. Deduct for inventing files or for a count that skips the subfolder.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files",
+  "errors": [],
+  "prompts": [
+    "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files (including subfolders), and which one is the largest?"
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792903434548,
+    "end": 1792903460985
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files (including subfolders), and which one is the largest?",
+      "sent_at_ms": 1792903434779,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        },
+        {
+          "t": 1.0,
+          "label": "Running a command: find"
+        }
+      ],
+      "cards": [
+        {
+          "t": 2.0,
+          "tool": "bash",
+          "preview": "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files -type f -name '*.md' -print0 | xargs -0 -I{} stat -f '%z %N' {} | sort -rn | awk '{print $1\" \"$2}'\nchanges files outside a project folder",
+          "texts": [
+            "bash",
+            "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files -type f -name '*.md' -print0 | xargs -0 -I{} stat -f '%z %N' {} | sort -rn | awk '{print $1\" \"$2}'\nchanges files outside a project folder"
+          ],
+          "decision": "approve"
+        }
+      ],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 8.52,
+      "wall_s": 5.57,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792903452147,
+      "reply_before_redraw": "8 .md files in total, including subfolders.\nThe largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.",
+      "redraw": "failed: sidebar rows changed (wanted 'How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files (including subfolders), and which one is the largest?' first)",
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": false,
+      "reply": "Done. index.html is in that folder, with title and h1 both \"Garden Notes\" and the three list items under it. Read back to confirm.\nRenamed. The <title> and the <h1> now both read \"Kitchen Garden\"; the list is unchanged.\nAdded. The list now reads Tomatoes, Basil, Mint, Rosemary, and the title and heading are unchanged.\nDone. A <style> block now sets the h1 to #1b5e20; nothing else changed.\nThree changes since the first version:\n1.\nRenamed the <title> and <h1> from \"Garden Notes\" to \"Kitchen Garden\".\n2.\nAdded a fourth list item, Rosemary, after Mint.\n3.\nAdded a <style> block in the head setting the h1 colour to #1b5e20 (dark green).\nEverything else is as first written: the doctype, the charset and viewport meta tags, the three original herbs, and the list order. The file grew from 295 to 369 bytes.\nCurrent contents of /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/index.html:\n369 bytes, 19 lines.",
+      "reply_items": [
+        {
+          "text": "Done. index.html is in that folder, with title and h1 both \"Garden Notes\" and the three list items under it. Read back to confirm.",
+          "bot": true,
+          "y": -524.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Renamed. The <title> and the <h1> now both read \"Kitchen Garden\"; the list is unchanged.",
+          "bot": true,
+          "y": -372.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Added. The list now reads Tomatoes, Basil, Mint, Rosemary, and the title and heading are unchanged.",
+          "bot": true,
+          "y": -220.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Done. A <style> block now sets the h1 to #1b5e20; nothing else changed.",
+          "bot": true,
+          "y": -68.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Three changes since the first version:",
+          "bot": true,
+          "y": 58.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "1.",
+          "bot": true,
+          "y": 89.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Renamed the <title> and <h1> from \"Garden Notes\" to \"Kitchen Garden\".",
+          "bot": true,
+          "y": 89.0,
+          "x": 1010.5,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "2.",
+          "bot": true,
+          "y": 111.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Added a fourth list item, Rosemary, after Mint.",
+          "bot": true,
+          "y": 111.0,
+          "x": 1010.5,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "3.",
+          "bot": true,
+          "y": 133.0,
+          "x": 989.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Added a <style> block in the head setting the h1 colour to #1b5e20 (dark green).",
+          "bot": true,
+          "y": 133.0,
+          "x": 1010.5,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Everything else is as first written: the doctype, the charset and viewport meta tags, the three original herbs, and the list order. The file grew from 295 to 369 bytes.",
+          "bot": true,
+          "y": 164.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "Current contents of /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/index.html:",
+          "bot": true,
+          "y": 316.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "369 bytes, 19 lines.",
+          "bot": true,
+          "y": 862.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r2/shots/t01-files-turn1.png",
+      "transcript_full": "Done. index.html is in that folder, with title and h1 both \"Garden Notes\" and the three list items under it. Read back to confirm.\nRename the page title and the heading to \"Kitchen Garden\".\nRenamed. The <title> and the <h1> now both read \"Kitchen Garden\"; the list is unchanged.\nAdd a fourth list item: Rosemary.\nAdded. The list now reads Tomatoes, Basil, Mint, Rosemary, and the title and heading are unchanged.\nMake the heading dark green, #1b5e20.\nWhat changed in the page since the first version you wrote?\nDone. A <style> block now sets the h1 to #1b5e20; nothing else changed.\nThree changes since the first version:\n1.\nRenamed the <title> and <h1> from \"Garden Notes\" to \"Kitchen Garden\".\n2.\nAdded a fourth list item, Rosemary, after Mint.\n3.\nAdded a <style> block in the head setting the h1 colour to #1b5e20 (dark green).\nEverything else is as first written: the doctype, the charset and viewport meta tags, the three original herbs, and the list order. The file grew from 295 to 369 bytes.\nRead the file back to me.\nCurrent contents of /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat/index.html:\n```\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>Kitchen Garden</title>\n  <style>\n    h1 { color: #1b5e20; }\n  </style>\n</head>\n<body>\n  <h1>Kitchen Garden</h1>\n  <ul>\n    <li>Tomatoes</li>\n    <li>Basil</li>\n    <li>Mint</li>\n    <li>Rosemary</li>\n  </ul>\n</body>\n</html>\n```\nCreate index.html in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t10-long-chat with a page title and one h1 that both read \"Garden Notes\", and under it a bulleted list of three items: Tomatoes, Basil, Mint.\n369 bytes, 19 lines."
+    }
+  ],
+  "cards": [
+    {
+      "t": 2.0,
+      "tool": "bash",
+      "preview": "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files -type f -name '*.md' -print0 | xargs -0 -I{} stat -f '%z %N' {} | sort -rn | awk '{print $1\" \"$2}'\nchanges files outside a project folder",
+      "texts": [
+        "bash",
+        "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files -type f -name '*.md' -print0 | xargs -0 -I{} stat -f '%z %N' {} | sort -rn | awk '{print $1\" \"$2}'\nchanges files outside a project folder"
+      ],
+      "decision": "approve"
+    }
+  ],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    },
+    {
+      "t": 1.0,
+      "label": "Running a command: find"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_has_md_count",
+      "gating": true,
+      "pass": false,
+      "detail": "expected 8 .md files; reply does not name that number"
+    },
+    {
+      "type": "reply_has_largest_md",
+      "gating": true,
+      "pass": false,
+      "detail": "largest is sub/design-notes.md (3116 bytes); reply does not name it"
+    },
+    {
+      "type": "tree_unchanged",
+      "gating": true,
+      "pass": true,
+      "detail": "changed/removed: []; added: []"
+    }
+  ],
+  "checks_pass": false,
+  "wall_s_total": 5.57,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

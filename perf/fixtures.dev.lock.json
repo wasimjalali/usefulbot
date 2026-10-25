@@ -1,29 +1,25 @@
 {
-  "bots": {
+  "chats": {
     "Perf Long Replies": {
-      "blocks": 27,
-      "events": 9172,
-      "rows": 26,
-      "sessionId": "wrun_01M3VX98AS3X22F1WT2APES63N"
+      "chatId": "2f405329-c075-46ee-90da-e51a38be3ee2",
+      "entries": 14996,
+      "sha256": "abe1bcacdc33daaee5fb7a557a7eacb301a3bdd91e0eee36c0bb6fbddeae1194"
     },
     "Perf Long Tools": {
-      "blocks": 35,
-      "events": 1276,
-      "rows": 34,
-      "sessionId": "wrun_01M3VWSYW9SHAKPNPP3K67A0S3"
+      "chatId": "8de537a7-1ea4-4913-8204-bcc52f4d431a",
+      "entries": 3500,
+      "sha256": "94e8c50623344e113b5ec0d64668887d77520ebd14c7d9ea69f954d38cd4f80a"
     },
     "Perf Short A": {
-      "blocks": 7,
-      "events": 71,
-      "rows": 6,
-      "sessionId": "wrun_01M3VWRKTANYTSNJSGZ8MH10WB"
+      "chatId": "b0899872-4bdd-4fb3-85e8-c74b4b936929",
+      "entries": 12,
+      "sha256": "eaa151d2536b2af06156183ae17d059e2454b67708d76366069d1420485088ce"
     },
     "Perf Short B": {
-      "blocks": 7,
-      "events": 40,
-      "rows": 6,
-      "sessionId": "wrun_01M3VWSF01CJPCX0K8NQ35ZN94"
+      "chatId": "00106dfc-0e87-4101-94b1-198ec44b4315",
+      "entries": 12,
+      "sha256": "a5588843274a07dcafe8aaafeb8465a08dbfef8eb76829791a45e5a49e974ebf"
     }
   },
-  "lockedAt": "2026-10-01-164954"
+  "lockedAt": "2026-10-25-172105"
 }

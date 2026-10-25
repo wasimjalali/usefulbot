@@ -5,8 +5,14 @@ import Testing
 
 private final class ReadyProbe: HealthProbe, @unchecked Sendable {
     var healthy: Set<String>
+    /// The stack a healthy endpoint says it belongs to; none says nothing.
+    var stacks: [String: String] = [:]
     init(healthy: Set<String> = []) { self.healthy = healthy }
     func probe(_ url: URL) async -> Bool { healthy.contains(url.absoluteString) }
+    func read(_ url: URL) async -> HealthReading? {
+        guard healthy.contains(url.absoluteString) else { return nil }
+        return HealthReading(stack: stacks[url.absoluteString])
+    }
 }
 
 /// A runner that can hang, hold strays and report a foreign listener.
@@ -90,12 +96,12 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         let runner = RecoveryRunner()
         let services = services(runner)
         let first = await services.ensure(config: dev, timeoutSeconds: 1)
-        #expect(first == .neverBound([.router, .eve, .web]))
+        #expect(first == .neverBound([.router, .engine, .web]))
         #expect(runner.spawned.count == 3)
         let second = await services.ensure(config: dev, timeoutSeconds: 1, replaceHung: true)
-        #expect(second == .neverBound([.router, .eve, .web]))
-        #expect(runner.spawnSignals.sorted() == ["term eve", "term router", "term web"])
-        #expect(runner.count(.router) == 2 && runner.count(.eve) == 2 && runner.count(.web) == 2)
+        #expect(second == .neverBound([.router, .engine, .web]))
+        #expect(runner.spawnSignals.sorted() == ["term engine", "term router", "term web"])
+        #expect(runner.count(.router) == 2 && runner.count(.engine) == 2 && runner.count(.web) == 2)
     }
 
     @Test func aSigtermThatIsIgnoredEndsInSigkill() async {
@@ -104,7 +110,7 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         let services = services(runner)
         _ = await services.ensure(config: dev, timeoutSeconds: 1)
         _ = await services.ensure(config: dev, timeoutSeconds: 1, replaceHung: true)
-        #expect(runner.spawnSignals.filter { $0.hasPrefix("kill") }.sorted() == ["kill eve", "kill router", "kill web"])
+        #expect(runner.spawnSignals.filter { $0.hasPrefix("kill") }.sorted() == ["kill engine", "kill router", "kill web"])
         // Each one was asked politely first.
         #expect(runner.spawnSignals.filter { $0.hasPrefix("term") }.count == 3)
         #expect(runner.count(.web) == 2)
@@ -118,7 +124,7 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         // No owner Retry here (a relaunch of the window, say): the spawn has now
         // outlived a whole budget, so it is replaced.
         let again = await services.ensure(config: dev, timeoutSeconds: 1)
-        #expect(again == .neverBound([.router, .eve, .web]))
+        #expect(again == .neverBound([.router, .engine, .web]))
         #expect(runner.spawnSignals.filter { $0.hasPrefix("term") }.count == 3)
         #expect(runner.count(.router) == 2)
     }
@@ -150,7 +156,7 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         let script = "\(repo)/scripts/service.mjs"
         runner.processes = [
             (901, "/usr/local/bin/node \(script) router"),
-            (902, "/usr/local/bin/node /Users/x/Library/Application Support/Useful Bot/app/scripts/service.mjs eve"),
+            (902, "/usr/local/bin/node /Users/x/Library/Application Support/Useful Bot/app/scripts/service.mjs engine"),
             (903, "/usr/local/bin/node \(script) web"),
             (904, "/usr/local/bin/node \(script) router --extra"),
         ]
@@ -166,7 +172,7 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
 
     @Test func aStrayThatIgnoresSigtermIsKilled() async {
         let runner = RecoveryRunner()
-        runner.processes = [(910, "/usr/local/bin/node \(repo)/scripts/service.mjs eve")]
+        runner.processes = [(910, "/usr/local/bin/node \(repo)/scripts/service.mjs engine")]
         runner.strayIgnoresTerm = [910]
         let services = services(runner)
         _ = await services.ensure(config: dev, timeoutSeconds: 0)
@@ -178,31 +184,31 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         let runner = RecoveryRunner()
         // Dev needs a stack name to count as ready, so use the daily stack here.
         let daily = ServerConfig(repoPath: "/repo", port: 4320)
-        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.eveHealthURL.absoluteString])
+        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.engineHealthURL.absoluteString])
         let outcome = await services(runner, probe: probe).ensure(config: daily)
         #expect(outcome == .ready)
         #expect(runner.strayQueries == 0)
     }
 
-    // MARK: - eve must be ours
+    // MARK: - The engine must be ours
 
-    @Test func aForeignEveOnOurPortIsNeverAdopted() async {
+    @Test func anEngineOfAnotherStackIsNeverAdopted() async {
         let runner = RecoveryRunner()
         let daily = ServerConfig(repoPath: "/repo", port: 4320)
-        runner.listening[AppVariant.daily.evePort] = [777]
-        runner.foreignPorts = [AppVariant.daily.evePort]
-        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.eveHealthURL.absoluteString])
+        runner.listening[AppVariant.daily.enginePort] = [777]
+        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.engineHealthURL.absoluteString])
+        probe.stacks[AppVariant.daily.engineHealthURL.absoluteString] = "someone-else"
         let outcome = await services(runner, probe: probe).ensure(config: daily)
         #expect(outcome == .foreignStack)
         #expect(runner.spawned.isEmpty)
         #expect(runner.terminated.isEmpty && runner.killed.isEmpty)
     }
 
-    @Test func anEveThisInstallOwnsIsStillAdopted() async {
+    @Test func anEngineThatReportsThisStackIsAdopted() async {
         let runner = RecoveryRunner()
         let daily = ServerConfig(repoPath: "/repo", port: 4320)
-        runner.listening[AppVariant.daily.evePort] = [778]
-        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.eveHealthURL.absoluteString])
+        runner.listening[AppVariant.daily.enginePort] = [778]
+        let probe = ReadyProbe(healthy: [daily.healthURL.absoluteString, AppVariant.daily.routerHealthURL.absoluteString, AppVariant.daily.engineHealthURL.absoluteString])
         let outcome = await services(runner, probe: probe).ensure(config: daily)
         #expect(outcome == .ready)
         #expect(runner.spawned.isEmpty)
@@ -220,7 +226,7 @@ private final class RecoveryRunner: ProcessRunner, @unchecked Sendable {
         #expect(supervisor.isStrayServiceLine(devLine, mode: .router, repoPath: devRoot))
         #expect(!supervisor.isStrayServiceLine(devLine, mode: .router, repoPath: daily))
         #expect(!supervisor.isStrayServiceLine(dailyLine, mode: .router, repoPath: devRoot))
-        #expect(!supervisor.isStrayServiceLine(dailyLine, mode: .eve, repoPath: daily))
+        #expect(!supervisor.isStrayServiceLine(dailyLine, mode: .engine, repoPath: daily))
         #expect(!supervisor.isStrayServiceLine(dailyLine + " --x", mode: .router, repoPath: daily))
         // A longer path that merely ends in this one is a different install.
         #expect(!supervisor.isStrayServiceLine("/usr/local/bin/node /old\(daily)/scripts/service.mjs router", mode: .router, repoPath: daily))

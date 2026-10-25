@@ -1,5 +1,4 @@
 import { isGateError, requireOwner } from "../../../../../lib/desktop-gate";
-import { migrateLegacyImagesThrottled } from "../../../../../lib/media-migrate";
 import { readImage } from "../../../../../../shared/images-store.ts";
 import { readMediaBytes, sniffImage } from "../../../../../../shared/media-store.ts";
 
@@ -34,14 +33,7 @@ export async function GET(
   const gate = await requireOwner(request);
   if (isGateError(gate)) return gate.error;
   const { id } = await context.params;
-  let found = readMediaBytes(id);
-  if (found.status === "missing") {
-    try {
-      if (migrateLegacyImagesThrottled().moved > 0) found = readMediaBytes(id);
-    } catch (err) {
-      console.error("[media] legacy migration failed", err);
-    }
-  }
+  const found = readMediaBytes(id);
   if (found.status === "missing" || found.status === "moved") {
     // Still in the app's own store (the folder could not take it yet, or a
     // Regenerate could not write its file there).

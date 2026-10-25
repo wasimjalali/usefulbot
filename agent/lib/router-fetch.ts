@@ -65,6 +65,67 @@ async function waitHint(response: Response): Promise<{ code: string | null; ms: 
   return { code, ms };
 }
 
+/**
+ * The last error the router answered a turn with, kept beside the turn so
+ * `turn.failed` reports the router's code and not text parsed out of Pi's
+ * error message (SPEC 5.3).
+ */
+export type RouterErrorRecord = {
+  status: number;
+  code: string | null;
+  message: string | null;
+  retryAfterMs: number | null;
+  /** ISO time a used-up plan limit resets, from the router's `resets_at=<epoch seconds>`. */
+  resetsAt: string | null;
+};
+
+const ERROR_CAP = 256;
+const routerErrors = new Map<string, RouterErrorRecord>();
+
+function rememberRouterError(turnKey: string, record: RouterErrorRecord): void {
+  // Insertion order is age, so the oldest turn goes first.
+  routerErrors.delete(turnKey);
+  routerErrors.set(turnKey, record);
+  if (routerErrors.size > ERROR_CAP) routerErrors.delete(routerErrors.keys().next().value as string);
+}
+
+/** The router's last error for a turn (keyed by its router turn id), or null. */
+export function lastRouterError(routerTurnId: string): RouterErrorRecord | null {
+  return routerErrors.get(routerTurnId) ?? null;
+}
+
+export function forgetRouterError(routerTurnId: string): void {
+  routerErrors.delete(routerTurnId);
+}
+
+async function errorRecord(response: Response): Promise<RouterErrorRecord> {
+  const record: RouterErrorRecord = { status: response.status, code: null, message: null, retryAfterMs: null, resetsAt: null };
+  try {
+    const body = await response.clone().json() as { error?: { code?: unknown; message?: unknown; retry_after_ms?: unknown } };
+    if (typeof body.error?.code === "string") record.code = body.error.code;
+    if (typeof body.error?.message === "string") {
+      record.message = body.error.message.slice(0, 500);
+      const reset = /\bresets_at=(\d{9,})/.exec(body.error.message);
+      if (reset) record.resetsAt = new Date(Number(reset[1]) * 1000).toISOString();
+    }
+    if (typeof body.error?.retry_after_ms === "number" && Number.isFinite(body.error.retry_after_ms) && body.error.retry_after_ms >= 0) {
+      record.retryAfterMs = body.error.retry_after_ms;
+    }
+  } catch {
+    // Not the router's JSON error shape: the status alone is recorded.
+  }
+  if (record.retryAfterMs === null) {
+    const seconds = Number(response.headers.get("retry-after"));
+    if (response.headers.has("retry-after") && Number.isFinite(seconds) && seconds >= 0) record.retryAfterMs = seconds * 1000;
+  }
+  return record;
+}
+
+async function handBack(routerTurnId: string, response: Response): Promise<Response> {
+  rememberRouterError(routerTurnId, await errorRecord(response));
+  return response;
+}
+
 export interface RouterFetchOptions {
   /** Read on every attempt, so a cached provider follows the session's current turn. */
   ids: () => RouterIds;
@@ -105,10 +166,14 @@ export function routerFetch(options: RouterFetchOptions): FetchLike {
       const selection = options.selection?.() ?? null;
       if (selection) headers.set(SELECTION_HEADER, encodeSelectionHeader(selection));
       const response = await doFetch(input, { ...init, headers });
-      if (response.status !== 429) return response;
+      if (response.ok) {
+        forgetRouterError(ids.turnId);
+        return response;
+      }
+      if (response.status !== 429) return await handBack(ids.turnId, response);
       const hint = await waitHint(response);
       const provider = hint.code !== null && PROVIDER_CODES.has(hint.code);
-      if (!hint.code || (!WAITABLE_CODES.has(hint.code) && !provider)) return response;
+      if (!hint.code || (!WAITABLE_CODES.has(hint.code) && !provider)) return await handBack(ids.turnId, response);
       const singleCap = provider ? MAX_PROVIDER_SINGLE_WAIT_MS : MAX_SINGLE_WAIT_MS;
       const totalCap = provider ? MAX_PROVIDER_TOTAL_WAIT_MS : MAX_TOTAL_WAIT_MS;
       const backoff = Math.min(BASE_BACKOFF_MS * 2 ** attempt, singleCap);
@@ -117,18 +182,18 @@ export function routerFetch(options: RouterFetchOptions): FetchLike {
         const hinted = hint.ms ?? backoff;
         // A pause longer than the whole allowance cannot be waited out, so it
         // goes back now rather than after minutes of waiting for nothing.
-        if (waited + hinted > totalCap) return response;
+        if (waited + hinted > totalCap) return await handBack(ids.turnId, response);
         // A pause longer than one slice is waited a slice at a time: the
         // router answers the next ask with the time still left. The jitter
         // grows with the pause, so bots released together by one pause do
         // not all hit the provider in the same half second.
         const jitter = random() * Math.min(5_000, Math.max(500, hinted * 0.1));
         wait = Math.min(Math.round(Math.min(hinted, singleCap) + jitter), totalCap - waited);
-        if (wait <= 0) return response;
+        if (wait <= 0) return await handBack(ids.turnId, response);
       } else {
         // Jitter, so ten bots refused together do not all come back together.
         wait = Math.round((hint.ms ?? backoff) + random() * 500);
-        if (wait > singleCap + 500 || waited + wait > totalCap) return response;
+        if (wait > singleCap + 500 || waited + wait > totalCap) return await handBack(ids.turnId, response);
       }
       await response.body?.cancel();
       await doSleep(wait, init?.signal);

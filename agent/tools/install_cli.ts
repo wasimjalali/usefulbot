@@ -1,4 +1,4 @@
-import { defineTool } from "eve/tools";
+import { defineTool } from "../lib/tool.ts";
 import { z } from "zod";
 import { homedir, tmpdir } from "node:os";
 import { effectiveRoot } from "../lib/workspace.ts";
@@ -6,11 +6,10 @@ import { approvedCommand, confinedCommand, sandboxAvailable } from "../lib/sandb
 import { runCommand } from "../lib/run-command.ts";
 import { actionSha256, approvalActor, executeIfApproved } from "../lib/approvals.ts";
 import { getApprovalStore } from "../lib/write.ts";
-import { inAppGate, READ_ONLY_BLOCKED, SUB_AGENT_BLOCKED, settle } from "../lib/permission.ts";
-import { isSubAgent } from "../lib/active-bot.ts";
+import { inAppGate, READ_ONLY_BLOCKED, settle } from "../lib/permission.ts";
 import { CLI_REGISTRY, cliStatus, findCli, resolveBin } from "../lib/cli-registry.ts";
 import { ownerPath, rescanOwnerPath } from "../../shared/user-path.ts";
-import { wrapUntrusted } from "../../shared/untrusted.ts";
+import { clipUtf8, wrapUntrusted } from "../../shared/untrusted.ts";
 import { markOutside } from "../lib/outside-content.ts";
 
 /** An install fetches a package and builds it; npm on a cold cache is slow. */
@@ -19,6 +18,7 @@ const OUTPUT_MAX_BYTES = 8 * 1024;
 const BUFFER_MAX_BYTES = 256 * 1024;
 
 export default defineTool({
+  name: "install_cli",
   description:
     "List the command-line tools this Mac has, or install one. `list` shows each known CLI, where it resolves and whether a sign-in is stored (not proof it still works: if a tool is signed out, point the owner at its own login, don't authenticate it yourself); it runs in every mode. Call it before saying a tool is missing. `install` runs the exact command for a listed name: Read only refuses, Auto shows a card, Full access runs it. A CLI not on the list goes through bash; name the package so the owner sees what they approve.",
   inputSchema: z.object({
@@ -26,6 +26,7 @@ export default defineTool({
     /** Required for install; ignored by list. */
     name: z.string().min(1).max(40).optional(),
   }),
+  sequential: true,
   async execute(input, ctx) {
     const path = ownerPath();
     if (input.action === "list") {
@@ -38,8 +39,6 @@ export default defineTool({
       };
     }
 
-    // An install leaves a program on the owner's Mac: the owner's own chat only.
-    if (isSubAgent(ctx)) return SUB_AGENT_BLOCKED;
     const wanted = (input.name ?? "").trim();
     const entry = wanted ? findCli(wanted) : null;
     if (!entry) {
@@ -59,7 +58,7 @@ export default defineTool({
     // Read only refuses, Auto asks, Full access runs.
     let workspace;
     try {
-      workspace = effectiveRoot(ctx?.session?.id);
+      workspace = effectiveRoot(ctx.chatId);
     } catch {
       return { status: "blocked", error: "workspace_changed" };
     }
@@ -75,7 +74,7 @@ export default defineTool({
       canonicalArgs: JSON.stringify({ name: entry.id }),
       cwd: root,
       targetRevision: null,
-      backend: "just-bash",
+      backend: "seatbelt",
       toolVersion: "1",
     });
     const store = getApprovalStore();
@@ -125,7 +124,7 @@ export default defineTool({
         },
         timeoutMs: INSTALL_TIMEOUT_MS,
         maxBytes: BUFFER_MAX_BYTES,
-        signal: ctx?.abortSignal,
+        signal: ctx.abortSignal,
       });
       // Look again at the directories already known, rather than reuse the
       // PATH resolved before the install ran: that one dropped every
@@ -145,8 +144,8 @@ export default defineTool({
         path: resolved,
         exitCode: run.exitCode,
         docs: entry.docs,
-        stdout: wrapUntrusted("install stdout", run.stdout.slice(-OUTPUT_MAX_BYTES)),
-        stderr: wrapUntrusted("install stderr", run.stderr.slice(-OUTPUT_MAX_BYTES)),
+        stdout: wrapUntrusted("install stdout", clipUtf8(run.stdout, OUTPUT_MAX_BYTES, "end").text),
+        stderr: wrapUntrusted("install stderr", clipUtf8(run.stderr, OUTPUT_MAX_BYTES, "end").text),
         ...(resolved
           ? { hint: `Sign in by running it: see ${entry.docs}.` }
           : run.exitCode === 0

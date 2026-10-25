@@ -182,6 +182,11 @@ enum MoveToApplications {
         ditto.arguments = [source.path, target.path]
         let errors = Pipe()
         ditto.standardError = errors
+        // The worker waits on this, not waitUntilExit: ditto launches on the
+        // main thread, and Foundation's waitUntilExit called from another
+        // thread can wait forever on that thread's stale task state.
+        let exited = DispatchSemaphore(value: 0)
+        ditto.terminationHandler = { _ in exited.signal() }
         do {
             try ditto.run()
         } catch {
@@ -220,7 +225,7 @@ enum MoveToApplications {
 
         DispatchQueue.global(qos: .userInitiated).async {
             let detail = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            ditto.waitUntilExit()
+            exited.wait()
             let cancelled = job.lock.withLock { job.cancelled }
             let outcome: CopyOutcome
             if cancelled {

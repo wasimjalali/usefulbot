@@ -32,11 +32,8 @@ export async function POST(
   }
   const { id } = await context.params;
   try {
-    const record = new ApprovalStore(Date.now, defaultApprovalsPath()).decide(
-      id,
-      body.decision,
-      body.actionSha256,
-    );
+    const store = new ApprovalStore(Date.now, defaultApprovalsPath());
+    const record = store.decide(id, body.decision, body.actionSha256);
     return NextResponse.json({ ok: true, id: record.id, decision: body.decision, status: record.status });
   } catch (err) {
     const code = errorCode(err, "approval_error");

@@ -1,0 +1,110 @@
+{
+  "task_id": "t02-bash-approve",
+  "title": "Bash with approval",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created notes.txt in the given folder with exactly the three lines one, two, three. If it asked for approval, it waited for it and carried on after the approval. The reply confirms what it did in a sentence or two and does not claim anything the file does not show.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t02-bash-approve",
+  "errors": [],
+  "prompts": [
+    "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t02-bash-approve with three lines: one, two, three."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792902318038,
+    "end": 1792902335502
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t02-bash-approve with three lines: one, two, three.",
+      "sent_at_ms": 1792902318134,
+      "activity": [
+        {
+          "t": 7.9,
+          "label": "Thinking"
+        },
+        {
+          "t": 12.9,
+          "label": "Writing"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "wall_s": 13.91,
+      "first_busy_s": 7.88,
+      "ended_at_ms": 1792902335200,
+      "user_bubble_found": true,
+      "reply": "Read back to confirm, 14 bytes.\nCreated",
+      "reply_items": [
+        {
+          "text": "Read back to confirm, 14 bytes.",
+          "bot": true
+        },
+        {
+          "text": "Created",
+          "bot": true
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve/shots/t02-bash-approve-turn1.png",
+      "transcript_full": "Today\nUSER: Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t02-bash-approve with three lines: one, two, three.\nRead back to confirm, 14 bytes.\nCreated\nMessage Useful Bot"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 7.9,
+      "label": "Thinking"
+    },
+    {
+      "t": 12.9,
+      "label": "Writing"
+    }
+  ],
+  "checks": [
+    {
+      "type": "file_lines",
+      "gating": true,
+      "pass": true,
+      "detail": "lines: ['one', 'two', 'three']"
+    },
+    {
+      "type": "cards_at_least",
+      "gating": false,
+      "pass": false,
+      "detail": "0 approval cards seen"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 13.91,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

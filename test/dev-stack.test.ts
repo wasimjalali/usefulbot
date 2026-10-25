@@ -15,7 +15,6 @@ import { defaultApprovalsPath } from "../agent/lib/approvals.ts";
 import { defaultWorkspacePath } from "../shared/workspace-store.ts";
 import { routinesStorePath } from "../shared/routines-store.ts";
 import { defaultWebSessionsPath } from "../shared/web-sessions.ts";
-import { handoffDir } from "../shared/handoffs.ts";
 import { memoryRoot } from "../agent/lib/memory.ts";
 import { widgetsDir } from "../shared/widgets-store.ts";
 import { imagesDir } from "../shared/images-store.ts";
@@ -29,8 +28,6 @@ import { oauthPendingPath } from "../shared/mcp-oauth.ts";
 import { chatGptSignInPath } from "../shared/chatgpt-signin.ts";
 import { cataloguePath } from "../shared/composio-catalogue.ts";
 import { limitsPath } from "../shared/limits-store.ts";
-import { defaultOwnerPath } from "../agent/lib/session-owners.ts";
-import { defaultSessionOwnersPath } from "../shared/session-bindings.ts";
 import { connectionSecretService, keychainGet, keychainSet, memoryKeychain, setKeychainDriver } from "../shared/keychain.ts";
 import { isForbiddenChildSegment, isGrantableRootPath } from "../shared/shell-store.ts";
 import { assertSafeRoot, resolveWorkspacePath } from "../agent/lib/workspace.ts";
@@ -41,8 +38,8 @@ import listDir from "../agent/tools/list_dir.ts";
 import bash from "../agent/tools/bash.ts";
 import {
   assertStack,
-  eveOrigin,
-  evePort,
+  engineOrigin,
+  enginePort,
   keychainName,
   keychainPrefix,
   keychainServiceAllowed,
@@ -70,13 +67,13 @@ const darwin = process.platform === "darwin";
 // so a developer's own shell (or a UB_* left by another test) cannot leak in.
 const STORE_OVERRIDES = [
   "UB_AGENT_STORE_PATH", "UB_SHELL_PATH", "UB_APPROVALS_PATH", "UB_WORKSPACE_STORE_PATH", "UB_ROUTINES_PATH",
-  "UB_WEB_SESSIONS_PATH", "UB_HANDOFF_DIR", "UB_MEMORY_ROOT", "UB_WIDGETS_DIR", "UB_IMAGES_DIR",
+  "UB_WEB_SESSIONS_PATH", "UB_MEMORY_ROOT", "UB_WIDGETS_DIR", "UB_IMAGES_DIR",
   "UB_MEDIA_INDEX_PATH", "UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH", "UB_CONNECTORS_PATH", "UB_CONNECTIONS_PATH",
   "UB_CONNECTION_TOOLS_PATH", "UB_OAUTH_PENDING_PATH", "UB_CATALOGUE_PATH", "UB_LIMITS_PATH",
-  "UB_SESSION_OWNERS_PATH", "UB_CHATGPT_SIGNIN_PATH", "UB_ROUTER_DB", "UB_ROUTER_CONFIG",
+  "UB_CHATGPT_SIGNIN_PATH", "UB_ROUTER_DB", "UB_ROUTER_CONFIG",
 ];
 const STACK_VARS = [
-  "UB_STACK", "UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_EVE_PORT", "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR",
+  "UB_STACK", "UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_ENGINE_PORT", "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR",
   "UB_WEB_BASE_URL", "UB_ROUTER_BASE_URL", "UB_OPENCODE_GO_BASE", "UB_WORKSPACE_ROOT",
 ];
 const ALL_VARS = ["HOME", "NODE_TEST_CONTEXT", ...STACK_VARS, ...STORE_OVERRIDES];
@@ -118,7 +115,7 @@ function devEnv(home: string): Record<string, string> {
     UB_STATE_ROOT: join(home, ".useful-bot-dev-app"),
     UB_ROUTER_PORT: "4419",
     UB_WEB_PORT: "4420",
-    UB_EVE_PORT: "4421",
+    UB_ENGINE_PORT: "4421",
     UB_KEYCHAIN_PREFIX: "com.usefulbot.dev",
     UB_MEDIA_DIR: join(home, "Documents", "Useful Bot Dev"),
     UB_WEB_BASE_URL: "http://127.0.0.1:4420",
@@ -135,7 +132,6 @@ const STORES: Array<{ name: string; path: () => string; tail: string; override: 
   { name: "workspace-store", path: () => defaultWorkspacePath(), tail: "workspace.json", override: "UB_WORKSPACE_STORE_PATH" },
   { name: "routines-store", path: () => routinesStorePath(), tail: "routines.json", override: "UB_ROUTINES_PATH" },
   { name: "web-sessions", path: () => defaultWebSessionsPath(), tail: "web-sessions.json", override: "UB_WEB_SESSIONS_PATH" },
-  { name: "handoffs", path: () => handoffDir(), tail: "handoffs", override: "UB_HANDOFF_DIR" },
   { name: "memory", path: () => memoryRoot(), tail: "memory", override: "UB_MEMORY_ROOT" },
   { name: "widgets-store", path: () => widgetsDir(), tail: "widgets", override: "UB_WIDGETS_DIR" },
   { name: "images-store", path: () => imagesDir(), tail: "images", override: "UB_IMAGES_DIR" },
@@ -149,10 +145,8 @@ const STORES: Array<{ name: string; path: () => string; tail: string; override: 
   { name: "chatgpt-signin", path: () => chatGptSignInPath(), tail: "chatgpt-signin.json", override: "UB_CHATGPT_SIGNIN_PATH" },
   { name: "composio-catalogue", path: () => cataloguePath(), tail: "composio-catalogue.json", override: "UB_CATALOGUE_PATH" },
   { name: "limits-store", path: () => limitsPath(), tail: "limits.json", override: "UB_LIMITS_PATH" },
-  { name: "session bindings", path: () => defaultSessionOwnersPath(), tail: "session-owners.json", override: "UB_SESSION_OWNERS_PATH" },
   { name: "router usage db", path: () => routerDbPath(), tail: "router/usage.sqlite", override: "UB_ROUTER_DB" },
   { name: "router config", path: () => routerConfigPath(), tail: "config.json", override: "UB_ROUTER_CONFIG" },
-  { name: "session owners", path: () => defaultOwnerPath(), tail: "policy.sqlite", override: null },
 ];
 
 test("with no stack setting every store sits under ~/.useful-bot (daily unchanged)", () => {
@@ -225,12 +219,12 @@ test("ports, prefix and origins default to the daily literals", () => {
       assert.equal(stackName(), "daily");
       assert.equal(routerPort(), 4319);
       assert.equal(webPort(), 4320);
-      assert.equal(evePort(), 4321);
+      assert.equal(enginePort(), 4321);
       assert.equal(keychainPrefix(), "com.usefulbot");
       assert.equal(keychainName("router.desktop"), "com.usefulbot.router.desktop");
       assert.equal(routerOrigin(), "http://127.0.0.1:4319");
       assert.equal(routerApiBase(), "http://127.0.0.1:4319/v1");
-      assert.equal(eveOrigin(), "http://127.0.0.1:4321");
+      assert.equal(engineOrigin(), "http://127.0.0.1:4321");
       assert.equal(webOrigin(), "http://127.0.0.1:4320");
       assert.deepEqual(stackProblems(), []);
     });
@@ -241,10 +235,10 @@ test("ports, prefix and origins default to the daily literals", () => {
 });
 
 test("a port or base URL given in the environment is used; a bad port is refused", () => {
-  withEnv({ UB_ROUTER_PORT: "5319", UB_WEB_PORT: "5320", UB_EVE_PORT: "5321" }, () => {
+  withEnv({ UB_ROUTER_PORT: "5319", UB_WEB_PORT: "5320", UB_ENGINE_PORT: "5321" }, () => {
     assert.equal(routerPort(), 5319);
     assert.equal(webPort(), 5320);
-    assert.equal(evePort(), 5321);
+    assert.equal(enginePort(), 5321);
     assert.equal(routerApiBase(), "http://127.0.0.1:5319/v1");
     assert.equal(webOrigin(), "http://127.0.0.1:5320");
   });
@@ -269,9 +263,9 @@ test("a complete dev environment passes and resolves every value to its dev one"
       assert.equal(stateRoot(), join(home, ".useful-bot-dev-app"));
       assert.equal(routerPort(), 4419);
       assert.equal(webPort(), 4420);
-      assert.equal(evePort(), 4421);
+      assert.equal(enginePort(), 4421);
       assert.equal(routerOrigin(), "http://127.0.0.1:4419");
-      assert.equal(eveOrigin(), "http://127.0.0.1:4421");
+      assert.equal(engineOrigin(), "http://127.0.0.1:4421");
       assert.equal(webOrigin(), "http://127.0.0.1:4420");
       assert.equal(keychainPrefix(), "com.usefulbot.dev");
       assert.equal(keychainName("device.desktop"), "com.usefulbot.dev.device.desktop");
@@ -285,7 +279,7 @@ test("a complete dev environment passes and resolves every value to its dev one"
 test("dev with any required value missing throws and names it", () => {
   const home = tempHome();
   try {
-    for (const missing of ["UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_EVE_PORT", "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR"]) {
+    for (const missing of ["UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_ENGINE_PORT", "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR"]) {
       const env: Record<string, string | undefined> = { ...devEnv(home), [missing]: undefined };
       withEnv(env, () => {
         assert.throws(() => assertStack(), new RegExp(missing), `${missing} missing`);
@@ -310,7 +304,7 @@ test("dev with a daily-equal value throws, however the path is spelled", () => {
       ["UB_STATE_ROOT", join(home, ".useful-bot-dev")],
       ["UB_ROUTER_PORT", "4319"],
       ["UB_WEB_PORT", "4320"],
-      ["UB_EVE_PORT", "4321"],
+      ["UB_ENGINE_PORT", "4321"],
       ["UB_KEYCHAIN_PREFIX", "com.usefulbot"],
       ["UB_MEDIA_DIR", join(home, "Documents", "Useful Bot")],
     ];
@@ -329,7 +323,7 @@ test("a dev service entry exits non-zero before it starts anything", () => {
   try {
     const bare = { ...process.env, HOME: home, UB_STACK: "dev" } as Record<string, string>;
     for (const key of ALL_VARS) if (key !== "HOME" && key !== "UB_STACK") delete bare[key];
-    for (const mode of ["router", "eve", "web"]) {
+    for (const mode of ["router", "engine", "web"]) {
       const result = spawnSync(process.execPath, [join(ROOT, "scripts/service.mjs"), mode], {
         env: bare, encoding: "utf8", timeout: 20_000,
       });
@@ -649,7 +643,7 @@ test("on dev, the state root's folder name must be a lowercase .useful-bot-<word
 test("on dev, the checked override list names every store variable the real setup:dev sets or a module reads", () => {
   for (const name of [
     "UB_ROUTER_CONFIG", "UB_ROUTER_DB", "UB_AGENT_STORE_PATH", "UB_SHELL_PATH", "UB_APPROVALS_PATH", "UB_WORKSPACE_STORE_PATH",
-    "UB_ROUTINES_PATH", "UB_WEB_SESSIONS_PATH", "UB_HANDOFF_DIR", "UB_MEMORY_ROOT", "UB_WIDGETS_DIR", "UB_IMAGES_DIR",
+    "UB_ROUTINES_PATH", "UB_WEB_SESSIONS_PATH", "UB_MEMORY_ROOT", "UB_WIDGETS_DIR", "UB_IMAGES_DIR",
     "UB_MEDIA_INDEX_PATH", "UB_PROVIDERS_PATH", "UB_MODELS_CACHE_PATH", "UB_CONNECTORS_PATH",
     "UB_CONNECTIONS_PATH", "UB_CONNECTION_TOOLS_PATH", "UB_OAUTH_PENDING_PATH", "UB_CATALOGUE_PATH", "UB_LIMITS_PATH",
   ]) {
@@ -726,13 +720,13 @@ test("on dev, the bot working root may not sit at or under a protected daily fol
 test("on dev, no service may take any daily port, and no two services may share a port", () => {
   const home = tempHome();
   try {
-    for (const name of ["UB_ROUTER_PORT", "UB_WEB_PORT", "UB_EVE_PORT"]) {
+    for (const name of ["UB_ROUTER_PORT", "UB_WEB_PORT", "UB_ENGINE_PORT"]) {
       for (const daily of ["4319", "4320", "4321"]) {
         const problems = problemsFor(home, { [name]: daily });
         assert.ok(problems.some((problem) => problem.includes(name) && /daily/.test(problem)), `${name}=${daily}`);
       }
     }
-    for (const [a, b] of [["UB_ROUTER_PORT", "UB_WEB_PORT"], ["UB_ROUTER_PORT", "UB_EVE_PORT"], ["UB_WEB_PORT", "UB_EVE_PORT"]]) {
+    for (const [a, b] of [["UB_ROUTER_PORT", "UB_WEB_PORT"], ["UB_ROUTER_PORT", "UB_ENGINE_PORT"], ["UB_WEB_PORT", "UB_ENGINE_PORT"]]) {
       const problems = problemsFor(home, { [a]: "4499", [b]: "4499" });
       assert.ok(problems.some((problem) => problem.includes(a) && problem.includes(b) && /same port|duplicate/i.test(problem)), `${a}/${b}: ${problems.join("; ")}`);
     }
@@ -1265,7 +1259,7 @@ test("the kernel refuses a write into every app-state folder and allows unrelate
 });
 
 // ---------------------------------------------------------------------------
-// 7b. The runtime install roots: service code and the eve session transcripts.
+// 7b. The runtime install roots: service code and what sits beside it.
 
 const SUPPORT = "Library/Application Support";
 const RUNTIME_DIRS = ["Useful Bot", "Useful Bot Dev"];
@@ -1274,7 +1268,7 @@ const UNRELATED_SUPPORT = ["Claude", "Useful Botany", "Code"];
 test("a grant on a runtime install folder, in either stack, is refused; other Application Support folders are fine", () => {
   for (const dir of RUNTIME_DIRS) {
     for (const spelled of [dir, dir.toUpperCase(), dir.toLowerCase()]) {
-      for (const tail of ["", "/app", "/app/.eve/sessions"]) {
+      for (const tail of ["", "/app", "/app/data/sessions"]) {
         assert.equal(isGrantableRootPath(`/Users/me/${SUPPORT}/${spelled}${tail}`), false, `${spelled}${tail}`);
       }
     }
@@ -1289,18 +1283,18 @@ test("a grant on a runtime install folder, in either stack, is refused; other Ap
 test("read_file, write and list paths into a runtime install folder are refused, and a symlink into one", async () => {
   const home = realpathSync(tempHome());
   try {
-    for (const dir of RUNTIME_DIRS) mkdirSync(join(home, SUPPORT, dir, "app", ".eve"), { recursive: true });
+    for (const dir of RUNTIME_DIRS) mkdirSync(join(home, SUPPORT, dir, "app", "data"), { recursive: true });
     mkdirSync(join(home, SUPPORT, "Claude"), { recursive: true });
     mkdirSync(join(home, SUPPORT, "Useful Botany"), { recursive: true });
     writeFileSync(join(home, SUPPORT, "Claude", "note.txt"), "fine");
     writeFileSync(join(home, SUPPORT, "Useful Botany", "note.txt"), "fine");
-    writeFileSync(join(home, SUPPORT, "Useful Bot", "app", ".eve", "session.json"), "transcript");
+    writeFileSync(join(home, SUPPORT, "Useful Bot", "app", "data", "session.json"), "transcript");
     symlinkSync(join(home, SUPPORT, "Useful Bot", "app"), join(home, "into-daily"));
     symlinkSync(join(home, SUPPORT, "Useful Bot Dev"), join(home, "into-dev"));
 
     for (const dir of RUNTIME_DIRS) {
       for (const spelled of [dir, dir.toUpperCase(), dir.toLowerCase()]) {
-        for (const path of [`${SUPPORT}/${spelled}`, `${SUPPORT}/${spelled}/app/.eve/session.json`, `${SUPPORT.toLowerCase()}/${spelled}/new.txt`, `./${SUPPORT}//${spelled}/../${spelled}/app`]) {
+        for (const path of [`${SUPPORT}/${spelled}`, `${SUPPORT}/${spelled}/app/data/session.json`, `${SUPPORT.toLowerCase()}/${spelled}/new.txt`, `./${SUPPORT}//${spelled}/../${spelled}/app`]) {
           assert.throws(() => resolveWorkspacePath(path, home), /path_forbidden/, path);
         }
       }
@@ -1308,22 +1302,22 @@ test("read_file, write and list paths into a runtime install folder are refused,
     for (const dir of UNRELATED_SUPPORT) assert.doesNotThrow(() => resolveWorkspacePath(`${SUPPORT}/${dir}/note.txt`, home), dir);
 
     // A symlink inside the workspace never carries a path through.
-    for (const path of ["into-daily/.eve/session.json", "into-dev/app", "into-daily"]) {
+    for (const path of ["into-daily/data/session.json", "into-dev/app", "into-daily"]) {
       assert.throws(() => resolveWorkspacePath(path, home), /path_symlink|path_forbidden/, path);
     }
     // A root that is itself inside an install folder, however it was reached.
-    assert.throws(() => resolveWorkspacePath("app/.eve/session.json", join(home, SUPPORT, "Useful Bot")), /path_forbidden/);
+    assert.throws(() => resolveWorkspacePath("app/data/session.json", join(home, SUPPORT, "Useful Bot")), /path_forbidden/);
     assert.throws(() => assertSafeRoot(join(home, SUPPORT, "Useful Bot", "app")), /workspace_path_forbidden/);
     assert.throws(() => assertSafeRoot(join(home, "into-daily")), /workspace_path_forbidden|workspace_root_symlink/);
 
     // The tools themselves, with the working root pinned the way the shell does it.
     type Tool = { execute: (input: never, context: never) => unknown };
     await withEnvAsync({ UB_WORKSPACE_ROOT: home, UB_APPROVALS_PATH: join(home, "approvals.json") }, async () => {
-      for (const path of [`${SUPPORT}/Useful Bot/app/.eve/session.json`, `${SUPPORT}/useful bot dev/app`, "into-daily/.eve/session.json"]) {
+      for (const path of [`${SUPPORT}/Useful Bot/app/data/session.json`, `${SUPPORT}/useful bot dev/app`, "into-daily/data/session.json"]) {
         assert.throws(() => (readFile as unknown as Tool).execute({ path } as never, {} as never), /path_forbidden|path_symlink/, `read ${path}`);
         assert.throws(() => (listDir as unknown as Tool).execute({ path } as never, {} as never), /path_forbidden|path_symlink/, `list ${path}`);
         await assert.rejects(
-          approvedWrite({ path, content: "x", expectedSha256: null, sessionId: "", turnId: "t", toolCallId: "c", autoDecision: "approve" }),
+          approvedWrite({ path, content: "x", expectedSha256: null, chatId: "", botId: "bot-1", turnId: "t", toolCallId: "c", autoDecision: "approve" }),
           /path_forbidden|path_symlink/,
           `write ${path}`,
         );
@@ -1331,7 +1325,7 @@ test("read_file, write and list paths into a runtime install folder are refused,
       const fine = (await (readFile as unknown as Tool).execute({ path: `${SUPPORT}/Claude/note.txt` } as never, {} as never)) as { text: string };
       assert.match(fine.text, /fine/);
     });
-    assert.equal(readFileSync(join(home, SUPPORT, "Useful Bot", "app", ".eve", "session.json"), "utf8"), "transcript");
+    assert.equal(readFileSync(join(home, SUPPORT, "Useful Bot", "app", "data", "session.json"), "utf8"), "transcript");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -1341,7 +1335,7 @@ test("the shell tripwire blocks a line naming a runtime install folder, however 
   type Tool = { execute: (input: never, context: never) => unknown };
   const run = async (command: string) => (await (bash as unknown as Tool).execute({ command } as never, {} as never)) as { status?: string };
   for (const line of [
-    "cat ~/Library/Application\\ Support/Useful\\ Bot/app/.eve/session.json",
+    "cat ~/Library/Application\\ Support/Useful\\ Bot/app/data/session.json",
     'ls "$HOME/Library/Application Support/Useful Bot Dev"',
     "ls '/Users/me/Library/Application Support/USEFUL BOT/app'",
     "cat ~/library/application\\ support/useful\\ bot\\ dev/app/x",
@@ -1414,15 +1408,15 @@ test("the kernel refuses reads and writes in both runtime install folders, throu
 });
 
 // ---------------------------------------------------------------------------
-// 7c. The iOS gate script never reaches a dev stack's eve.
+// 7c. The iOS gate script never reaches a dev stack's engine.
 
-test("ios-pairing-gate.sh stops only the eve that listens on the daily eve port", () => {
+test("ios-pairing-gate.sh stops only the engine that listens on the daily engine port", () => {
   const script = readFileSync(join(ROOT, "scripts/ios-pairing-gate.sh"), "utf8");
-  assert.doesNotMatch(script, /pkill\s+-f/, "a pattern kill reaches every stack's eve");
-  assert.doesNotMatch(script, /pgrep\s+-f\s+"service\.mjs eve"/, "a pattern lookup reaches every stack's supervisor");
-  const stopEve = script.slice(script.indexOf("stop_eve()"), script.indexOf("start_eve()"));
-  assert.match(stopEve, /lsof -ti tcp:4321 -sTCP:LISTEN/);
-  assert.match(stopEve, /ps -o ppid=/, "the supervisor is found as the listener's ancestor");
+  assert.doesNotMatch(script, /pkill\s+-f/, "a pattern kill reaches every stack's engine");
+  assert.doesNotMatch(script, /pgrep\s+-f\s+"service\.mjs engine"/, "a pattern lookup reaches every stack's supervisor");
+  const stopEngine = script.slice(script.indexOf("stop_engine()"), script.indexOf("start_engine()"));
+  assert.match(stopEngine, /lsof -ti tcp:4321 -sTCP:LISTEN/);
+  assert.match(stopEngine, /ps -o ppid=/, "the supervisor is found as the listener's ancestor");
   const syntax = spawnSync("/bin/bash", ["-n", join(ROOT, "scripts/ios-pairing-gate.sh")], { encoding: "utf8" });
   assert.equal(syntax.status, 0, syntax.stderr);
 });

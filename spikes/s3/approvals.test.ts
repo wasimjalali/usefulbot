@@ -21,7 +21,8 @@ test("deny never executes", async () => {
   const store = new ApprovalStore(() => 1_000);
   const hash = hashFor('{"path":"a.txt","content":"no"}');
   const rec = store.request({
-    sessionId: "s",
+    chatId: "s",
+    botId: "bot-useful",
     turnId: "t",
     toolCallId: "c",
     tool: "write_file",
@@ -44,7 +45,8 @@ test("expired pending never executes", async () => {
   const store = new ApprovalStore(() => now);
   const hash = hashFor('{"path":"b.txt"}');
   const rec = store.request({
-    sessionId: "s",
+    chatId: "s",
+    botId: "bot-useful",
     turnId: "t",
     toolCallId: "c",
     tool: "write_file",
@@ -66,7 +68,8 @@ test("modified arguments are a hash mismatch", async () => {
   const store = new ApprovalStore(() => 1_000);
   const hash = hashFor('{"path":"c.txt","content":"one"}');
   const rec = store.request({
-    sessionId: "s",
+    chatId: "s",
+    botId: "bot-useful",
     turnId: "t",
     toolCallId: "c",
     tool: "write_file",
@@ -89,7 +92,8 @@ test("approved action runs once and replay is rejected", async () => {
   const store = new ApprovalStore(() => 1_000);
   const hash = hashFor('{"path":"d.txt","content":"ok"}');
   const rec = store.request({
-    sessionId: "s",
+    chatId: "s",
+    botId: "bot-useful",
     turnId: "t",
     toolCallId: "c",
     tool: "write_file",
@@ -116,7 +120,8 @@ test("restart invalidates unused approvals", async () => {
   const store = new ApprovalStore(() => 1_000);
   const hash = hashFor('{"path":"e.txt"}');
   const rec = store.request({
-    sessionId: "s",
+    chatId: "s",
+    botId: "bot-useful",
     turnId: "t",
     toolCallId: "c",
     tool: "write_file",

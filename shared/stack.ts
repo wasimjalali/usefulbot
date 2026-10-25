@@ -31,7 +31,7 @@ export const LOOPBACK = "127.0.0.1";
 export const DAILY = {
   routerPort: 4319,
   webPort: 4320,
-  evePort: 4321,
+  enginePort: 4321,
   keychainPrefix: "com.usefulbot",
   stateDir: ".useful-bot",
   mediaDir: "Useful Bot",
@@ -54,21 +54,21 @@ export const APP_STATE_DIR = DAILY.stateDir;
  */
 export const STORE_OVERRIDE_VARS = [
   "UB_ROUTER_CONFIG", "UB_ROUTER_DB", "UB_AGENT_STORE_PATH", "UB_SHELL_PATH", "UB_APPROVALS_PATH",
-  "UB_WORKSPACE_STORE_PATH", "UB_ROUTINES_PATH", "UB_WEB_SESSIONS_PATH", "UB_HANDOFF_DIR", "UB_MEMORY_ROOT",
+  "UB_WORKSPACE_STORE_PATH", "UB_ROUTINES_PATH", "UB_WEB_SESSIONS_PATH", "UB_MEMORY_ROOT",
   "UB_WIDGETS_DIR", "UB_IMAGES_DIR", "UB_MEDIA_INDEX_PATH", "UB_PROVIDERS_PATH",
   "UB_MODELS_CACHE_PATH", "UB_CONNECTORS_PATH", "UB_CONNECTIONS_PATH", "UB_CONNECTION_TOOLS_PATH",
-  "UB_OAUTH_PENDING_PATH", "UB_CATALOGUE_PATH", "UB_LIMITS_PATH", "UB_SESSION_OWNERS_PATH", "UB_CHATGPT_SIGNIN_PATH",
+  "UB_OAUTH_PENDING_PATH", "UB_CATALOGUE_PATH", "UB_LIMITS_PATH", "UB_CHATGPT_SIGNIN_PATH",
 ] as const;
 
 /** Base-URL overrides. On the dev stack none may aim at a loopback host on a daily port. */
 export const ORIGIN_OVERRIDE_VARS = ["UB_ROUTER_BASE_URL", "UB_WEB_BASE_URL", "UB_OPENCODE_GO_BASE"] as const;
 
-const DAILY_PORTS: readonly number[] = [DAILY.routerPort, DAILY.webPort, DAILY.evePort];
+const DAILY_PORTS: readonly number[] = [DAILY.routerPort, DAILY.webPort, DAILY.enginePort];
 
 const PORT_VARS = [
   ["UB_ROUTER_PORT", DAILY.routerPort],
   ["UB_WEB_PORT", DAILY.webPort],
-  ["UB_EVE_PORT", DAILY.evePort],
+  ["UB_ENGINE_PORT", DAILY.enginePort],
 ] as const;
 
 // The part after the stack's prefix: `device.desktop`, `connection.<id>`.
@@ -76,6 +76,11 @@ const PORT_VARS = [
 const DEV_STATE_NAME = /^\.useful-bot-[a-z0-9]+(-[a-z0-9]+)*$/;
 
 const SERVICE_TAIL = /^[a-z0-9][a-z0-9._-]{0,120}$/;
+
+/** True when a folder's name is a dev state root's (`.useful-bot-<name>`), never the daily one. */
+export function isDevStateFolder(path: string): boolean {
+  return DEV_STATE_NAME.test(basename(resolve(path)));
+}
 
 export class StackConfigError extends Error {
   readonly problems: string[];
@@ -134,8 +139,8 @@ export function webPort(env: Env = process.env): number {
   return portFrom(env, "UB_WEB_PORT", DAILY.webPort);
 }
 
-export function evePort(env: Env = process.env): number {
-  return portFrom(env, "UB_EVE_PORT", DAILY.evePort);
+export function enginePort(env: Env = process.env): number {
+  return portFrom(env, "UB_ENGINE_PORT", DAILY.enginePort);
 }
 
 /** `http://127.0.0.1:<router port>`, no path. */
@@ -148,8 +153,8 @@ export function routerApiBase(env: Env = process.env): string {
   return env.UB_ROUTER_BASE_URL ?? `${routerOrigin(env)}/v1`;
 }
 
-export function eveOrigin(env: Env = process.env): string {
-  return `http://${LOOPBACK}:${evePort(env)}`;
+export function engineOrigin(env: Env = process.env): string {
+  return `http://${LOOPBACK}:${enginePort(env)}`;
 }
 
 /** The loopback origin the web service binds; UB_WEB_BASE_URL still wins. */
@@ -538,9 +543,10 @@ export function isAppStateSegment(segment: string): boolean {
 }
 
 /**
- * The runtime install roots, one per stack: the service code and the `.eve/`
- * session transcripts live under them, so a bot may not read or write there
- * any more than in the state folders. Whole folders, compared case-insensitively
+ * The runtime install roots, one per stack: the service code lives under them
+ * (the engine's session files sit under the state root, `engine/pi/sessions`,
+ * which the app-state rule already covers), so a bot may not read or write
+ * there any more than in the state folders. Whole folders, compared case-insensitively
  * (APFS folds case). Other `Application Support` folders are not covered, and
  * neither is `Useful Botany`.
  */

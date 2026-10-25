@@ -1,0 +1,98 @@
+{
+  "task_id": "t06-memory-recall",
+  "title": "Memory recall (new chat)",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "none"
+  },
+  "rubric": "In a brand new chat the bot gives the codename saved in the previous task, and it came from its memory (the activity labels or the wording show it looked in memory), not from a guess and not from asking the owner. One short answer.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t06-memory-recall",
+  "errors": [],
+  "prompts": [
+    "What's my project codename?"
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792902403855,
+    "end": 1792902416264
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What's my project codename?",
+      "sent_at_ms": 1792902403956,
+      "activity": [
+        {
+          "t": 7.9,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "wall_s": 8.93,
+      "first_busy_s": 7.92,
+      "ended_at_ms": 1792902416004,
+      "user_bubble_found": true,
+      "reply": "Your project codename is marigold-d636.",
+      "reply_items": [
+        {
+          "text": "Your project codename is marigold-d636.",
+          "bot": true
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve/shots/t06-memory-recall-turn1.png",
+      "transcript_full": "Today\nUSER: What's my project codename?\nYour project codename is marigold-d636.\nMessage Useful Bot"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 7.9,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": true,
+      "detail": "/marigold-d636/ on turn -1: match"
+    },
+    {
+      "type": "activity_seen",
+      "gating": false,
+      "pass": false,
+      "detail": "labels matching: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 8.93,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

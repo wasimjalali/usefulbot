@@ -1,20 +1,20 @@
-import { defineTool } from "eve/tools";
+import { defineTool } from "../lib/tool.ts";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { callerOf, inAppGate, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
+import { inAppGate, READ_ONLY_BLOCKED, sessionPermission } from "../lib/permission.ts";
 import { toolRouterIds } from "../lib/router-identity.ts";
-import { appendAgentEvent, releaseSend, reserveSend } from "../../shared/agent-store.ts";
+import { releaseSend, reserveSend } from "../../shared/agent-store.ts";
 import { writeImage } from "../../shared/images-store.ts";
 import { saveImage } from "../../shared/media-store.ts";
-import { readShell } from "../../shared/shell-io.ts";
 import { routerOrigin } from "../../shared/stack.ts";
 
 /** Image models answer slowly; two and a half minutes is the tool's ceiling. */
 const GENERATE_TIMEOUT_MS = 150_000;
 
 export default defineTool({
+  name: "generate_image",
   description:
-    "Draw an image from a text prompt with the owner's image model, when they ask for a picture, illustration, icon or render. Needs an image provider key in Settings; without one, say so. Pass `model` (an id from list_models, plus `connectionId` if two providers share it) only when asked, since some cost far more. The image appears in the chat and is saved in the Library (path in the result): answer in text, don't link or embed it. Copy or move it elsewhere only when the owner names that place, for this image or as a standing preference (an attached folder, Full access or an earlier file saved elsewhere is not such a request), and keep the Library copy.",
+    "Draw an image from a text prompt with the owner's image model, when they ask for a picture, illustration, icon or render. Needs an image provider key in Settings; without one, say so. Pass `model` (an id the owner named, plus `connectionId` if two providers share it) only when asked, since some cost far more. The image appears in the chat and is saved in the Library (path in the result): answer in text, don't link or embed it. Copy or move it elsewhere only when the owner names that place, for this image or as a standing preference (an attached folder, Full access or an earlier file saved elsewhere is not such a request), and keep the Library copy.",
   inputSchema: z.object({
     prompt: z.string().min(1).max(4000),
     size: z.enum(["square", "wide", "tall"]).optional(),
@@ -22,16 +22,13 @@ export default defineTool({
     connectionId: z.string().min(1).max(200).optional(),
     requestId: z.string().min(1).max(120).optional(),
   }),
+  sequential: true,
   async execute(input, ctx) {
     // An image costs real money at the provider and lands in the transcript,
     // so Read only refuses it like every other change inside the app.
     if (input.connectionId && !input.model) {
       return { status: "failed", error: "connection_without_model", hint: "Pass the image model id as `model` with its connectionId, or neither for the default." };
     }
-    // The bot that will own the picture is resolved before the provider is
-    // paid: an unbound session is refused here, never after the bill.
-    const who = await callerOf(readShell(), ctx);
-    if (!who.ok) return who.result;
     if (inAppGate(sessionPermission(ctx)) === "refuse") return READ_ONLY_BLOCKED;
     const token = process.env.UB_ROUTER_DESKTOP_TOKEN;
     if (!token) {
@@ -60,7 +57,7 @@ export default defineTool({
           ...(input.model ? { image_model: input.model } : {}),
           ...(input.model && input.connectionId ? { image_connection: input.connectionId } : {}),
         }),
-        signal: AbortSignal.any([AbortSignal.timeout(GENERATE_TIMEOUT_MS), ...(ctx?.abortSignal ? [ctx.abortSignal] : [])]),
+        signal: AbortSignal.any([AbortSignal.timeout(GENERATE_TIMEOUT_MS), ctx.abortSignal]),
       });
     } catch (err) {
       if (requestId) releaseSend("image", requestId);
@@ -75,8 +72,8 @@ export default defineTool({
           status: "failed",
           error: code,
           hint: code === "image_model_ambiguous"
-            ? "Two providers offer that model id. Pass the connectionId from list_models too."
-            : "That is not one of the owner's image models. Call list_models with kind image for the exact ids, or leave model out to use the default.",
+            ? "Two providers offer that model id. Pass the connectionId of the one the owner means, or leave model out to use the default."
+            : "That is not one of the owner's image models. Leave model out to use the default, or ask the owner which one they mean.",
         };
       }
       if (code === "provider_incompatible" || code === "upstream_credential_missing" || code === "provider_disconnected") {
@@ -103,15 +100,8 @@ export default defineTool({
     // Everything from here runs after the provider billed. Each failure ends
     // in a plain, final answer the bot relays, never a thrown error it would
     // retry (and pay for again).
-    let botId = "";
-    let botName = "Useful Bot";
-    try {
-      const shell = readShell();
-      botId = who.caller.id;
-      botName = shell.bots.find((bot) => bot.id === botId)?.name ?? botName;
-    } catch (err) {
-      console.error(`[media] could not read the roster for image ${imageId}`, err);
-    }
+    const botId = ctx.botId;
+    const botName = ctx.snapshot.context.bot.name;
     const mime = typeof item.mime === "string" ? item.mime : "image/png";
     const provider = typeof json?.provider === "string" ? json.provider : "";
     const model = typeof json?.model === "string" ? json.model : "";
@@ -130,6 +120,7 @@ export default defineTool({
         model,
         botId,
         botName,
+        chatId: ctx.chatId,
       }).path;
     } catch (err) {
       console.error(`[media] could not save image ${imageId} to the media folder`, err);
@@ -145,19 +136,12 @@ export default defineTool({
         };
       }
     }
-    let shown = Boolean(botId);
-    if (shown) {
-      try {
-        appendAgentEvent(botId, {
-          kind: "image",
-          text: input.prompt,
-          imageId,
-          id: `img_${imageId}`,
-        });
-      } catch (err) {
-        console.error(`[media] could not add image ${imageId} to the chat`, err);
-        shown = false;
-      }
+    let shown = true;
+    try {
+      await ctx.appendRow({ key: `image:${imageId}`, kind: "image", imageId, prompt: input.prompt });
+    } catch (err) {
+      console.error(`[media] could not add image ${imageId} to the chat`, err);
+      shown = false;
     }
     const where = savedPath
       ? `Saved in the Library as ${savedPath}. Leave it there: copy it somewhere else only if the owner asked for that place.`

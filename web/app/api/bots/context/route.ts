@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isGateError, requireOwner } from "../../../../lib/desktop-gate";
 import { errorCode } from "../../../../lib/api-guard";
 import { botContextReport } from "../../../../lib/agent-exec";
+import { EngineUnavailableError } from "../../../../../shared/engine-client.ts";
 
 export const runtime = "nodejs";
 
@@ -15,10 +16,11 @@ export async function GET(request: Request) {
   const botId = new URL(request.url).searchParams.get("botId")?.trim() ?? "";
   if (!botId) return NextResponse.json({ ok: false, error: "bot_required" }, { status: 400 });
   try {
-    const report = botContextReport(botId);
+    const report = await botContextReport(botId);
     if (!report) return NextResponse.json({ ok: false, error: "bot_missing" }, { status: 404 });
     return NextResponse.json({ ok: true, ...report });
   } catch (err) {
+    if (err instanceof EngineUnavailableError) return NextResponse.json({ ok: false, error: "engine_unavailable" }, { status: 503 });
     return NextResponse.json({ ok: false, error: errorCode(err, "context_unavailable") }, { status: 400 });
   }
 }

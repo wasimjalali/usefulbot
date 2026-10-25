@@ -1,0 +1,115 @@
+{
+  "task_id": "t02-bash-approve",
+  "title": "Bash with approval",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r2",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot created notes.txt in the given folder with exactly the three lines one, two, three. If it asked for approval, it waited for it and carried on after the approval. The reply confirms what it did in a sentence or two and does not claim anything the file does not show.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bash-approve",
+  "errors": [],
+  "prompts": [
+    "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bash-approve with three lines: one, two, three."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792903464214,
+    "end": 1792903489931
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bash-approve with three lines: one, two, three.",
+      "sent_at_ms": 1792903464447,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 8.46,
+      "wall_s": 5.04,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792903481214,
+      "reply_before_redraw": "Created notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bash-approve with the three lines: one, two, three. I read it back to confirm.",
+      "redraw": "failed: sidebar rows changed (wanted 'Create notes.txt in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t02-bash-approve with three lines: one, two, three.' first)",
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": false,
+      "reply": "8 .md files in total, including subfolders.\nThe largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.",
+      "reply_items": [
+        {
+          "text": "8 .md files in total, including subfolders.",
+          "bot": true,
+          "y": 324.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "The largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.",
+          "bot": true,
+          "y": 355.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r2/shots/t02-bash-approve-turn1.png",
+      "transcript_full": "8 .md files in total, including subfolders.\nThe largest is sub/design-notes.md at 3,116 bytes. Next largest is delta.md at 1,082 bytes.\nHow many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r2/t01-files (including subfolders), and which one is the largest?"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "file_lines",
+      "gating": true,
+      "pass": true,
+      "detail": "lines: ['one', 'two', 'three']"
+    },
+    {
+      "type": "cards_at_least",
+      "gating": false,
+      "pass": false,
+      "detail": "0 approval cards seen"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 5.04,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

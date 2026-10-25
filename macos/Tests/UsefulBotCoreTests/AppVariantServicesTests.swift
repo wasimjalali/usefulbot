@@ -46,7 +46,7 @@ private final class StackRunner: ProcessRunner, @unchecked Sendable {
     }
 }
 
-/// The port frees the moment the listener is signalled, as Next's and eve's do,
+/// The port frees the moment the listener is signalled, as Next's and the engine's do,
 /// but the process (and a child under it) keeps running until it is let go.
 private final class DrainingRunner: ProcessRunner, @unchecked Sendable {
     private let lock = NSLock()
@@ -148,57 +148,29 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
     private let devRoot = "/Users/x/Library/Application Support/Useful Bot Dev/app"
     private let releaseRoot = "/Users/x/Library/Application Support/Useful Bot/app"
 
-    private func eveStack(_ variant: AppVariant, line: String, repoPath: String, pid: pid_t = 4242) -> (LocalServices, LineRunner, ServerConfig) {
+    /// A stack whose engine listens with the given command line and reports `stack`.
+    private func engineStack(_ variant: AppVariant, line: String, repoPath: String, stack: String?, pid: pid_t = 4242) -> (LocalServices, LineRunner, ServerConfig) {
         let runner = LineRunner()
-        runner.listening[variant.evePort] = [(pid, line)]
-        let probe = allHealthy(variant, stack: variant == .dev ? "dev" : nil)
-        let services = LocalServices(
-            runner: runner, probe: probe, supervisor: nodeOK, startGraceSeconds: 0, devRuntimeRoot: devRoot,
-            releaseRuntimeRoot: releaseRoot, checkoutRoot: "/Users/x/Desktop/useful-bot"
-        )
+        runner.listening[variant.enginePort] = [(pid, line)]
+        let probe = allHealthy(variant, stack: stack)
+        let services = LocalServices(runner: runner, probe: probe, supervisor: nodeOK, startGraceSeconds: 0)
         return (services, runner, ServerConfig(repoPath: repoPath, port: variant == .dev ? 4420 : 4320, variant: variant))
     }
 
-    @Test func dailyAdoptsAnEveFromAnotherDailyRuntime() async {
+    @Test func dailyAdoptsAnEngineThatReportsNoStackOrItsOwn() async {
         // The checkout build and the release build share the daily ports and must
         // be able to take over from each other across a repoPath switch.
-        let (services, runner, config) = eveStack(
-            .daily, line: "node /Users/x/Desktop/useful-bot/node_modules/eve/bin/eve.js dev", repoPath: releaseRoot)
-        #expect(await services.ensure(config: config, timeoutSeconds: 0) == .ready)
-        #expect(runner.started == 0 && runner.signalled == 0)
-    }
-
-    @Test func dailyRefusesAListenerThatIsNotEveAndNamesIt() async {
-        let (services, runner, config) = eveStack(.daily, line: "python3 -m http.server 4321", repoPath: releaseRoot, pid: 7007)
-        #expect(await services.ensure(config: config, timeoutSeconds: 0) == .foreignStack)
-        #expect(runner.started == 0 && runner.signalled == 0)
-        #expect(await services.foreignListenerDetail(config: config)?.contains("7007") == true)
-    }
-
-    @Test func noStopPathEverTargetsAnEveTheStrictRuleDoesNotOwn() async {
-        // Adoption is lenient for daily; signalling never is. An unhealthy eve from
-        // the checkout, seen by a release-path app, is adopted for readiness but its
-        // stop rule must say "not ours", while the app's own eve is.
-        let foreignToRepo = "node /Users/x/Desktop/useful-bot/node_modules/eve/bin/eve.js dev"
-        let ownLine = "node \(releaseRoot)/node_modules/eve/bin/eve.js dev"
-        for (line, expected) in [(foreignToRepo, false), (ownLine, true)] {
-            let runner = LineRunner()
-            runner.listening[AppVariant.daily.evePort] = [(4343, line)]
-            let probe = allHealthy(.daily, stack: nil)
-            probe.set(AppVariant.daily.eveHealthURL, nil)
-            let services = LocalServices(
-                runner: runner, probe: probe, supervisor: nodeOK, startGraceSeconds: 0, devRuntimeRoot: devRoot,
-                releaseRuntimeRoot: releaseRoot, checkoutRoot: "/Users/x/Desktop/useful-bot")
-            _ = await services.ensure(
-                config: ServerConfig(repoPath: releaseRoot, port: 4320, variant: .daily), timeoutSeconds: 0)
-            #expect(!runner.stopVerdicts.isEmpty)
-            #expect(runner.stopVerdicts.allSatisfy { $0 == expected }, "\(line)")
+        for stack in [nil, AppVariant.daily.stackName] {
+            let (services, runner, config) = engineStack(
+                .daily, line: "node --experimental-strip-types agent/server.ts /Users/x/Desktop/useful-bot", repoPath: releaseRoot, stack: stack)
+            #expect(await services.ensure(config: config, timeoutSeconds: 0) == .ready)
+            #expect(runner.started == 0 && runner.signalled == 0)
         }
     }
 
-    @Test func dailyRefusesAnEveRunningFromTheDevRuntimeAndNamesIt() async {
-        let (services, runner, config) = eveStack(
-            .daily, line: "node \(devRoot)/node_modules/eve/bin/eve.js dev", repoPath: releaseRoot, pid: 5150)
+    @Test func anEngineThatReportsAnotherStackIsForeignAndNamed() async {
+        let (services, runner, config) = engineStack(
+            .daily, line: "node --experimental-strip-types agent/server.ts \(devRoot)", repoPath: releaseRoot, stack: "dev", pid: 5150)
         #expect(await services.ensure(config: config, timeoutSeconds: 0) == .foreignStack)
         #expect(runner.started == 0 && runner.signalled == 0)
         let detail = await services.foreignListenerDetail(config: config)
@@ -206,26 +178,41 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         #expect(detail?.contains(devRoot) == true)
     }
 
+    @Test func noStopPathEverTargetsAnEngineTheStrictRuleDoesNotOwn() async {
+        // An unhealthy engine from the checkout, seen by a release-path app: its
+        // stop rule must say "not ours", while the app's own engine is.
+        let foreignToRepo = "node --experimental-strip-types agent/server.ts /Users/x/Desktop/useful-bot"
+        let ownLine = "node --experimental-strip-types agent/server.ts \(releaseRoot)"
+        for (line, expected) in [(foreignToRepo, false), (ownLine, true)] {
+            let runner = LineRunner()
+            runner.listening[AppVariant.daily.enginePort] = [(4343, line)]
+            let probe = allHealthy(.daily, stack: nil)
+            probe.set(AppVariant.daily.engineHealthURL, nil)
+            let services = LocalServices(runner: runner, probe: probe, supervisor: nodeOK, startGraceSeconds: 0)
+            _ = await services.ensure(
+                config: ServerConfig(repoPath: releaseRoot, port: 4320, variant: .daily), timeoutSeconds: 0)
+            #expect(!runner.stopVerdicts.isEmpty)
+            #expect(runner.stopVerdicts.allSatisfy { $0 == expected }, "\(line)")
+        }
+    }
+
     @Test func foreignDetailShowsChildAndParentAsTwoParts() async {
         let runner = ParentRunner()
-        runner.listening[AppVariant.daily.evePort] = [(pid: 9001, command: "python3 -m http.server", parent: "/bin/zsh -l")]
-        let services = LocalServices(
-            runner: runner, probe: allHealthy(.daily, stack: nil), supervisor: nodeOK, startGraceSeconds: 0,
-            devRuntimeRoot: devRoot, releaseRuntimeRoot: releaseRoot, checkoutRoot: "/Users/x/Desktop/useful-bot")
+        runner.listening[AppVariant.daily.enginePort] = [(pid: 9001, command: "python3 -m http.server", parent: "/bin/zsh -l")]
+        let services = LocalServices(runner: runner, probe: allHealthy(.daily, stack: nil), supervisor: nodeOK, startGraceSeconds: 0)
         let config = ServerConfig(repoPath: releaseRoot, port: 4320, variant: .daily)
         let detail = await services.foreignListenerDetail(config: config)
         #expect(detail?.hasSuffix("pid 9001: python3 -m http.server (parent: /bin/zsh -l)") == true)
     }
 
-    @Test func devKeepsStrictEveOwnership() async {
-        let (services, runner, config) = eveStack(
-            .dev, line: "node \(releaseRoot)/node_modules/eve/bin/eve.js dev", repoPath: devRoot, pid: 6001)
-        #expect(await services.ensure(config: config, timeoutSeconds: 0) == .foreignStack)
-        #expect(runner.started == 0 && runner.signalled == 0)
-        let detail = await services.foreignListenerDetail(config: config)
-        #expect(detail?.contains("6001") == true)
-        #expect(detail?.contains(releaseRoot) == true)
-        let own = eveStack(.dev, line: "node \(devRoot)/node_modules/eve/bin/eve.js dev", repoPath: devRoot)
+    @Test func devKeepsStrictOwnershipByItsStack() async {
+        // Dev needs the engine to say it is dev.
+        let silent = engineStack(.dev, line: "node agent/server.ts", repoPath: devRoot, stack: nil, pid: 6001)
+        #expect(await silent.0.ensure(config: silent.2, timeoutSeconds: 0) == .foreignStack)
+        #expect(silent.1.started == 0 && silent.1.signalled == 0)
+        let other = engineStack(.dev, line: "node agent/server.ts", repoPath: devRoot, stack: "daily", pid: 6002)
+        #expect(await other.0.ensure(config: other.2, timeoutSeconds: 0) == .foreignStack)
+        let own = engineStack(.dev, line: "node agent/server.ts \(devRoot)", repoPath: devRoot, stack: "dev")
         #expect(await own.0.ensure(config: own.2, timeoutSeconds: 0) == .ready)
         #expect(await own.0.foreignListenerDetail(config: own.2) == nil)
     }
@@ -238,7 +225,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         let probe = StackProbe()
         let reading = HealthReading(stack: stack)
         probe.set(variant.routerHealthURL, reading)
-        probe.set(variant.eveHealthURL, HealthReading(stack: nil))
+        probe.set(variant.engineHealthURL, reading)
         probe.set(variant.webBaseURL.appendingPathComponent("api/health"), reading)
         return probe
     }
@@ -289,13 +276,13 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         let command = nodeOK.command(mode: .web, repoPath: "/repo", variant: .dev)
         #expect(command.environment == AppVariant.dev.serviceEnvironment(home: FileManager.default.homeDirectoryForCurrentUser))
         #expect(Set(command.environment.keys) == [
-            "UB_STACK", "UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_EVE_PORT",
+            "UB_STACK", "UB_STATE_ROOT", "UB_ROUTER_PORT", "UB_WEB_PORT", "UB_ENGINE_PORT",
             "UB_KEYCHAIN_PREFIX", "UB_MEDIA_DIR", "UB_WEB_BASE_URL",
         ])
     }
 
     @Test func dailyServicesGetNoExtraEnvironment() {
-        for mode in [ServiceMode.router, .eve, .web] {
+        for mode in [ServiceMode.router, .engine, .web] {
             let command = nodeOK.command(mode: mode, repoPath: "/repo", variant: .daily)
             #expect(command.environment.isEmpty)
             #expect(command.arguments == ["/repo/scripts/service.mjs", mode.rawValue])
@@ -330,7 +317,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         let outcome = await services.ensure(config: devConfig, timeoutSeconds: 0)
         #expect(outcome == .unavailable)
         // It started its own three, with the dev environment, ...
-        #expect(runner.started.map { $0.arguments.last ?? "" } == ["router", "eve", "web"])
+        #expect(runner.started.map { $0.arguments.last ?? "" } == ["router", "engine", "web"])
         #expect(runner.started.allSatisfy { $0.environment["UB_STACK"] == "dev" })
         // ... never asked the daily ports at all, and never signalled anything.
         let dailyPorts = [":4319", ":4320", ":4321"]
@@ -382,7 +369,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
     @Test func stoppingServicesLeavesAForeignStackAlone() async {
         let runner = StackRunner()
         runner.listening = [4420: [9001], 4419: [9002], 4421: [9003]]
-        // Web and router answer as the daily stack; eve has no stack field.
+        // Every service answers as the daily stack.
         let probe = allHealthy(.dev, stack: "daily")
         let services = LocalServices(runner: runner, probe: probe, supervisor: nodeOK, startGraceSeconds: 0)
         await services.stopOwnServices(config: devConfig)
@@ -396,7 +383,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         let runner = DrainingRunner()
         runner.listening = [4420: [9001], 4419: [9002], 4421: [9003]]
         // A listener and its child: the port frees at once, the processes drain later.
-        runner.running = [OwnedProcess(pid: 9001, args: "next-server (v15)", started: "t1"), OwnedProcess(pid: 9004, args: "eve local-server-child", started: "t2")]
+        runner.running = [OwnedProcess(pid: 9001, args: "next-server (v15)", started: "t1"), OwnedProcess(pid: 9004, args: "node agent/server.ts", started: "t2")]
         let services = LocalServices(runner: runner, probe: allHealthy(.dev, stack: "dev"), supervisor: nodeOK, startGraceSeconds: 0, stopExitGraceSeconds: 5)
         let result = await services.stopOwnServices(config: devConfig)
         #expect(result == .stopped)
@@ -552,7 +539,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         #expect(env["UB_STATE_ROOT"] == stateRoot)
         #expect(env["UB_ROUTER_PORT"] == "4419")
         #expect(env["UB_WEB_PORT"] == "4420")
-        #expect(env["UB_EVE_PORT"] == "4421")
+        #expect(env["UB_ENGINE_PORT"] == "4421")
         #expect(env["UB_KEYCHAIN_PREFIX"] == "com.usefulbot.dev")
         #expect(env["UB_MEDIA_DIR"] == AppVariant.dev.mediaDirectory(home: folders.home).path)
         #expect(env["UB_WEB_BASE_URL"] == "http://127.0.0.1:4420")
@@ -714,7 +701,7 @@ private final class ParentRunner: ProcessRunner, @unchecked Sendable {
         let support = URL(fileURLWithPath: "/Users/test/Library/Application Support", isDirectory: true)
         let daily = RuntimeInstall.installRoot(support: support, variant: .daily).path
         let dev = RuntimeInstall.installRoot(support: support, variant: .dev).path
-        for tail in ["scripts/service.mjs web", "node_modules/eve/bin/eve.js dev --port 4321", "router/src/index.ts"] {
+        for tail in ["scripts/service.mjs web", "agent/server.ts", "router/src/index.ts"] {
             let dailyLine = "\(daily)/bin/node --experimental-strip-types \(daily)/\(tail)"
             let devLine = "\(dev)/bin/node --experimental-strip-types \(dev)/\(tail)"
             #expect(nodeOK.isOwnNodeProcess(dailyLine, repoPath: daily))

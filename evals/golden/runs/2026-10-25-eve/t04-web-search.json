@@ -1,0 +1,156 @@
+{
+  "task_id": "t04-web-search",
+  "title": "Web search",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "none"
+  },
+  "rubric": "The bot searched the web (the transcript or the activity labels show a search or a page fetch) instead of answering from memory, gave one concrete Node.js version number and cited a URL for it (nodejs.org or the project's GitHub releases are the expected sources). Judge the version for plausibility against the page the bot cites, not against your own knowledge of Node: a version the cited page supports passes. Deduct for no citation, for a vague answer, or for an LTS line mixed up with the latest stable release without saying so.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve/t04-web-search",
+  "errors": [],
+  "prompts": [
+    "What's the latest stable Node.js release? Cite the page."
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792902364203,
+    "end": 1792902380911
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "What's the latest stable Node.js release? Cite the page.",
+      "sent_at_ms": 1792902364298,
+      "activity": [
+        {
+          "t": 8.1,
+          "label": "Thinking"
+        },
+        {
+          "t": 9.1,
+          "label": "Using web fetch"
+        },
+        {
+          "t": 10.1,
+          "label": "Thinking"
+        },
+        {
+          "t": 12.1,
+          "label": "Writing"
+        }
+      ],
+      "cards": [],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "wall_s": 13.15,
+      "first_busy_s": 8.13,
+      "ended_at_ms": 1792902380588,
+      "user_bubble_found": true,
+      "reply": "I'll check the official Node.js release page.\n- Newest release (Current): Node.js 26.12.1, last updated Oct 21, 2026. Still in the six-month Current phase, so it is not LTS yet.\n- Latest LTS (what production should use): Node.js 24.22.1 \"Krypton\".\nSource: https://nodejs.org/en/about/previous-releases (\nOne note: v24 became Maintenance LTS on Oct 20, 2026, so it now gets security fixes only. If you're picking a version for a new project, LTS 24 is the safe choice.\nTwo answers, depending on which \"stable\" you mean:",
+      "reply_items": [
+        {
+          "text": "I'll check the official Node.js release page.",
+          "bot": true
+        },
+        {
+          "text": "•",
+          "bot": true
+        },
+        {
+          "text": "Newest release (Current): Node.js 26.12.1, last updated Oct 21, 2026. Still in the six-month Current phase, so it is not LTS yet.",
+          "bot": true
+        },
+        {
+          "text": "•",
+          "bot": true
+        },
+        {
+          "text": "Latest LTS (what production should use): Node.js 24.22.1 \"Krypton\".",
+          "bot": true
+        },
+        {
+          "text": "Source: https://nodejs.org/en/about/previous-releases (",
+          "bot": true
+        },
+        {
+          "text": "One note: v24 became Maintenance LTS on Oct 20, 2026, so it now gets security fixes only. If you're picking a version for a new project, LTS 24 is the safe choice.",
+          "bot": true
+        },
+        {
+          "text": "Two answers, depending on which \"stable\" you mean:",
+          "bot": true
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve/shots/t04-web-search-turn1.png",
+      "transcript_full": "Today\nUSER: What's the latest stable Node.js release? Cite the page.\nI'll check the official Node.js release page.\n- Newest release (Current): Node.js 26.12.1, last updated Oct 21, 2026. Still in the six-month Current phase, so it is not LTS yet.\n- Latest LTS (what production should use): Node.js 24.22.1 \"Krypton\".\nSource: https://nodejs.org/en/about/previous-releases (\nOne note: v24 became Maintenance LTS on Oct 20, 2026, so it now gets security fixes only. If you're picking a version for a new project, LTS 24 is the safe choice.\nTwo answers, depending on which \"stable\" you mean:\nMessage Useful Bot"
+    }
+  ],
+  "cards": [],
+  "activity": [
+    {
+      "t": 8.1,
+      "label": "Thinking"
+    },
+    {
+      "t": 9.1,
+      "label": "Using web fetch"
+    },
+    {
+      "t": 10.1,
+      "label": "Thinking"
+    },
+    {
+      "t": 12.1,
+      "label": "Writing"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": true,
+      "detail": "/\\bv?\\d{1,2}\\.\\d+\\.\\d+\\b/ on turn -1: match"
+    },
+    {
+      "type": "reply_regex",
+      "gating": true,
+      "pass": true,
+      "detail": "/https?:/// on turn -1: match"
+    },
+    {
+      "type": "activity_seen",
+      "gating": false,
+      "pass": true,
+      "detail": "labels matching: ['Using web fetch']"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 13.15,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

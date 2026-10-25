@@ -30,7 +30,6 @@ export interface RuntimeConfig {
   schemaVersion: 1;
   phoneEnabled: boolean;
   tailnet: TailnetConfig | null;
-  sandbox: { backend: "just-bash"; evidenceId: string; imageDigest: null };
   goBalanceDisabledConfirmedAt: string | null;
   searchKeyRequired: false;
   credentials: CredentialDigest[];
@@ -40,6 +39,7 @@ const ALLOWED_KEYS = new Set([
   "schemaVersion",
   "phoneEnabled",
   "tailnet",
+  // Written by a setup from before the engine; nothing reads it.
   "sandbox",
   "goBalanceDisabledConfirmedAt",
   "searchKeyRequired",

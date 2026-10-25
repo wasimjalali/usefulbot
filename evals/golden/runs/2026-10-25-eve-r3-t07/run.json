@@ -1,0 +1,78 @@
+{
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r3-t07",
+  "dry_run": false,
+  "started_at": "2026-10-25T06:06:30",
+  "harness_commit": "acd720f7",
+  "python": "3.14.7",
+  "cua_driver": "cua-driver 0.30.4",
+  "app": {
+    "bundle_id": "ai.useful.bot.dev",
+    "version": "0.2.0",
+    "build": "2",
+    "bundle_mtime": "2026-10-25T04:59:12"
+  },
+  "app_command": "/Users/wasimjalali/Applications/Useful Bot Dev.app/Contents/MacOS/UsefulBotDevApp",
+  "window": {
+    "app_name": "Useful Bot Dev",
+    "bounds": {
+      "height": 993.0,
+      "width": 1604.0,
+      "x": 683.0,
+      "y": 85.0
+    },
+    "current_space_id": 1,
+    "is_on_screen": true,
+    "layer": 0,
+    "on_current_space": true,
+    "pid": 31115,
+    "space_ids": [
+      1
+    ],
+    "title": "Useful Bot Dev",
+    "window_id": 54610,
+    "z_index": 10
+  },
+  "scratch_root": "/Users/wasimjalali/UsefulBotGolden",
+  "tasks": [
+    "t07-routine"
+  ],
+  "model": {
+    "chip_model": "DeepSeek Flash",
+    "chip_effort": "Max",
+    "effort_options": [
+      "Low",
+      "High",
+      "Max"
+    ],
+    "shell_model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    },
+    "highest_effort": "Max",
+    "changed": false
+  },
+  "bot_state": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  },
+  "created_routines": [
+    "rtn_419fb4772cb341d7"
+  ],
+  "summary": {
+    "t07-routine": {
+      "checks_pass": true,
+      "wall_s_total": 14.21,
+      "timeouts": []
+    }
+  },
+  "finished_at": "2026-10-25T06:07:49"
+}

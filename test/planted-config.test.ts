@@ -15,7 +15,7 @@ import { approvedWrite, setApprovalStore } from "../agent/lib/write.ts";
 import { resolveWorkspacePath } from "../agent/lib/workspace.ts";
 import bash from "../agent/tools/bash.ts";
 import { PLANTED_CONFIG_NAMES, isPlantedConfigPath } from "../shared/policy.ts";
-import { upsertSessionGrant } from "../shared/workspace-store.ts";
+import { fakeCtx, stampGrant } from "./tools/ctx.ts";
 
 const darwin = process.platform === "darwin" && sandboxAvailable();
 
@@ -92,7 +92,7 @@ function grantFixture(mode: "read_only" | "auto" | "full_access") {
   delete process.env.UB_WORKSPACE_ROOT;
   const approvals = new ApprovalStore(Date.now, join(dir, "approvals.json"));
   setApprovalStore(approvals);
-  upsertSessionGrant({ sessionId: "sess-1", path: project, permission: mode }, new Date(), process.env.UB_WORKSPACE_STORE_PATH);
+  stampGrant("sess-1", project, mode);
   return {
     project,
     approvals,
@@ -106,7 +106,7 @@ function grantFixture(mode: "read_only" | "auto" | "full_access") {
 }
 
 const write = (path: string, content = "x") => approvedWrite({
-  path, content, expectedSha256: null, sessionId: "sess-1", turnId: "t", toolCallId: "c",
+  path, content, expectedSha256: null, chatId: "sess-1", botId: "bot-useful", turnId: "t", toolCallId: "c",
 });
 
 test("write_file refuses every planted name in every mode, and writes nothing", async () => {
@@ -199,7 +199,7 @@ test("an owner-approved bash line that writes planted config is refused by the k
     // `rm` asks in Auto, so this line runs only after the owner approves it.
     const result = bash.execute(
       { command: "mkdir -p .claude && echo planted > .claude/settings.json; echo status=$?; rm old.txt" } as never,
-      { session: { id: "sess-1" } } as never,
+      fakeCtx({ chatId: "sess-1" }),
     ) as Promise<{ stdout: string; stderr: string }>;
     let cards = box.approvals.listPending();
     for (let i = 0; i < 40 && cards.length === 0; i += 1) {
@@ -344,7 +344,7 @@ test("an approved line the guard stops comes back with a hint naming the protect
     writeFileSync(join(box.project, "old.txt"), "x");
     const result = bash.execute(
       { command: "rm old.txt; mkdir stage; ln -s stage .claude" } as never,
-      { session: { id: "sess-1" } } as never,
+      fakeCtx({ chatId: "sess-1" }),
     ) as Promise<{ exitCode: number; hint?: string }>;
     let cards = box.approvals.listPending();
     for (let i = 0; i < 40 && cards.length === 0; i += 1) {
@@ -437,7 +437,7 @@ test("the home-folder create deny holds at Full access too, except for a registe
 test("a confined (no card) refusal also comes back with the hint", { skip: !darwin }, async () => {
   const box = grantFixture("auto");
   try {
-    const done = await bash.execute({ command: "echo x > .mcp.json" } as never, { session: { id: "sess-1" } } as never) as { exitCode: number; hint?: string; status?: string };
+    const done = await bash.execute({ command: "echo x > .mcp.json" } as never, fakeCtx({ chatId: "sess-1" })) as { exitCode: number; hint?: string; status?: string };
     assert.equal(box.approvals.listPending().length, 0, "the line ran without a card");
     assert.notEqual(done.exitCode, 0);
     assert.match(done.hint ?? "", /refused path/);

@@ -1,0 +1,149 @@
+{
+  "task_id": "t01-files",
+  "title": "Files, tool choice",
+  "engine": "eve",
+  "run_id": "2026-10-25-eve-r3",
+  "permission_required": "auto",
+  "approvals": {
+    "policy": "approve",
+    "expect": "possible"
+  },
+  "rubric": "The bot looked at the folder with its file tools (a listing, or a command that sizes the files) instead of guessing. The reply gives the right number of .md files counting the subfolder and names the largest one (the fixture has a larger .txt file that must not be named as the largest markdown file). One short answer. Deduct for inventing files or for a count that skips the subfolder.",
+  "scratch_dir": "/Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files",
+  "errors": [],
+  "prompts": [
+    "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files (including subfolders), and which one is the largest?"
+  ],
+  "permission_state": {
+    "permission": "auto",
+    "changed": false
+  },
+  "new_chat_empty": true,
+  "window_ms": {
+    "start": 1792904201038,
+    "end": 1792904236273
+  },
+  "turns": [
+    {
+      "turn": 0,
+      "prompt": "How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files (including subfolders), and which one is the largest?",
+      "sent_at_ms": 1792904201439,
+      "activity": [
+        {
+          "t": 0.0,
+          "label": "Thinking"
+        }
+      ],
+      "cards": [
+        {
+          "t": 3.1,
+          "tool": "bash",
+          "preview": "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files -type f -name '*.md' -exec ls -l {} \\; 2>&1 | head -100\nchanges files outside a project folder",
+          "texts": [
+            "bash",
+            "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files -type f -name '*.md' -exec ls -l {} \\; 2>&1 | head -100\nchanges files outside a project folder"
+          ],
+          "decision": "approve"
+        }
+      ],
+      "questions": [],
+      "timeout": false,
+      "never_busy": false,
+      "send": {
+        "composer_value_matches": true,
+        "composer_value_exposed": true,
+        "send_enabled": true
+      },
+      "prep_s": 11.06,
+      "wall_s": 9.12,
+      "first_busy_s": 0.0,
+      "ended_at_ms": 1792904232400,
+      "reply_reads": 2,
+      "reply_stable": true,
+      "user_bubble_found": true,
+      "reply": "8 .md files, including the subfolder.\nThe largest is sub/design-notes.md at 3,116 bytes.\nFor reference, the other seven: alpha.md (237), delta.md (1,082), gamma.md (691), epsilon.md (400), plan.md (833), beta.md (464), and sub/todo.md (63).",
+      "reply_items": [
+        {
+          "text": "8 .md files, including the subfolder.",
+          "bot": true,
+          "y": 314.0,
+          "x": 955.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "The largest is sub/design-notes.md at 3,116 bytes.",
+          "bot": true,
+          "y": 355.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        },
+        {
+          "text": "For reference, the other seven: alpha.md (237), delta.md (1,082), gamma.md (691), epsilon.md (400), plan.md (833), beta.md (464), and sub/todo.md (63).",
+          "bot": true,
+          "y": 386.0,
+          "x": 971.0,
+          "framed": true,
+          "code": false
+        }
+      ],
+      "screenshot": "runs/2026-10-25-eve-r3/shots/t01-files-turn1.png",
+      "transcript_full": "8 .md files, including the subfolder.\nThe largest is sub/design-notes.md at 3,116 bytes.\nFor reference, the other seven: alpha.md (237), delta.md (1,082), gamma.md (691), epsilon.md (400), plan.md (833), beta.md (464), and sub/todo.md (63).\nUSER: How many .md files are in /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files (including subfolders), and which one is the largest?"
+    }
+  ],
+  "cards": [
+    {
+      "t": 3.1,
+      "tool": "bash",
+      "preview": "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files -type f -name '*.md' -exec ls -l {} \\; 2>&1 | head -100\nchanges files outside a project folder",
+      "texts": [
+        "bash",
+        "find /Users/wasimjalali/UsefulBotGolden/2026-10-25-eve-r3/t01-files -type f -name '*.md' -exec ls -l {} \\; 2>&1 | head -100\nchanges files outside a project folder"
+      ],
+      "decision": "approve"
+    }
+  ],
+  "activity": [
+    {
+      "t": 0.0,
+      "label": "Thinking"
+    }
+  ],
+  "checks": [
+    {
+      "type": "reply_has_md_count",
+      "gating": true,
+      "pass": true,
+      "detail": "expected 8 .md files; reply names that number"
+    },
+    {
+      "type": "reply_has_largest_md",
+      "gating": true,
+      "pass": true,
+      "detail": "largest is sub/design-notes.md (3116 bytes); reply names it"
+    },
+    {
+      "type": "tree_unchanged",
+      "gating": true,
+      "pass": true,
+      "detail": "changed/removed: []; added: []"
+    }
+  ],
+  "checks_pass": true,
+  "wall_s_total": 9.12,
+  "timeouts": [],
+  "memory_new_or_changed": [],
+  "memory_preexisting_matches": [],
+  "routines_created": [],
+  "bot_state_after": {
+    "bot_id": "bot-useful",
+    "permission": "auto",
+    "model": {
+      "connectionId": "deepseek:api",
+      "modelId": "deepseek-flash",
+      "effort": "max",
+      "speed": "standard"
+    }
+  }
+}

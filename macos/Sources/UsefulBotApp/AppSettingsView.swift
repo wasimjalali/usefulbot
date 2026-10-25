@@ -5,6 +5,7 @@ import UsefulBotCore
 /// Settings sections.
 enum AppSettingsTab: String, CaseIterable, Identifiable {
     case general
+    case instructions
     case providers
     case computer
     case usage
@@ -16,6 +17,7 @@ enum AppSettingsTab: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .general: return "General"
+        case .instructions: return "Personalization"
         case .providers: return "Providers"
         case .computer: return "Computer"
         case .usage: return "Usage"
@@ -27,6 +29,7 @@ enum AppSettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .instructions: return "person.crop.circle"
         case .providers: return "server.rack"
         case .computer: return "desktopcomputer"
         case .usage: return "chart.bar"
@@ -36,7 +39,7 @@ enum AppSettingsTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// `.settings-modal`: a 200pt nav rail and the scrolling pane, 860x640.
+/// `.settings-modal`: a 244pt nav rail and the scrolling pane, 860x640.
 struct AppSettingsView: View {
     @EnvironmentObject private var model: AppModel
 
@@ -162,6 +165,8 @@ struct AppSettingsView: View {
                             .frame(width: 16)
                         Text(item.label)
                             .font(.system(size: 13))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 10)
@@ -181,7 +186,7 @@ struct AppSettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 16)
-        .frame(width: 200)
+        .frame(width: 244)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.C.canvas)
         .overlay(alignment: .trailing) { VerticalHairline() }
@@ -206,6 +211,7 @@ struct AppSettingsView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     switch tab {
                     case .general: generalPane
+                    case .instructions: instructionsPane
                     case .providers: providersPane
                     case .computer: computerPane
                     case .usage: usagePane
@@ -293,6 +299,21 @@ struct AppSettingsView: View {
                     }
                 }
             }
+
+            if let bot = model.selectedBot {
+                section("Notifications") {
+                    NotifyGroup(bot: bot)
+                }
+            }
+        }
+    }
+
+    // MARK: - Personalization (instructions and memory)
+
+    @ViewBuilder
+    private var instructionsPane: some View {
+        if let bot = model.selectedBot {
+            InstructionsMemoryContent(bot: bot)
         }
     }
 
@@ -317,7 +338,7 @@ struct AppSettingsView: View {
                             Text("This Mac")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Theme.C.ink)
-                            Text("Bots run their tools on this Mac.")
+                            Text("Your bot runs its tools on this Mac.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.C.inkMuted)
                         }
@@ -938,31 +959,15 @@ struct AppSettingsView: View {
                 Text("Your message")
                     .font(.system(size: DesignTokens.FontSize.fieldLabel, weight: .medium))
                     .foregroundStyle(Theme.C.inkMuted)
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $feedbackDraft.message)
-                        .font(.system(size: DesignTokens.FontSize.fieldInput))
-                        .foregroundStyle(Theme.C.ink)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 8)
-                        .accessibilityLabel("Your message")
-                        .accessibilityIdentifier("feedback-message")
-                    if feedbackDraft.message.isEmpty {
-                        Text(feedbackPlaceholder)
-                            .font(.system(size: DesignTokens.FontSize.fieldInput))
-                            .foregroundStyle(Theme.C.inkFaint)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .frame(height: 150)
-                .background(Theme.C.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous)
-                        .strokeBorder(feedbackLength > Feedback.messageMax ? Theme.C.danger : Theme.C.borderStrong, lineWidth: 1)
+                TextBox(
+                    text: $feedbackDraft.message,
+                    placeholder: feedbackPlaceholder,
+                    minHeight: 150,
+                    maxHeight: 150,
+                    invalid: feedbackLength > Feedback.messageMax,
+                    accessibilityLabel: "Your message",
+                    accessibilityIdentifier: "feedback-message"
                 )
-                .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Radius.field, style: .continuous))
                 // The count shows only near the limit, where it matters.
                 if feedbackLength > Feedback.messageMax - 500 {
                     Text("\(feedbackLength.formatted(.number.locale(Locale(identifier: "en_US")))) of 4,000")
@@ -1110,59 +1115,22 @@ struct AppSettingsView: View {
     }
 }
 
-/// System, Light and Dark as a pop-up button: the choice on a grey pill, a
-/// chevron, the system menu.
+/// The theme as three icons, the same control as the account menu's: small,
+/// and every choice is one click.
 private struct AppearancePicker: View {
     @Binding var selection: AppAppearance
 
     var body: some View {
-        Menu {
-            ForEach(AppAppearance.allCases) { option in
-                Button {
-                    selection = option
-                } label: {
-                    if option == selection {
-                        Label(option.label, systemImage: "checkmark")
-                    } else {
-                        Text(option.label)
-                    }
-                }
-            }
-        } label: {
-            // Wide enough for the longest choice: macOS sizes this menu to
-            // the button, and at "Light"'s width it cut "System" to "Sy…m".
-            SettingsPopUpLabel(title: selection.label)
-                .frame(minWidth: 96, alignment: .trailing)
-        }
-        // The button style with a plain look draws the label as built; the
-        // borderless style flattens it to text and moves the chevron.
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .pointerOnHover()
-        .accessibilityLabel("Theme")
-        .accessibilityValue(selection.label)
-    }
-}
-
-/// The face of a settings pop-up: the value and a small chevron on a grey pill.
-struct SettingsPopUpLabel: View {
-    let title: String
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(title)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.C.ink)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.C.inkMuted)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 26)
-        .background(Theme.C.border.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        ToneSegmented(
+            items: AppAppearance.allCases,
+            selection: $selection,
+            height: 30,
+            accessibilityLabel: "Theme",
+            label: { option in AnyView(Image(systemName: option.systemImage).font(.system(size: 12))) },
+            name: { $0.label }
+        )
+        .frame(width: 76)
+        .accessibilityIdentifier("settings-appearance")
     }
 }
 
@@ -1194,4 +1162,67 @@ final class FeedbackDraft: ObservableObject {
     @Published var message = ""
     @Published var email = ""
     @Published var includesDetails = true
+}
+
+// MARK: - Notifications
+
+/// "Notify when a chat finishes" for the one bot, and the note when the
+/// system has notifications off.
+private struct NotifyGroup: View {
+    @EnvironmentObject private var model: AppModel
+    let bot: ShellBot
+
+    @State private var denied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notify when a chat finishes")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.C.ink)
+                    Text("Only while the window is in the background or the chat is closed")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.C.inkMuted)
+                }
+                Spacer(minLength: 0)
+                NativeSwitch(isOn: bot.notify) {
+                    // Resolve the live flag so a double tap cannot send !old twice.
+                    let live = model.liveBot(bot)
+                    let next = !live.notify
+                    model.patchBot(botId: bot.id, ["notify": next])
+                    // The first time on is when the system asks.
+                    if next {
+                        Task { denied = !(await TurnNotifier.shared.requestAuthorization()) }
+                    }
+                }
+                .accessibilityLabel("Notify when a chat finishes")
+                .accessibilityValue(bot.notify ? "on" : "off")
+                .accessibilityIdentifier("notify-switch")
+            }
+            if bot.notify && denied {
+                Text("Notifications are off for Useful Bot in System Settings.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.danger)
+                NativeButton("Open Notifications settings", kind: .secondary, small: true) {
+                    TurnNotifier.shared.openSystemSettings()
+                }
+                .accessibilityIdentifier("notify-open-settings")
+            }
+            if let error = model.saveError {
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.C.danger)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.C.sunken)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: bot.id) { denied = await TurnNotifier.shared.isDenied() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { denied = await TurnNotifier.shared.isDenied() }
+        }
+    }
 }

@@ -86,8 +86,7 @@ struct ComposerView: View {
 
     private var placeholder: String {
         if replying != nil { return "Reply…" }
-        if model.pendingRequests.contains(where: { !$0.options.isEmpty }) { return "Your message waits until you answer the card" }
-        return bot.isGroup ? "Message this group. @name to direct one bot" : "Message \(bot.name)"
+        return "Message Useful Bot"
     }
 
     /// The reply chip belongs to the chat it was started in.
@@ -95,10 +94,8 @@ struct ComposerView: View {
         model.replyQuotes[bot.id]
     }
 
-    /// Whether `Attachments.formatMessage` would come back non-empty, without
-    /// building it: every attachment adds a named part, so only an empty
-    /// draft with no files formats to nothing. This runs on every body pass,
-    /// and formatting scanned each attached file's text for fences.
+    /// Whether there is anything to send: words or a file. This runs on every
+    /// body pass.
     private var canSend: Bool {
         // The preview bar blocks the keyboard too: a verification run never sends.
         guard !model.noModelConnected, !noModelPreview else { return false }
@@ -326,11 +323,14 @@ struct ComposerView: View {
                 writeToken: model.draftWriteToken,
                 returnSends: true,
                 canSend: { canSend },
-                pending: { model.pending },
                 onSend: { send() },
-                onFocusChange: { focused = $0 },
+                onFocusChange: {
+                    focused = $0
+                    model.composerFocused = $0
+                },
                 onDropFiles: { model.addAttachments($0) },
-                focusToken: model.composerFocusToken
+                focusToken: model.composerFocusToken,
+                takePendingFocus: { model.takeComposerFocusPending() }
             )
             .accessibilityLabel(placeholder)
         }
@@ -456,9 +456,8 @@ struct ComposerView: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        // Stop while the bot works, and while only sub-agents run and there is
-        // nothing typed to send.
-        if model.pending || (model.subagentsRunning && !canSend) {
+        // Stop while the bot works.
+        if model.pending {
             Button(action: model.cancel) {
                 ZStack {
                     Circle().fill(Theme.C.brand)
@@ -615,15 +614,17 @@ struct ComposerView: View {
     }
 
     private func send() {
-        guard canSend, !model.pending else { return }
+        // A message sent while a turn runs waits behind it.
+        guard canSend else { return }
         // The folder is not mentioned in the message. The grant travels by
         // session: the tools resolve their root and permission from it, and
         // the instructions already tell the model what a granted folder means.
         // Restating it here put a long absolute path in every bubble the owner
         // sends, to tell the agent something it already knew. The chip under
         // the composer is where the owner sees which folder is attached.
-        let formatted = Attachments.formatMessage(model.draft, files: model.attachments)
-        let message = replying?.wrap(formatted, group: bot.isGroup) ?? formatted
+        // The files ride beside the text; the engine fences them.
+        let words = model.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = replying.map { words.isEmpty ? words : $0.wrap(words) } ?? words
         modeOpen = false
         // The model clears the composer once the turn is accepted, so a send
         // that fails before that keeps the draft.

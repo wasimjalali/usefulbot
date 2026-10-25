@@ -15,6 +15,15 @@ export const THINK_TAGS = [
 export type ThinkTag = (typeof THINK_TAGS)[number];
 
 /**
+ * The fields an assistant message carries its reasoning back in. Pi echoes
+ * thinking under the field its delta came in
+ * (`reasoning_content`, `reasoning` or `reasoning_text`), or as OpenRouter's
+ * structured `reasoning_details` (an array of objects).
+ */
+export const REASONING_TEXT_FIELDS = ["reasoning_content", "reasoning", "reasoning_text"] as const;
+export const REASONING_FIELDS: readonly string[] = [...REASONING_TEXT_FIELDS, "reasoning_details"];
+
+/**
  * How the scanned text ends: `stream` means more may follow, `done` that the
  * message is complete, `cut` that it stopped at the length limit.
  */

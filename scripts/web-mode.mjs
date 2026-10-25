@@ -4,13 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Everything a web build is made from: the app, the shared code its routes
- * reach, and the brand palette `shared/bot-face.ts` imports.
+ * Everything a web build is made from: the app and the shared code its routes
+ * reach.
  */
 const SOURCE_DIRS = ["web/app", "web/lib", "shared", "agent", "router/src", "brand/source"];
-// Not the lockfile: eve restamps it on its first boot, which would mark every
-// build stale the moment the services started. package.json carries the
-// versions a person chose.
+// Not the lockfile: the `next build` auto-install can touch it, which would mark
+// every build stale. package.json carries the versions a person chose.
 const SOURCE_FILES = ["web/next.config.ts", "web/tsconfig.json", "package.json"];
 
 export function standaloneServer(root) {

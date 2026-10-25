@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -239,8 +239,9 @@ test("an update never retags the note and keeps its owner", () => {
   const raw = readFileSync(join(root, "notes", `${a.id}.md`), "utf8");
   const meta = JSON.parse(raw.split("\n")[1]) as { botId: string; tags: string[] };
   assert.equal(meta.botId, A);
-  // A `bot:` tag from the model is never stored: ownership is botId alone.
-  assert.deepEqual(meta.tags, []);
+  // A `bot:` tag is only a tag: ownership is botId alone.
+  assert.deepEqual(meta.tags, ["bot:bot-b"]);
+  assert.deepEqual(store.list(B), []);
   assert.equal(store.read(a.id, A).body, "two");
   assert.throws(() => store.read(a.id, B), /memory_forbidden/);
 });
@@ -293,150 +294,28 @@ test("a note records who wrote it last", () => {
   assert.equal(metaOf().source, "model");
 });
 
-// MARK: - Migration from tag-based ownership
-
-function legacyRoot(): { root: string; ids: Record<string, string> } {
-  const root = mkdtempSync(join(tmpdir(), "ub-mem-legacy-"));
-  mkdirSync(join(root, "notes"), { recursive: true });
-  // The index an older build left behind: no bot_id column, user_version 0.
-  const db = new DatabaseSync(join(root, "index.sqlite"));
-  db.exec(`
-    CREATE TABLE notes (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, body_sha TEXT NOT NULL,
-      audience TEXT NOT NULL, tags TEXT NOT NULL, title TEXT NOT NULL, updated_at TEXT NOT NULL,
-      expires_at TEXT, status TEXT NOT NULL);
-    CREATE VIRTUAL TABLE notes_fts USING fts5(title, tags, body, id UNINDEXED);
-  `);
-  db.close();
-  const ids = { tagged: "legacy-tagged", untagged: "legacy-untagged", phone: "legacy-phone" };
-  const write = (id: string, tags: string[], audience: string, body: string) => {
-    const meta = {
-      schemaVersion: 1,
-      id,
-      revision: 1,
-      title: id,
-      tags,
-      audience,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      expiresAt: null,
-      sourceSessionId: "s",
-      approvedBy: "owner",
-      status: "active",
-    };
-    writeFileSync(join(root, "notes", `${id}.md`), `---\n${JSON.stringify(meta)}\n---\n${body}`);
-  };
-  write(ids.tagged, ["pref", "bot:bot-b"], "desktop", "tagged for bot b");
-  write(ids.untagged, ["pref"], "desktop", "untagged belongs to the generalist");
-  write(ids.phone, ["bot:bot-b"], "shared-phone", "phone note of bot b");
-  return { root, ids };
-}
-
-test("migration gives notes their owner from the tag, untagged to the Generalist, and folds shared-phone", () => {
-  const { root, ids } = legacyRoot();
-  const store = new MemoryStore(root);
-
-  assert.deepEqual(store.list("bot-b").map((note) => note.id).sort(), [ids.phone, ids.tagged].sort());
-  assert.deepEqual(store.list("bot-useful").map((note) => note.id), [ids.untagged]);
-  assert.equal(store.list("bot-a").length, 0);
-  assert.match(store.read(ids.phone, "bot-b").body, /phone note/);
-  assert.throws(() => store.read(ids.tagged, "bot-useful"), /memory_forbidden/);
-
-  // The files themselves were rewritten: owner field in, ownership tag out,
-  // audience folded, and legacy notes are marked as written by the model.
-  const meta = (id: string) => JSON.parse(readFileSync(join(root, "notes", `${id}.md`), "utf8").split("\n")[1]) as {
-    botId: string; tags: string[]; audience: string; source: string;
-  };
-  assert.deepEqual(meta(ids.tagged), { ...meta(ids.tagged), botId: "bot-b", tags: ["pref"], audience: "desktop", source: "model" });
-  assert.equal(meta(ids.untagged).botId, "bot-useful");
-  assert.equal(meta(ids.phone).audience, "desktop");
-  assert.equal(store.search("generalist", "bot-useful").length, 1);
-});
-
-test("migration is idempotent: a second open and a second process change nothing", () => {
-  const { root, ids } = legacyRoot();
-  new MemoryStore(root);
-  const snapshot = () => Object.fromEntries(
-    readdirSync(join(root, "notes")).sort().map((name) => [name, readFileSync(join(root, "notes", name), "utf8")]),
-  );
-  const first = snapshot();
-  const second = new MemoryStore(root);
-  const third = new MemoryStore(root);
-  assert.deepEqual(snapshot(), first);
-  assert.equal(second.list("bot-b").length, 2);
-  assert.equal(third.list("bot-useful").length, 1);
-  // A new write after the migration keeps working and keeps its owner.
-  const added = put(second, { botId: "bot-b", title: "After", body: "after migration" });
-  assert.equal(third.read(added.id, "bot-b").title, "After");
-  assert.equal(second.list("bot-b").length, 3);
-  assert.ok(ids.tagged);
-});
-
-test("a transient read failure aborts the migration so it retries; a malformed note is skipped and reported", () => {
-  const { root, ids } = legacyRoot();
-  writeFileSync(join(root, "notes", "broken.md"), "this is not a note");
-  const blocked = join(root, "notes", `${ids.tagged}.md`);
-  chmodSync(blocked, 0o000);
-  try {
-    // An unreadable file is an operational failure: the open throws and the
-    // index is not marked migrated.
-    assert.throws(() => new MemoryStore(root), /EACCES/);
-    const db = new DatabaseSync(join(root, "index.sqlite"));
-    const version = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-    db.close();
-    assert.equal(version, 0);
-  } finally {
-    chmodSync(blocked, 0o600);
-  }
-  // The retry succeeds, finishes the migration, and names the malformed file.
-  const store = new MemoryStore(root);
-  assert.deepEqual(store.migrationRejected, ["broken.md"]);
-  assert.equal(store.list("bot-b").length, 2);
-  assert.equal(store.rebuildIndex().rejectedFiles.includes("broken.md"), true);
-});
+// MARK: - Malformed note files
 
 test("a note missing required metadata is rejected and reported, and never blocks an open", () => {
-  const { root } = legacyRoot();
+  const { root, store } = fresh();
+  put(store, { title: "Fine", body: "a good note" });
   const bare = (id: string, meta: Record<string, unknown>) =>
     writeFileSync(join(root, "notes", `${id}.md`), `---\n${JSON.stringify({ schemaVersion: 1, id, ...meta })}\n---\nbody`);
-  bare("no-revision", { title: "t", updatedAt: "x", status: "active", tags: [] });
-  bare("no-title", { revision: 1, updatedAt: "x", status: "active", tags: [] });
-  bare("no-updated", { revision: 1, title: "t", status: "active", tags: [] });
-  const store = new MemoryStore(root);
-  assert.deepEqual([...store.migrationRejected].sort(), ["no-revision.md", "no-title.md", "no-updated.md"]);
-  // The good notes migrated, and a second open is just as fine.
-  assert.equal(store.list("bot-b").length, 2);
-  assert.equal(new MemoryStore(root).list("bot-useful").length, 1);
-});
-
-test("a legacy offset expiry is normalised to UTC, so a note already past in UTC no longer shows", () => {
-  const { root } = legacyRoot();
-  const note = (id: string, expiresAt: unknown) => writeFileSync(
-    join(root, "notes", `${id}.md`),
-    `---\n${JSON.stringify({
-      schemaVersion: 1, id, revision: 1, title: id, tags: ["bot:bot-b"], audience: "desktop",
-      createdAt: "x", updatedAt: "x", expiresAt, sourceSessionId: "s", approvedBy: "owner", status: "active",
-    })}\n---\nexpiry body ${id}`,
+  const whole = { title: "t", revision: 1, updatedAt: "2026-01-01T00:00:00.000Z", status: "active", tags: [], botId: A, source: "model" };
+  bare("no-revision", { ...whole, revision: undefined });
+  bare("no-title", { ...whole, title: undefined });
+  bare("no-updated", { ...whole, updatedAt: undefined });
+  bare("no-owner", { ...whole, botId: undefined });
+  bare("bad-source", { ...whole, source: "somebody" });
+  bare("bad-expiry", { ...whole, expiresAt: "next tuesday" });
+  writeFileSync(join(root, "notes", "broken.md"), "this is not a note");
+  assert.deepEqual(
+    [...store.rebuildIndex().rejectedFiles].sort(),
+    ["bad-expiry.md", "bad-source.md", "broken.md", "no-owner.md", "no-revision.md", "no-title.md", "no-updated.md"],
   );
-  // Half an hour ago in UTC, written at +14:00: the wall-clock text reads
-  // thirteen and a half hours into the future, so a string comparison with
-  // "now" in UTC would keep it alive.
-  const past = new Date(Date.now() - 30 * 60_000);
-  const wall = new Date(past.getTime() + 14 * 3_600_000).toISOString().replace("Z", "+14:00");
-  note("offset-past", wall);
-  // Far future with an offset: stays live.
-  note("offset-future", "2099-01-01T12:00:00+01:00");
-  note("bad-expiry", "next tuesday");
-  const store = new MemoryStore(root);
-  const live = store.list("bot-b").map((item) => item.id);
-  assert.equal(live.includes("offset-past"), false);
-  assert.equal(live.includes("offset-future"), true);
-  assert.equal(store.search("expiry", "bot-b").some((hit) => hit.id === "offset-past"), false);
-  assert.throws(() => store.read("offset-past", "bot-b"), /memory_not_found/);
-  assert.ok(store.migrationRejected.includes("bad-expiry.md"));
-  // The files carry UTC now.
-  const meta = (id: string) => JSON.parse(readFileSync(join(root, "notes", `${id}.md`), "utf8").split("\n")[1]) as { expiresAt: string };
-  assert.equal(meta("offset-future").expiresAt, "2099-01-01T11:00:00.000Z");
-  assert.equal(meta("offset-past").expiresAt, past.toISOString());
+  // The good note is still there, and a second open is just as fine.
+  assert.equal(store.list(A).length, 1);
+  assert.equal(new MemoryStore(root).list(A).length, 1);
 });
 
 // MARK: - archive, source and readCard (UB-009)

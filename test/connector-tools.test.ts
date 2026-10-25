@@ -6,22 +6,36 @@ import { join } from "node:path";
 import { connectorGate, connectorRisk, connectorVerb } from "../agent/lib/connector-risk.ts";
 import { ApprovalStore } from "../agent/lib/approvals.ts";
 import { setApprovalStore } from "../agent/lib/write.ts";
-import connectorExecute from "../agent/tools/connector_execute.ts";
-import connectorSearch from "../agent/tools/connector_search.ts";
-import connectorCatalog from "../agent/tools/connector_catalog.ts";
-import proposeConnector from "../agent/tools/propose_connector.ts";
+import apps from "../agent/tools/apps.ts";
 import { listPendingProposals, readProposal, updateProposal } from "../shared/agent-store.ts";
 import { resetCatalogueMemo } from "../shared/composio-catalogue.ts";
 import { forgetConnected } from "../shared/composio.ts";
 import { setComposioFactory, type ComposioLike, type ComposioSessionLike } from "../shared/composio.ts";
 import { setConnectedToolkits, setConnectorsKey, updateConnectorsStore } from "../shared/connectors-store.ts";
 import { UNTRUSTED_PREAMBLE } from "../shared/untrusted.ts";
-import { upsertSessionGrant, type WorkspacePermission } from "../shared/workspace-store.ts";
+import type { WorkspacePermission } from "../shared/workspace-store.ts";
+import { fakeCtx, stampGrant } from "./tools/ctx.ts";
 
-type Tool = { execute: (input: never, context: never) => unknown };
+// The four Composio actions of the one `apps` tool, called the way the old
+// tools were: by what they do, with the fields they took.
+type Tool = { execute: (input: Record<string, unknown>, context: ReturnType<typeof fakeCtx>) => unknown };
 
-async function run<T>(tool: Tool, input: Record<string, unknown>, context: Record<string, unknown> = {}): Promise<T> {
-  return (await tool.execute(input as never, context as never)) as T;
+function action(name: "find" | "tools" | "run" | "connect", rename: Record<string, string> = {}): Tool {
+  return {
+    execute: (input, context) => {
+      const renamed = Object.fromEntries(Object.entries(input).map(([key, value]) => [rename[key] ?? key, value]));
+      return apps.execute(apps.inputSchema.parse({ action: name, ...renamed }), context);
+    },
+  };
+}
+
+const connectorCatalog = action("find");
+const connectorSearch = action("tools", { use_case: "query" });
+const connectorExecute = action("run");
+const proposeConnector = action("connect", { slug: "toolkit" });
+
+async function run<T>(tool: Tool, input: Record<string, unknown>, context: ReturnType<typeof fakeCtx> = fakeCtx()): Promise<T> {
+  return (await tool.execute(input, context)) as T;
 }
 
 test("risk table reads the verb segment", () => {
@@ -212,8 +226,8 @@ function sandbox(connected: string[] = ["gmail"], withKey = true): Box {
   return box;
 }
 
-function grant(dir: string, permission: WorkspacePermission, sessionId = "sess-conn"): void {
-  upsertSessionGrant({ sessionId, path: realpathSync(dir), permission }, new Date(), process.env.UB_WORKSPACE_STORE_PATH);
+function grant(dir: string, permission: WorkspacePermission, chatId = "sess-conn"): void {
+  stampGrant(chatId, realpathSync(dir), permission);
 }
 
 test("search refuses without a key or a connection, and wraps app text as untrusted", async () => {
@@ -258,7 +272,7 @@ test("execute runs a read without a card and wraps the result", async () => {
     const out = await run<{ status: string; result: string; truncated: boolean }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: { max_results: 1 } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(out.status, "ok");
     assert.equal(out.truncated, false);
@@ -302,7 +316,7 @@ test("execute cards a write in auto and runs it only after approval", async () =
     const pending = run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c", body: "hi" } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
     const card = [...box.approvals.records.values()][0];
@@ -327,7 +341,7 @@ test("a denied card runs nothing", async () => {
     const pending = run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     await new Promise((resolve) => setTimeout(resolve, 50));
     const card = [...box.approvals.records.values()][0];
@@ -347,18 +361,49 @@ test("full access runs a write and a delete without a card", async () => {
     const out = await run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(out.status, "ok");
     assert.equal(box.executed.length, 1);
     const deleted = await run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_DELETE_MESSAGE", arguments: { id: "m1" } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(deleted.status, "ok");
     assert.equal([...box.approvals.records.values()].some((rec) => rec.status === "pending"), false);
     assert.equal(box.executed.length, 2);
+  } finally {
+    box.restore();
+  }
+});
+
+test("a run-gated call with huge arguments keeps its approval record small", async () => {
+  const box = sandbox(["gmail"]);
+  try {
+    grant(box.dir, "auto");
+    const out = await run<{ status: string }>(
+      connectorExecute,
+      { tool: "GMAIL_FETCH_EMAILS", arguments: { query: "x".repeat(200_000) } },
+      fakeCtx({ chatId: "sess-conn" }),
+    );
+    assert.equal(out.status, "ok");
+    const [record] = [...box.approvals.records.values()];
+    assert.ok(record.preview.length < 4200, `preview is ${record.preview.length} chars`);
+  } finally {
+    box.restore();
+  }
+});
+
+test("a Stop before the call reaches Composio runs nothing", async () => {
+  const box = sandbox(["gmail"]);
+  try {
+    grant(box.dir, "full_access");
+    const ctx = fakeCtx({ chatId: "sess-conn" });
+    ctx.abort();
+    // Rethrown, not handed back as an error the model might retry: the call may have run.
+    await assert.rejects(run(connectorExecute, { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } }, ctx));
+    assert.equal(box.executed.length, 0);
   } finally {
     box.restore();
   }
@@ -369,13 +414,13 @@ test("read only refuses writes and runs reads", async () => {
   try {
     grant(box.dir, "read_only");
     assert.deepEqual(
-      await run(connectorExecute, { tool: "GMAIL_SEND_EMAIL", arguments: {} }, { session: { id: "sess-conn" } }),
+      await run(connectorExecute, { tool: "GMAIL_SEND_EMAIL", arguments: {} }, fakeCtx({ chatId: "sess-conn" })),
       { status: "blocked", error: "workspace_read_only", risk: "write" },
     );
     const out = await run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: {} },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(out.status, "ok");
     assert.equal(box.executed.length, 1);
@@ -391,7 +436,7 @@ test("a write whose arguments would not fit on a card is refused, not clipped", 
     const out = await run<{ status: string; error: string }>(
       connectorExecute,
       { tool: "GMAIL_SEND_EMAIL", arguments: { body: "x".repeat(5000) } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(out.status, "blocked");
     assert.equal(out.error, "arguments_too_long_for_approval");
@@ -401,7 +446,7 @@ test("a write whose arguments would not fit on a card is refused, not clipped", 
     const read = await run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: { query: "x".repeat(5000) } },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(read.status, "ok");
   } finally {
@@ -416,7 +461,7 @@ test("a failed upstream call is an error, and a huge result is truncated", async
     const failed = await run<{ status: string; error: string }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: {} },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(failed.status, "error");
     assert.equal(failed.error.includes("insufficient scope"), true);
@@ -424,11 +469,19 @@ test("a failed upstream call is an error, and a huge result is truncated", async
     const big = await run<{ status: string; truncated: boolean; result: string }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: {} },
-      { session: { id: "sess-conn" } },
+      fakeCtx({ chatId: "sess-conn" }),
     );
     assert.equal(big.status, "ok");
     assert.equal(big.truncated, true);
     assert.equal(big.result.length < 26_000, true);
+    box.result = { successful: true, data: { blob: "é".repeat(40_000) } };
+    const wide = await run<{ truncated: boolean; result: string }>(
+      connectorExecute,
+      { tool: "GMAIL_FETCH_EMAILS", arguments: {} },
+      fakeCtx({ chatId: "sess-conn" }),
+    );
+    assert.equal(wide.truncated, true);
+    assert.ok(Buffer.byteLength(wide.result) < 26 * 1024, `result is ${Buffer.byteLength(wide.result)} bytes`);
   } finally {
     box.restore();
   }
@@ -440,7 +493,7 @@ test("a session the web server never stamped refuses a connector write and still
     const out = await run<{ status: string; error: string }>(
       connectorExecute,
       { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } },
-      { session: { id: "sess-unstamped" } },
+      fakeCtx({ chatId: "sess-unstamped" }),
     );
     assert.equal(out.status, "blocked");
     assert.equal(out.error, "workspace_read_only");
@@ -448,7 +501,7 @@ test("a session the web server never stamped refuses a connector write and still
     const read = await run<{ status: string }>(
       connectorExecute,
       { tool: "GMAIL_FETCH_EMAILS", arguments: {} },
-      { session: { id: "sess-unstamped" } },
+      fakeCtx({ chatId: "sess-unstamped" }),
     );
     assert.equal(read.status, "ok");
   } finally {
@@ -526,7 +579,7 @@ test("propose_connector creates one card, refuses unknown, connected and duplica
   }
   const none = sandbox([], false);
   try {
-    assert.deepEqual(await run(proposeConnector, { slug: "notion", purpose: "x" }), { status: "blocked", error: "connectors_not_set_up" });
+    assert.deepEqual(await run(proposeConnector, { slug: "notion", purpose: "Look it up" }), { status: "blocked", error: "connectors_not_set_up" });
   } finally {
     none.restore();
   }
@@ -534,9 +587,53 @@ test("propose_connector creates one card, refuses unknown, connected and duplica
   const broken = sandbox(["gmail"]);
   try {
     broken.toolkitItems = null as never;
-    const out = await run<{ status: string }>(proposeConnector, { slug: "notion", purpose: "Look it up" });
+    const out = await run<{ status: string; error: string }>(proposeConnector, { slug: "notion", purpose: "Look it up" });
     assert.equal(out.status, "error");
+    assert.equal(out.error.startsWith(UNTRUSTED_PREAMBLE), true, "connect fences the error text");
+    const found = await run<{ status: string; error: string }>(connectorCatalog, { query: "notion" });
+    assert.equal(found.status, "error");
+    assert.equal(found.error.startsWith(UNTRUSTED_PREAMBLE), true, "find fences the error text");
   } finally {
     broken.restore();
+  }
+});
+
+test("a Stop while a write's card waits ends the call at once, retires the card and runs nothing", async () => {
+  const box = sandbox(["gmail"]);
+  try {
+    grant(box.dir, "auto");
+    const ctx = fakeCtx({ chatId: "sess-conn" });
+    const started = Date.now();
+    const pending = run<{ status: string }>(connectorExecute, { tool: "GMAIL_SEND_EMAIL", arguments: { to: "a@b.c" } }, ctx);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const card = [...box.approvals.records.values()][0];
+    assert.equal(card?.status, "pending");
+    // The engine's Stop path: the chat's cards expire first, then the turn aborts.
+    box.approvals.expireSession("sess-conn");
+    ctx.abort();
+    const out = await pending;
+    assert.ok(Date.now() - started < 2000, "the cancel waited out a poll");
+    assert.equal(out.status, "cancelled");
+    assert.equal(box.executed.length, 0);
+    assert.deepEqual(box.approvals.listPending(), []);
+  } finally {
+    box.restore();
+  }
+});
+
+test("apps connect puts the card in the chat as a row keyed by the proposal", async () => {
+  const box = sandbox(["gmail"]);
+  try {
+    box.toolkitItems = [GMAIL_CONNECTED, NOTION, NOTION_MCP];
+    const ctx = fakeCtx();
+    const out = await run<{ status: string; proposalId: string }>(proposeConnector, { slug: "notion", purpose: "Find the launch page" }, ctx);
+    assert.equal(out.status, "awaiting_owner_confirmation");
+    assert.deepEqual(ctx.rows, [{ key: `card:${out.proposalId}`, kind: "card", proposalId: out.proposalId }]);
+    // A refused connect leaves the chat alone.
+    const dup = await run<{ status: string }>(proposeConnector, { slug: "notion_mcp", purpose: "Also" }, ctx);
+    assert.equal(dup.status, "duplicate");
+    assert.equal(ctx.rows.length, 1);
+  } finally {
+    box.restore();
   }
 });
