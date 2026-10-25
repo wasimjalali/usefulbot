@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Cancel superseded PR runs only, so every commit on main keeps a finished run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    # The agent's shell sandbox and its tests use macOS sandbox-exec.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # npm scripts call /usr/local/bin/node, which on the runner is an older preinstalled Node.
+      - name: Point /usr/local/bin/node at the .nvmrc Node
+        run: sudo mkdir -p /usr/local/bin && sudo ln -sf "$(which node)" /usr/local/bin/node && /usr/local/bin/node --version
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm --prefix router run typecheck
+      - run: npm ci --prefix scripts/brand-tools
+      - run: npm run brand:check
+      # cli-tools.test.ts expects gh's own config folder to exist, as it does on a dev Mac.
+      - run: mkdir -p "$HOME/.config/gh"
+      - run: npm test
